@@ -11,6 +11,10 @@ from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor
 from PIL import Image
 from dotenv import load_dotenv
 from orm_matcher import ORMMatcher
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class ThumbnailWidget(QWidget):
@@ -200,7 +204,7 @@ class FormZoneDesigner(QMainWindow):
     def process_pages(self):
         """Run ORM matcher on each page to find logo bounding boxes."""
         if not self.matcher:
-            print("No matcher available, skipping logo detection")
+            logger.warning("No matcher available, skipping logo detection")
             self.page_bboxes = [None] * len(self.pages)
             return
         
@@ -215,10 +219,10 @@ class FormZoneDesigner(QMainWindow):
             # Store the bounding box
             if self.matcher.top_left and self.matcher.bottom_right:
                 self.page_bboxes.append((self.matcher.top_left, self.matcher.bottom_right))
-                print(f"Page {idx + 1}: Logo found at {self.matcher.top_left}")
+                logger.info(f"Page {idx + 1}: Logo found at {self.matcher.top_left}")
             else:
                 self.page_bboxes.append(None)
-                print(f"Page {idx + 1}: No logo found")
+                logger.warning(f"Page {idx + 1}: No logo found")
     
     def generate_thumbnails(self):
         """Generate thumbnails for each page and add them to the list."""
@@ -243,6 +247,8 @@ class FormZoneDesigner(QMainWindow):
                 top_left = (int(bbox[0][0] * scale_x), int(bbox[0][1] * scale_y))
                 bottom_right = (int(bbox[1][0] * scale_x), int(bbox[1][1] * scale_y))
                 scaled_bbox = (top_left, bottom_right)
+            else:
+                logger.warning(f"Page {idx + 1}: No bounding box found for page {idx + 1}")
             
             # Create custom thumbnail widget with overlay
             thumbnail_widget = ThumbnailWidget(thumbnail_pixmap, scaled_bbox)
