@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 import cv2
 import numpy as np
 from PyQt6.QtWidgets import (
@@ -12,6 +13,7 @@ from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent
 from PIL import Image
 from dotenv import load_dotenv
 from orm_matcher import ORMMatcher
+from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -98,11 +100,12 @@ class FieldConfigDialog(QDialog):
 class ThumbnailWidget(QWidget):
     """Custom widget to display a thumbnail with bounding box overlay."""
     
-    def __init__(self, pixmap, bbox=None, field_rects=None, margin=10):
+    def __init__(self, pixmap, bbox=None, field_rects=None, field_data=None, margin=10):
         super().__init__()
         self.pixmap = pixmap
         self.bbox = bbox  # (top_left, bottom_right) tuples for logo
-        self.field_rects = field_rects or []  # List of field rectangles
+        self.field_rects = field_rects or []  # List of field rectangles (fallback)
+        self.field_data = field_data or []  # List of Field objects
         self.margin = margin
         
         # Set fixed size to include margin
@@ -130,9 +133,18 @@ class ThumbnailWidget(QWidget):
                            bottom_right[0] - top_left[0], 
                            bottom_right[1] - top_left[1])
         
-        # Draw field rectangles (red)
-        if self.field_rects:
-            pen = QPen(QColor(255, 0, 0), 1)  # Red pen with 1px width
+        # Draw field rectangles with colors from field data
+        if self.field_data:
+            for field in self.field_data:
+                if isinstance(field, Field):
+                    color = QColor(*field.colour)
+                    pen = QPen(color, 1)
+                    painter.setPen(pen)
+                    painter.drawRect(field.x + self.margin, field.y + self.margin,
+                                   field.width, field.height)
+        elif self.field_rects:
+            # Fallback to red if no field data available
+            pen = QPen(QColor(255, 0, 0), 1)
             painter.setPen(pen)
             for rect in self.field_rects:
                 if rect:
@@ -221,13 +233,29 @@ class ImageDisplayWidget(QLabel):
                                scaled_bottom_right[0] - scaled_top_left[0], 
                                scaled_bottom_right[1] - scaled_top_left[1])
             
-            # Draw field rectangles (red)
-            if self.field_rects:
-                pen = QPen(QColor(255, 0, 0), 1)  # Red pen with 1px width
+            # Draw field rectangles with colors from field data
+            if self.field_data:
+                for field in self.field_data:
+                    if isinstance(field, Field):
+                        # Get color from field object
+                        color = QColor(*field.colour)
+                        pen = QPen(color, 1)  # 1px width as requested
+                        painter.setPen(pen)
+                        
+                        # rect is in original image coordinates: (x, y, width, height)
+                        scaled_rect = QRect(
+                            int(field.x * self.scale_x),
+                            int(field.y * self.scale_y),
+                            int(field.width * self.scale_x),
+                            int(field.height * self.scale_y)
+                        )
+                        painter.drawRect(scaled_rect)
+            elif self.field_rects:
+                # Fallback to red if no field data available
+                pen = QPen(QColor(255, 0, 0), 1)
                 painter.setPen(pen)
                 for rect in self.field_rects:
                     if rect:
-                        # rect is in original image coordinates: (x, y, width, height)
                         scaled_rect = QRect(
                             int(rect[0] * self.scale_x),
                             int(rect[1] * self.scale_y),
@@ -290,14 +318,50 @@ class ImageDisplayWidget(QLabel):
                     field_type = dialog.get_field_type()
                     field_name = dialog.get_field_name()
                     
+                    # Create appropriate Field object based on type
+                    field_classes = {
+                        'Field': Field,
+                        'Tickbox': Tickbox,
+                        'RadioButton': RadioButton,
+                        'RadioGroup': RadioGroup,
+                        'TextField': TextField
+                    }
+                    
+                    field_class = field_classes.get(field_type, Field)
+                    
+                    # Create field object with default parameters
+                    if field_type == 'RadioGroup':
+                        field_obj = field_class(
+                            name=field_name,
+                            x=int(left),
+                            y=int(top),
+                            width=int(width),
+                            height=int(height),
+                            label=field_name,
+                            value="",
+                            radio_buttons=[],
+                            colour=None  # Will use default from __post_init__
+                        )
+                    else:
+                        field_obj = field_class(
+                            name=field_name,
+                            x=int(left),
+                            y=int(top),
+                            width=int(width),
+                            height=int(height),
+                            label=field_name,
+                            value=False if field_type in ['Tickbox', 'RadioButton'] else "",
+                            colour=None  # Will use default from __post_init__
+                        )
+                    
                     # Add rectangle and field data
                     self.field_rects.append(new_rect)
-                    self.field_data.append((new_rect, field_type, field_name))
+                    self.field_data.append(field_obj)
                     logger.info(f"Added {field_type} field '{field_name}': {new_rect}")
                     
                     # Notify parent via callback
                     if self.on_rect_added:
-                        self.on_rect_added(new_rect, field_type, field_name)
+                        self.on_rect_added(field_obj)
                 else:
                     logger.info("Field creation cancelled")
             
@@ -324,6 +388,12 @@ class FormZoneDesigner(QMainWindow):
         load_dotenv()
         self.logo_path = os.getenv('LOGO_PATH')
         self.tiff_path = os.getenv('MULTIPAGE_TIFF')
+        self.json_folder = os.getenv('JSON_FOLDER', './json_data')
+        
+        # Create JSON folder if it doesn't exist
+        if not os.path.exists(self.json_folder):
+            os.makedirs(self.json_folder)
+            logger.info(f"Created JSON folder: {self.json_folder}")
         
         # Initialize ORM matcher
         if self.logo_path and os.path.exists(self.logo_path):
@@ -393,6 +463,48 @@ class FormZoneDesigner(QMainWindow):
         
         main_layout.addWidget(right_panel, stretch=1)
     
+    def save_page_fields_to_json(self, page_idx):
+        """Save fields for a specific page to JSON file."""
+        if 0 <= page_idx < len(self.page_field_data):
+            json_path = os.path.join(self.json_folder, f"{page_idx + 1}.json")
+            
+            # Convert field data to Field objects and then to dict
+            fields_data = []
+            for field_obj in self.page_field_data[page_idx]:
+                if isinstance(field_obj, Field):
+                    fields_data.append(field_obj.to_dict())
+            
+            try:
+                with open(json_path, 'w') as f:
+                    json.dump(fields_data, f, indent=2)
+                logger.info(f"Saved {len(fields_data)} fields to {json_path}")
+            except Exception as e:
+                logger.error(f"Error saving fields to {json_path}: {e}")
+    
+    def load_page_fields_from_json(self, page_idx):
+        """Load fields for a specific page from JSON file."""
+        json_path = os.path.join(self.json_folder, f"{page_idx + 1}.json")
+        
+        if not os.path.exists(json_path):
+            logger.info(f"No JSON file found for page {page_idx + 1}")
+            return []
+        
+        try:
+            with open(json_path, 'r') as f:
+                fields_data = json.load(f)
+            
+            # Convert JSON data to Field objects
+            fields = []
+            for field_dict in fields_data:
+                field_obj = Field.from_dict(field_dict)
+                fields.append(field_obj)
+            
+            logger.info(f"Loaded {len(fields)} fields from {json_path}")
+            return fields
+        except Exception as e:
+            logger.error(f"Error loading fields from {json_path}: {e}")
+            return []
+    
     def load_multipage_tiff(self, tiff_path):
         """Load a multipage TIFF file and process each page."""
         try:
@@ -448,6 +560,14 @@ class FormZoneDesigner(QMainWindow):
             # Initialize empty field rectangles and data for this page
             self.page_field_rects.append([])
             self.page_field_data.append([])
+        
+        # Load fields from JSON for each page
+        for idx in range(len(self.pages)):
+            fields = self.load_page_fields_from_json(idx)
+            self.page_field_data[idx] = fields
+            # Update field_rects from loaded fields
+            for field in fields:
+                self.page_field_rects[idx].append((field.x, field.y, field.width, field.height))
     
     def generate_thumbnails(self):
         """Generate thumbnails for each page and add them to the list."""
@@ -475,22 +595,24 @@ class FormZoneDesigner(QMainWindow):
             else:
                 logger.warning(f"Page {idx + 1}: No bounding box found for page {idx + 1}")
             
-            # Scale field rectangles to thumbnail size
-            scaled_field_rects = []
-            if idx < len(self.page_field_rects):
+            # Scale field data to thumbnail size
+            scaled_field_data = []
+            if idx < len(self.page_field_data):
                 scale_x = thumbnail.width / page.width
                 scale_y = thumbnail.height / page.height
-                for rect in self.page_field_rects[idx]:
-                    scaled_rect = (
-                        int(rect[0] * scale_x),
-                        int(rect[1] * scale_y),
-                        int(rect[2] * scale_x),
-                        int(rect[3] * scale_y)
-                    )
-                    scaled_field_rects.append(scaled_rect)
+                for field in self.page_field_data[idx]:
+                    if isinstance(field, Field):
+                        # Create a scaled copy of the field for thumbnail
+                        field_dict = field.to_dict()
+                        field_dict['x'] = int(field.x * scale_x)
+                        field_dict['y'] = int(field.y * scale_y)
+                        field_dict['width'] = int(field.width * scale_x)
+                        field_dict['height'] = int(field.height * scale_y)
+                        scaled_field = Field.from_dict(field_dict)
+                        scaled_field_data.append(scaled_field)
             
             # Create custom thumbnail widget with overlay
-            thumbnail_widget = ThumbnailWidget(thumbnail_pixmap, scaled_bbox, scaled_field_rects)
+            thumbnail_widget = ThumbnailWidget(thumbnail_pixmap, scaled_bbox, [], scaled_field_data)
             
             # Create list item
             item = QListWidgetItem(self.thumbnail_list)
@@ -526,11 +648,12 @@ class FormZoneDesigner(QMainWindow):
             self.image_display.set_image(page_pixmap, bbox, field_rects, field_data)
             
             # Set callback to update thumbnail when a rectangle is added
-            def on_rect_added_handler(rect, field_type, field_name):
-                self.page_field_data[self.current_page_idx].append((rect, field_type, field_name))
+            def on_rect_added_handler(field_obj):
+                self.page_field_data[self.current_page_idx].append(field_obj)
+                self.save_page_fields_to_json(self.current_page_idx)
                 self.update_thumbnail(self.current_page_idx)
                 self.undo_button.setEnabled(True)
-                logger.info(f"Page {self.current_page_idx + 1}: Added {field_type} '{field_name}' at {rect}")
+                logger.info(f"Page {self.current_page_idx + 1}: Added {field_obj.__class__.__name__} '{field_obj.name}' at ({field_obj.x}, {field_obj.y})")
             
             self.image_display.on_rect_added = on_rect_added_handler
             
@@ -553,6 +676,9 @@ class FormZoneDesigner(QMainWindow):
                 if self.image_display.field_data:
                     self.image_display.field_data.pop()
                 
+                # Save updated fields to JSON
+                self.save_page_fields_to_json(self.current_page_idx)
+                
                 self.image_display.update_display()
                 self.update_thumbnail(self.current_page_idx)
                 
@@ -567,6 +693,10 @@ class FormZoneDesigner(QMainWindow):
             self.page_field_data[self.current_page_idx].clear()
             self.image_display.field_rects.clear()
             self.image_display.field_data.clear()
+            
+            # Save updated (empty) fields to JSON
+            self.save_page_fields_to_json(self.current_page_idx)
+            
             self.image_display.update_display()
             self.update_thumbnail(self.current_page_idx)
             self.undo_button.setEnabled(False)
@@ -599,22 +729,24 @@ class FormZoneDesigner(QMainWindow):
                 bottom_right = (int(bbox[1][0] * scale_x), int(bbox[1][1] * scale_y))
                 scaled_bbox = (top_left, bottom_right)
             
-            # Scale field rectangles to thumbnail size
-            scaled_field_rects = []
-            if page_idx < len(self.page_field_rects):
+            # Scale field data to thumbnail size
+            scaled_field_data = []
+            if page_idx < len(self.page_field_data):
                 scale_x = thumbnail.width / page.width
                 scale_y = thumbnail.height / page.height
-                for rect in self.page_field_rects[page_idx]:
-                    scaled_rect = (
-                        int(rect[0] * scale_x),
-                        int(rect[1] * scale_y),
-                        int(rect[2] * scale_x),
-                        int(rect[3] * scale_y)
-                    )
-                    scaled_field_rects.append(scaled_rect)
+                for field in self.page_field_data[page_idx]:
+                    if isinstance(field, Field):
+                        # Create a scaled copy of the field for thumbnail
+                        field_dict = field.to_dict()
+                        field_dict['x'] = int(field.x * scale_x)
+                        field_dict['y'] = int(field.y * scale_y)
+                        field_dict['width'] = int(field.width * scale_x)
+                        field_dict['height'] = int(field.height * scale_y)
+                        scaled_field = Field.from_dict(field_dict)
+                        scaled_field_data.append(scaled_field)
             
             # Create custom thumbnail widget with overlay
-            thumbnail_widget = ThumbnailWidget(thumbnail_pixmap, scaled_bbox, scaled_field_rects)
+            thumbnail_widget = ThumbnailWidget(thumbnail_pixmap, scaled_bbox, [], scaled_field_data)
             
             # Update the existing list item
             item = self.thumbnail_list.item(page_idx)
