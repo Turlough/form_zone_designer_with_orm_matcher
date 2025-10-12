@@ -51,7 +51,13 @@ class Field:
         # Handle RadioGroup special case
         if field_type == 'RadioGroup' and 'radio_buttons' in data:
             radio_buttons_data = data.pop('radio_buttons', [])
-            radio_buttons = [RadioButton(**rb) for rb in radio_buttons_data]
+            radio_buttons = []
+            for rb_data in radio_buttons_data:
+                # Make a copy to avoid modifying the original
+                rb_dict = rb_data.copy()
+                # Remove _type if present, we know it's a RadioButton
+                rb_dict.pop('_type', None)
+                radio_buttons.append(RadioButton(**rb_dict))
             return field_class(radio_buttons=radio_buttons, **data)
         
         return field_class(**data)
@@ -92,6 +98,22 @@ class RadioGroup(Field):
     
     def remove_radio_button(self, radio_button: RadioButton):
         self.radio_buttons.remove(radio_button)
+    
+    def to_dict(self):
+        """Convert RadioGroup to dictionary with properly serialized radio buttons."""
+        data = {
+            '_type': self.__class__.__name__,
+            'colour': self.colour,
+            'name': self.name,
+            'x': self.x,
+            'y': self.y,
+            'width': self.width,
+            'height': self.height,
+            'label': self.label,
+            'value': self.value,
+            'radio_buttons': [rb.to_dict() for rb in self.radio_buttons]
+        }
+        return data
 
 
 @dataclass

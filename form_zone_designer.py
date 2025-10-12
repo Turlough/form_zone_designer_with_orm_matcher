@@ -144,6 +144,15 @@ class ThumbnailWidget(QWidget):
                     painter.setPen(pen)
                     painter.drawRect(field.x + self.margin, field.y + self.margin,
                                    field.width, field.height)
+                    
+                    # If this is a RadioGroup, also draw its RadioButtons
+                    if isinstance(field, RadioGroup):
+                        for radio_button in field.radio_buttons:
+                            rb_color = QColor(*radio_button.colour)
+                            rb_pen = QPen(rb_color, 1)
+                            painter.setPen(rb_pen)
+                            painter.drawRect(radio_button.x + self.margin, radio_button.y + self.margin,
+                                           radio_button.width, radio_button.height)
         elif self.field_rects:
             # Fallback to red if no field data available
             pen = QPen(QColor(255, 0, 0), 1)
@@ -195,6 +204,34 @@ class ImageDisplayWidget(QLabel):
         self.start_point = None
         self.current_point = None
         self.update_display()
+    
+    def find_radio_buttons_in_group(self, radio_group):
+        """Find all RadioButton fields within the RadioGroup's bounds and add them to the group."""
+        if not isinstance(radio_group, RadioGroup):
+            return
+        
+        radio_buttons_to_remove = []
+        
+        # Iterate through all fields to find RadioButtons within the group's bounds
+        for i, field in enumerate(self.field_data):
+            if isinstance(field, RadioButton):
+                # Check if the RadioButton is within the RadioGroup's bounds
+                # RadioButton center point
+                rb_center_x = field.x + field.width // 2
+                rb_center_y = field.y + field.height // 2
+                
+                # Check if center is within RadioGroup bounds
+                if (radio_group.x <= rb_center_x <= radio_group.x + radio_group.width and
+                    radio_group.y <= rb_center_y <= radio_group.y + radio_group.height):
+                    radio_group.add_radio_button(field)
+                    radio_buttons_to_remove.append(i)
+                    logger.info(f"Added RadioButton '{field.name}' to RadioGroup '{radio_group.name}'")
+        
+        # Remove RadioButtons from the main field list (in reverse order to maintain indices)
+        for i in reversed(radio_buttons_to_remove):
+            self.field_data.pop(i)
+            if i < len(self.field_rects):
+                self.field_rects.pop(i)
     
     def update_display(self):
         """Redraw the image with bounding box overlay, scaled to fit."""
@@ -262,6 +299,27 @@ class ImageDisplayWidget(QLabel):
                             int(field.height * self.scale_y)
                         )
                         painter.drawRect(scaled_rect)
+                        
+                        # If this is a RadioGroup, also draw its RadioButtons
+                        if isinstance(field, RadioGroup):
+                            for radio_button in field.radio_buttons:
+                                rb_color = QColor(*radio_button.colour)
+                                rb_pen = QPen(rb_color, 1)
+                                painter.setPen(rb_pen)
+                                
+                                rb_abs_x = radio_button.x
+                                rb_abs_y = radio_button.y
+                                if self.bbox:
+                                    rb_abs_x += logo_top_left[0]
+                                    rb_abs_y += logo_top_left[1]
+                                
+                                rb_scaled_rect = QRect(
+                                    int(rb_abs_x * self.scale_x),
+                                    int(rb_abs_y * self.scale_y),
+                                    int(radio_button.width * self.scale_x),
+                                    int(radio_button.height * self.scale_y)
+                                )
+                                painter.drawRect(rb_scaled_rect)
             elif self.field_rects:
                 # Fallback to red if no field data available
                 pen = QPen(QColor(255, 0, 0), 1)
@@ -384,6 +442,10 @@ class ImageDisplayWidget(QLabel):
                         self.field_data.append(field_obj)
                         logger.info(f"Converted detected rectangle to {field_type} field '{field_name}'")
                         
+                        # If RadioGroup, find and add all RadioButtons within its bounds
+                        if field_type == 'RadioGroup':
+                            self.find_radio_buttons_in_group(field_obj)
+                        
                         # Notify parent via callback
                         if self.on_rect_added:
                             self.on_rect_added(field_obj)
@@ -475,6 +537,10 @@ class ImageDisplayWidget(QLabel):
                     self.field_rects.append(new_rect)
                     self.field_data.append(field_obj)
                     logger.info(f"Added {field_type} field '{field_name}': {new_rect}")
+                    
+                    # If RadioGroup, find and add all RadioButtons within its bounds
+                    if field_type == 'RadioGroup':
+                        self.find_radio_buttons_in_group(field_obj)
                     
                     # Notify parent via callback
                     if self.on_rect_added:
