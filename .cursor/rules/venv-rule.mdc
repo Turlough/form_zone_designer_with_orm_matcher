@@ -1,0 +1,5 @@
+---
+When working with Python projects, always check for and activate a virtual environment (.venv or venv) before running pip install commands. If no virtual environment is found, remind the user to create one first with: python -m venv .venv
+
+alwaysApply: true
+---

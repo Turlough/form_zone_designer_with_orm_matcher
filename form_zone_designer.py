@@ -4,7 +4,8 @@ import cv2
 import numpy as np
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QListWidget, QListWidgetItem, QLabel, QScrollArea, QPushButton
+    QListWidget, QListWidgetItem, QLabel, QScrollArea, QPushButton,
+    QDialog, QRadioButton, QButtonGroup, QLineEdit, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, QSize, QPoint, QRect
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent
@@ -15,6 +16,83 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class FieldConfigDialog(QDialog):
+    """Dialog to configure field type and name after drawing a rectangle."""
+    
+    def __init__(self, parent=None, cursor_pos=None):
+        super().__init__(parent)
+        self.setWindowTitle("Configure Field")
+        self.setModal(True)
+        
+        # Position dialog near cursor if provided
+        if cursor_pos:
+            # Offset slightly so cursor doesn't cover the dialog
+            self.move(cursor_pos.x() + 10, cursor_pos.y() + 10)
+        
+        # Main layout
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # Radio buttons for field type
+        type_label = QLabel("Field Type:")
+        layout.addWidget(type_label)
+        
+        self.button_group = QButtonGroup(self)
+        
+        self.field_radio = QRadioButton("Field")
+        self.tickbox_radio = QRadioButton("Tickbox")
+        self.radiobutton_radio = QRadioButton("RadioButton")
+        self.radiogroup_radio = QRadioButton("RadioGroup")
+        self.textfield_radio = QRadioButton("TextField")
+        
+        # Set default selection
+        self.field_radio.setChecked(True)
+        
+        # Add to button group and layout
+        self.button_group.addButton(self.field_radio, 0)
+        self.button_group.addButton(self.tickbox_radio, 1)
+        self.button_group.addButton(self.radiobutton_radio, 2)
+        self.button_group.addButton(self.radiogroup_radio, 3)
+        self.button_group.addButton(self.textfield_radio, 4)
+        
+        layout.addWidget(self.field_radio)
+        layout.addWidget(self.tickbox_radio)
+        layout.addWidget(self.radiobutton_radio)
+        layout.addWidget(self.radiogroup_radio)
+        layout.addWidget(self.textfield_radio)
+        
+        # Text input for field name
+        name_label = QLabel("Field Name:")
+        layout.addWidget(name_label)
+        
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Enter field name...")
+        layout.addWidget(self.name_input)
+        
+        # Dialog buttons (OK/Cancel)
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+        
+        # Set focus to name input
+        self.name_input.setFocus()
+    
+    def get_field_type(self):
+        """Return the selected field type as a string."""
+        button_id = self.button_group.checkedId()
+        field_types = ["Field", "Tickbox", "RadioButton", "RadioGroup", "TextField"]
+        if 0 <= button_id < len(field_types):
+            return field_types[button_id]
+        return "Field"
+    
+    def get_field_name(self):
+        """Return the field name entered by the user."""
+        return self.name_input.text().strip() or "Unnamed"
 
 
 class ThumbnailWidget(QWidget):
@@ -72,6 +150,7 @@ class ImageDisplayWidget(QLabel):
         self.base_pixmap = None
         self.bbox = None
         self.field_rects = []  # List of field rectangles for current page
+        self.field_data = []  # List of (rect, field_type, field_name) tuples
         self.parent_scroll_area = parent
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setStyleSheet("QLabel { background-color: #2b2b2b; }")
@@ -90,11 +169,12 @@ class ImageDisplayWidget(QLabel):
         # Callback for when a rectangle is added
         self.on_rect_added = None
     
-    def set_image(self, pixmap, bbox=None, field_rects=None):
+    def set_image(self, pixmap, bbox=None, field_rects=None, field_data=None):
         """Set the image, bounding box, and field rectangles to display."""
         self.base_pixmap = pixmap
         self.bbox = bbox
         self.field_rects = field_rects or []
+        self.field_data = field_data or []
         self.is_drawing = False
         self.start_point = None
         self.current_point = None
@@ -203,12 +283,23 @@ class ImageDisplayWidget(QLabel):
             # Only add rectangle if it has some size
             if width > 5 and height > 5:
                 new_rect = (int(left), int(top), int(width), int(height))
-                self.field_rects.append(new_rect)
-                logger.info(f"Added field rectangle: {new_rect}")
                 
-                # Notify parent via callback
-                if self.on_rect_added:
-                    self.on_rect_added(new_rect)
+                # Show dialog to configure field
+                dialog = FieldConfigDialog(self.window(), event.globalPosition().toPoint())
+                if dialog.exec() == QDialog.DialogCode.Accepted:
+                    field_type = dialog.get_field_type()
+                    field_name = dialog.get_field_name()
+                    
+                    # Add rectangle and field data
+                    self.field_rects.append(new_rect)
+                    self.field_data.append((new_rect, field_type, field_name))
+                    logger.info(f"Added {field_type} field '{field_name}': {new_rect}")
+                    
+                    # Notify parent via callback
+                    if self.on_rect_added:
+                        self.on_rect_added(new_rect, field_type, field_name)
+                else:
+                    logger.info("Field creation cancelled")
             
             self.start_point = None
             self.current_point = None
@@ -245,6 +336,7 @@ class FormZoneDesigner(QMainWindow):
         self.pages = []  # List of PIL Images
         self.page_bboxes = []  # List of (top_left, bottom_right) tuples for logos
         self.page_field_rects = []  # List of lists of field rectangles for each page
+        self.page_field_data = []  # List of lists of (rect, field_type, field_name) for each page
         self.current_page_idx = None  # Track currently displayed page
         
         # Initialize UI
@@ -334,6 +426,7 @@ class FormZoneDesigner(QMainWindow):
             logger.warning("No matcher available, skipping logo detection")
             self.page_bboxes = [None] * len(self.pages)
             self.page_field_rects = [[] for _ in range(len(self.pages))]
+            self.page_field_data = [[] for _ in range(len(self.pages))]
             return
         
         for idx, page in enumerate(self.pages):
@@ -352,8 +445,9 @@ class FormZoneDesigner(QMainWindow):
                 self.page_bboxes.append(None)
                 logger.warning(f"Page {idx + 1}: No logo found")
             
-            # Initialize empty field rectangles for this page
+            # Initialize empty field rectangles and data for this page
             self.page_field_rects.append([])
+            self.page_field_data.append([])
     
     def generate_thumbnails(self):
         """Generate thumbnails for each page and add them to the list."""
@@ -418,6 +512,7 @@ class FormZoneDesigner(QMainWindow):
             page = self.pages[page_idx]
             bbox = self.page_bboxes[page_idx]
             field_rects = self.page_field_rects[page_idx]
+            field_data = self.page_field_data[page_idx]
             
             # Convert PIL Image to QPixmap
             page_array = np.array(page)
@@ -428,12 +523,14 @@ class FormZoneDesigner(QMainWindow):
             page_pixmap = QPixmap.fromImage(q_image)
             
             # Display with bounding box overlay and field rectangles
-            self.image_display.set_image(page_pixmap, bbox, field_rects)
+            self.image_display.set_image(page_pixmap, bbox, field_rects, field_data)
             
             # Set callback to update thumbnail when a rectangle is added
-            def on_rect_added_handler(rect):
+            def on_rect_added_handler(rect, field_type, field_name):
+                self.page_field_data[self.current_page_idx].append((rect, field_type, field_name))
                 self.update_thumbnail(self.current_page_idx)
                 self.undo_button.setEnabled(True)
+                logger.info(f"Page {self.current_page_idx + 1}: Added {field_type} '{field_name}' at {rect}")
             
             self.image_display.on_rect_added = on_rect_added_handler
             
@@ -446,9 +543,18 @@ class FormZoneDesigner(QMainWindow):
         if self.current_page_idx is not None and 0 <= self.current_page_idx < len(self.page_field_rects):
             if self.page_field_rects[self.current_page_idx]:
                 removed = self.page_field_rects[self.current_page_idx].pop()
+                if self.page_field_data[self.current_page_idx]:
+                    removed_data = self.page_field_data[self.current_page_idx].pop()
+                    logger.info(f"Removed last field on page {self.current_page_idx + 1}: {removed_data}")
+                
+                # Update image display
+                if self.image_display.field_rects:
+                    self.image_display.field_rects.pop()
+                if self.image_display.field_data:
+                    self.image_display.field_data.pop()
+                
                 self.image_display.update_display()
                 self.update_thumbnail(self.current_page_idx)
-                logger.info(f"Removed last field rectangle on page {self.current_page_idx + 1}: {removed}")
                 
                 # Disable undo button if no more rectangles
                 if not self.page_field_rects[self.current_page_idx]:
@@ -458,11 +564,13 @@ class FormZoneDesigner(QMainWindow):
         """Clear all field rectangles on the current page."""
         if self.current_page_idx is not None and 0 <= self.current_page_idx < len(self.page_field_rects):
             self.page_field_rects[self.current_page_idx].clear()
+            self.page_field_data[self.current_page_idx].clear()
             self.image_display.field_rects.clear()
+            self.image_display.field_data.clear()
             self.image_display.update_display()
             self.update_thumbnail(self.current_page_idx)
             self.undo_button.setEnabled(False)
-            logger.info(f"Cleared field rectangles on page {self.current_page_idx + 1}")
+            logger.info(f"Cleared all fields on page {self.current_page_idx + 1}")
     
     def update_thumbnail(self, page_idx):
         """Update the thumbnail for a specific page to reflect current field rectangles."""
