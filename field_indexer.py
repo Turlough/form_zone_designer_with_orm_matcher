@@ -761,7 +761,7 @@ class FieldIndexerWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     window = FieldIndexerWindow()
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec())
 
 
