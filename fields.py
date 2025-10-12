@@ -18,7 +18,7 @@ class Field:
         self.label = self.label or "Field"
         self.value = self.value or False
         self.name = self.name or "Field"
-        self.colour = self.colour or (255, 0, 0)
+        self.colour = (255, 0, 0)
     
     def __str__(self):
         return f"{self.name} ({self.x}, {self.y}, {self.width}, {self.height})"
@@ -64,7 +64,7 @@ class Tickbox(Field):
     def __post_init__(self):
         super().__post_init__()
         self.value = self.value or False
-        self.colour = self.colour or (0, 255, 0)
+        self.colour = (0, 255, 0)
 
 
 @dataclass
@@ -73,7 +73,7 @@ class RadioButton(Tickbox):
     
     def __post_init__(self):
         super().__post_init__()
-        self.colour = self.colour or (150, 255, 0)
+        self.colour = (150, 255, 0)
 
 
 @dataclass
@@ -85,7 +85,7 @@ class RadioGroup(Field):
         super().__post_init__()
         self.value = self.value or ""
         self.radio_buttons = self.radio_buttons or []
-        self.colour = self.colour or (150, 255, 0)
+        self.colour = (150, 255, 0)
 
     def add_radio_button(self, radio_button: RadioButton):
         self.radio_buttons.append(radio_button)
@@ -101,7 +101,7 @@ class TextField(Field):
     def __post_init__(self):
         super().__post_init__()
         self.value = self.value or ""
-        self.colour = self.colour or (0, 255, 255)
+        self.colour = (0, 255, 255)
     
 
 
