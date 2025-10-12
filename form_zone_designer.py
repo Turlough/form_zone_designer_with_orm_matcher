@@ -14,6 +14,7 @@ from PIL import Image
 from dotenv import load_dotenv
 from orm_matcher import ORMMatcher
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
+from rectangle_detector import detect_rectangles_multi_method
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -164,6 +165,7 @@ class ImageDisplayWidget(QLabel):
         self.bbox = None
         self.field_rects = []  # List of field rectangles for current page
         self.field_data = []  # List of (rect, field_type, field_name) tuples
+        self.detected_rects = []  # List of detected rectangles (not yet converted to fields)
         self.parent_scroll_area = parent
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setStyleSheet("QLabel { background-color: #2b2b2b; }")
@@ -182,12 +184,13 @@ class ImageDisplayWidget(QLabel):
         # Callback for when a rectangle is added
         self.on_rect_added = None
     
-    def set_image(self, pixmap, bbox=None, field_rects=None, field_data=None):
+    def set_image(self, pixmap, bbox=None, field_rects=None, field_data=None, detected_rects=None):
         """Set the image, bounding box, and field rectangles to display."""
         self.base_pixmap = pixmap
         self.bbox = bbox
         self.field_rects = field_rects or []
         self.field_data = field_data or []
+        self.detected_rects = detected_rects or []
         self.is_drawing = False
         self.start_point = None
         self.current_point = None
@@ -281,6 +284,25 @@ class ImageDisplayWidget(QLabel):
                         )
                         painter.drawRect(scaled_rect)
             
+            # Draw detected rectangles (red)
+            if self.detected_rects:
+                pen = QPen(QColor(255, 0, 0), 2)  # Red pen with 2px width
+                painter.setPen(pen)
+                for rect in self.detected_rects:
+                    if rect:
+                        # Detected rectangles are in absolute image coordinates
+                        abs_x = rect[0]
+                        abs_y = rect[1]
+                        
+                        # Scale to display coordinates
+                        scaled_rect = QRect(
+                            int(abs_x * self.scale_x),
+                            int(abs_y * self.scale_y),
+                            int(rect[2] * self.scale_x),
+                            int(rect[3] * self.scale_y)
+                        )
+                        painter.drawRect(scaled_rect)
+            
             # Draw current rectangle being drawn (blue)
             if self.is_drawing and self.start_point and self.current_point:
                 pen = QPen(QColor(0, 150, 255), 3)  # Blue pen with 3px width
@@ -295,8 +317,80 @@ class ImageDisplayWidget(QLabel):
             self.setPixmap(display_pixmap)
     
     def mousePressEvent(self, event: QMouseEvent):
-        """Handle mouse press to start drawing a rectangle."""
-        if event.button() == Qt.MouseButton.LeftButton and self.base_pixmap:
+        """Handle mouse press to start drawing a rectangle or right-click on detected rect."""
+        if event.button() == Qt.MouseButton.RightButton and self.base_pixmap:
+            # Check if right-clicked on a detected rectangle
+            click_x = (event.pos().x() - self.image_offset_x) / self.scale_x
+            click_y = (event.pos().y() - self.image_offset_y) / self.scale_y
+            
+            # Find the detected rectangle that was clicked
+            for i, rect in enumerate(self.detected_rects):
+                x, y, w, h = rect
+                if x <= click_x <= x + w and y <= click_y <= y + h:
+                    # Show dialog to configure field
+                    dialog = FieldConfigDialog(self.window(), event.globalPosition().toPoint())
+                    if dialog.exec() == QDialog.DialogCode.Accepted:
+                        field_type = dialog.get_field_type()
+                        field_name = dialog.get_field_name()
+                        
+                        # Make coordinates relative to fiducial/logo bounding box if available
+                        rel_x = x
+                        rel_y = y
+                        if self.bbox:
+                            logo_top_left = self.bbox[0]
+                            rel_x = x - logo_top_left[0]
+                            rel_y = y - logo_top_left[1]
+                        
+                        # Create appropriate Field object based on type
+                        field_classes = {
+                            'Field': Field,
+                            'Tickbox': Tickbox,
+                            'RadioButton': RadioButton,
+                            'RadioGroup': RadioGroup,
+                            'TextField': TextField
+                        }
+                        
+                        field_class = field_classes.get(field_type, Field)
+                        
+                        # Create field object with default parameters
+                        if field_type == 'RadioGroup':
+                            field_obj = field_class(
+                                name=field_name,
+                                x=int(rel_x),
+                                y=int(rel_y),
+                                width=int(w),
+                                height=int(h),
+                                label=field_name,
+                                value="",
+                                radio_buttons=[],
+                                colour=None
+                            )
+                        else:
+                            field_obj = field_class(
+                                name=field_name,
+                                x=int(rel_x),
+                                y=int(rel_y),
+                                width=int(w),
+                                height=int(h),
+                                label=field_name,
+                                value=False if field_type in ['Tickbox', 'RadioButton'] else "",
+                                colour=None
+                            )
+                        
+                        # Remove from detected rectangles and add to fields
+                        self.detected_rects.pop(i)
+                        new_rect = (int(rel_x), int(rel_y), int(w), int(h))
+                        self.field_rects.append(new_rect)
+                        self.field_data.append(field_obj)
+                        logger.info(f"Converted detected rectangle to {field_type} field '{field_name}'")
+                        
+                        # Notify parent via callback
+                        if self.on_rect_added:
+                            self.on_rect_added(field_obj)
+                        
+                        self.update_display()
+                    break
+        elif event.button() == Qt.MouseButton.LeftButton and self.base_pixmap:
             self.is_drawing = True
             self.start_point = event.pos()
             self.current_point = event.pos()
@@ -430,6 +524,7 @@ class FormZoneDesigner(QMainWindow):
         self.page_bboxes = []  # List of (top_left, bottom_right) tuples for logos
         self.page_field_rects = []  # List of lists of field rectangles for each page
         self.page_field_data = []  # List of lists of (rect, field_type, field_name) for each page
+        self.page_detected_rects = []  # List of lists of detected rectangles for each page
         self.current_page_idx = None  # Track currently displayed page
         
         # Initialize UI
@@ -463,6 +558,12 @@ class FormZoneDesigner(QMainWindow):
         
         # Control buttons
         button_layout = QHBoxLayout()
+        
+        self.detect_button = QPushButton("Detect Rectangles")
+        self.detect_button.clicked.connect(self.detect_rectangles)
+        self.detect_button.setEnabled(False)
+        button_layout.addWidget(self.detect_button)
+        
         self.undo_button = QPushButton("Undo Last Field")
         self.undo_button.clicked.connect(self.undo_last_field)
         self.undo_button.setEnabled(False)
@@ -562,6 +663,7 @@ class FormZoneDesigner(QMainWindow):
             self.page_bboxes = [None] * len(self.pages)
             self.page_field_rects = [[] for _ in range(len(self.pages))]
             self.page_field_data = [[] for _ in range(len(self.pages))]
+            self.page_detected_rects = [[] for _ in range(len(self.pages))]
             return
         
         for idx, page in enumerate(self.pages):
@@ -583,6 +685,7 @@ class FormZoneDesigner(QMainWindow):
             # Initialize empty field rectangles and data for this page
             self.page_field_rects.append([])
             self.page_field_data.append([])
+            self.page_detected_rects.append([])
         
         # Load fields from JSON for each page
         for idx in range(len(self.pages)):
@@ -665,6 +768,7 @@ class FormZoneDesigner(QMainWindow):
             bbox = self.page_bboxes[page_idx]
             field_rects = self.page_field_rects[page_idx]
             field_data = self.page_field_data[page_idx]
+            detected_rects = self.page_detected_rects[page_idx]
             
             # Convert PIL Image to QPixmap
             page_array = np.array(page)
@@ -675,7 +779,7 @@ class FormZoneDesigner(QMainWindow):
             page_pixmap = QPixmap.fromImage(q_image)
             
             # Display with bounding box overlay and field rectangles
-            self.image_display.set_image(page_pixmap, bbox, field_rects, field_data)
+            self.image_display.set_image(page_pixmap, bbox, field_rects, field_data, detected_rects)
             
             # Set callback to update thumbnail when a rectangle is added
             def on_rect_added_handler(field_obj):
@@ -688,6 +792,7 @@ class FormZoneDesigner(QMainWindow):
             self.image_display.on_rect_added = on_rect_added_handler
             
             # Enable/disable buttons based on current state
+            self.detect_button.setEnabled(True)
             self.clear_button.setEnabled(True)
             self.undo_button.setEnabled(len(field_rects) > 0)
     
@@ -731,6 +836,35 @@ class FormZoneDesigner(QMainWindow):
             self.update_thumbnail(self.current_page_idx)
             self.undo_button.setEnabled(False)
             logger.info(f"Cleared all fields on page {self.current_page_idx + 1}")
+    
+    def detect_rectangles(self):
+        """Detect rectangles on the current page using computer vision."""
+        if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.pages)):
+            logger.warning("No page selected for rectangle detection")
+            return
+        
+        page = self.pages[self.current_page_idx]
+        
+        # Convert PIL Image to OpenCV format
+        page_array = np.array(page)
+        page_cv = cv2.cvtColor(page_array, cv2.COLOR_RGB2BGR)
+        
+        # Run rectangle detection
+        logger.info(f"Detecting rectangles on page {self.current_page_idx + 1}...")
+        detected_rects = detect_rectangles_multi_method(page_cv, min_area=500, max_area=50000)
+        
+        # Store detected rectangles
+        self.page_detected_rects[self.current_page_idx] = detected_rects
+        self.image_display.detected_rects = detected_rects
+        
+        logger.info(f"Detected {len(detected_rects)} rectangles on page {self.current_page_idx + 1}")
+        
+        # Update display to show detected rectangles
+        self.image_display.update_display()
+        
+        # Show info message
+        if detected_rects:
+            logger.info(f"Right-click on a detected rectangle (shown in red) to convert it to a field")
     
     def update_thumbnail(self, page_idx):
         """Update the thumbnail for a specific page to reflect current field rectangles."""
