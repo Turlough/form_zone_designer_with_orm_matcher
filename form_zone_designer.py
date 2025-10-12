@@ -134,6 +134,7 @@ class ThumbnailWidget(QWidget):
                            bottom_right[1] - top_left[1])
         
         # Draw field rectangles with colors from field data
+        # Note: Field coordinates are already scaled and include logo offset for thumbnails
         if self.field_data:
             for field in self.field_data:
                 if isinstance(field, Field):
@@ -242,10 +243,18 @@ class ImageDisplayWidget(QLabel):
                         pen = QPen(color, 1)  # 1px width as requested
                         painter.setPen(pen)
                         
-                        # rect is in original image coordinates: (x, y, width, height)
+                        # Field coordinates are relative to logo, convert to absolute image coordinates
+                        abs_x = field.x
+                        abs_y = field.y
+                        if self.bbox:
+                            logo_top_left = self.bbox[0]
+                            abs_x += logo_top_left[0]
+                            abs_y += logo_top_left[1]
+                        
+                        # Scale to display coordinates
                         scaled_rect = QRect(
-                            int(field.x * self.scale_x),
-                            int(field.y * self.scale_y),
+                            int(abs_x * self.scale_x),
+                            int(abs_y * self.scale_y),
                             int(field.width * self.scale_x),
                             int(field.height * self.scale_y)
                         )
@@ -256,9 +265,17 @@ class ImageDisplayWidget(QLabel):
                 painter.setPen(pen)
                 for rect in self.field_rects:
                     if rect:
+                        # Field coordinates are relative to logo, convert to absolute
+                        abs_x = rect[0]
+                        abs_y = rect[1]
+                        if self.bbox:
+                            logo_top_left = self.bbox[0]
+                            abs_x += logo_top_left[0]
+                            abs_y += logo_top_left[1]
+                        
                         scaled_rect = QRect(
-                            int(rect[0] * self.scale_x),
-                            int(rect[1] * self.scale_y),
+                            int(abs_x * self.scale_x),
+                            int(abs_y * self.scale_y),
                             int(rect[2] * self.scale_x),
                             int(rect[3] * self.scale_y)
                         )
@@ -307,6 +324,12 @@ class ImageDisplayWidget(QLabel):
             top = min(y1, y2)
             width = abs(x2 - x1)
             height = abs(y2 - y1)
+            
+            # Make coordinates relative to fiducial/logo bounding box if available
+            if self.bbox:
+                logo_top_left = self.bbox[0]
+                left = left - logo_top_left[0]
+                top = top - logo_top_left[1]
             
             # Only add rectangle if it has some size
             if width > 5 and height > 5:
@@ -603,9 +626,16 @@ class FormZoneDesigner(QMainWindow):
                 for field in self.page_field_data[idx]:
                     if isinstance(field, Field):
                         # Create a scaled copy of the field for thumbnail
+                        # Field coordinates are relative to logo, convert to absolute first
+                        abs_x = field.x
+                        abs_y = field.y
+                        if bbox:
+                            abs_x += bbox[0][0]
+                            abs_y += bbox[0][1]
+                        
                         field_dict = field.to_dict()
-                        field_dict['x'] = int(field.x * scale_x)
-                        field_dict['y'] = int(field.y * scale_y)
+                        field_dict['x'] = int(abs_x * scale_x)
+                        field_dict['y'] = int(abs_y * scale_y)
                         field_dict['width'] = int(field.width * scale_x)
                         field_dict['height'] = int(field.height * scale_y)
                         scaled_field = Field.from_dict(field_dict)
@@ -737,9 +767,16 @@ class FormZoneDesigner(QMainWindow):
                 for field in self.page_field_data[page_idx]:
                     if isinstance(field, Field):
                         # Create a scaled copy of the field for thumbnail
+                        # Field coordinates are relative to logo, convert to absolute first
+                        abs_x = field.x
+                        abs_y = field.y
+                        if bbox:
+                            abs_x += bbox[0][0]
+                            abs_y += bbox[0][1]
+                        
                         field_dict = field.to_dict()
-                        field_dict['x'] = int(field.x * scale_x)
-                        field_dict['y'] = int(field.y * scale_y)
+                        field_dict['x'] = int(abs_x * scale_x)
+                        field_dict['y'] = int(abs_y * scale_y)
                         field_dict['width'] = int(field.width * scale_x)
                         field_dict['height'] = int(field.height * scale_y)
                         scaled_field = Field.from_dict(field_dict)
