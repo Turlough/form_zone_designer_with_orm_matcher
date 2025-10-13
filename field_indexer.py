@@ -317,6 +317,10 @@ class ImageLabel(QLabel):
                         int(rb.width * self.scale_x),
                         int(rb.height * self.scale_y)
                     )
+                    
+                    # Use thicker border if selected
+                    rb_pen = QPen(color, 3 if rb.value else 1)
+                    painter.setPen(rb_pen)
                     painter.drawRect(rb_scaled_rect)
                     
                     # Fill if selected
@@ -327,7 +331,15 @@ class ImageLabel(QLabel):
             
             elif isinstance(field, (Tickbox, TextField)):
                 color = QColor(*field.colour) if field.colour else QColor(0, 255, 0)
-                pen = QPen(color, 1)
+                
+                # Use thicker border if tickbox is checked or textfield has text
+                border_width = 1
+                if isinstance(field, Tickbox) and field.value:
+                    border_width = 3
+                elif isinstance(field, TextField) and field.value:
+                    border_width = 3
+                
+                pen = QPen(color, border_width)
                 painter.setPen(pen)
                 
                 abs_x = field.x + logo_offset[0]
@@ -347,9 +359,15 @@ class ImageLabel(QLabel):
                     fill_color.setAlpha(100)
                     painter.fillRect(scaled_rect, fill_color)
                 
-                # Show text for TextField
+                # Fill and show text for TextField
                 if isinstance(field, TextField) and field.value:
-                    painter.setPen(QColor(255, 255, 0))
+                    # Fill with semitransparent color
+                    fill_color = QColor(*field.colour) if field.colour else QColor(0, 255, 0)
+                    fill_color.setAlpha(100)
+                    painter.fillRect(scaled_rect, fill_color)
+                    
+                    # Draw text below the field
+                    painter.setPen(QColor(*field.colour))
                     font = QFont()
                     font.setPointSize(8)
                     painter.setFont(font)
