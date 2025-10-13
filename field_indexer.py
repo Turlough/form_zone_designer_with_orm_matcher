@@ -499,10 +499,11 @@ class FieldIndexerWindow(QMainWindow):
     
     def load_import_file(self):
         """Load the import CSV/TXT file."""
+        import_folder = os.getenv('IMPORT_FOLDER', './default/folder/for/importing/filelist')
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Import File",
-            "",
+            import_folder,
             "Text Files (*.txt *.csv);;All Files (*)"
         )
         
@@ -682,7 +683,7 @@ class FieldIndexerWindow(QMainWindow):
             elif isinstance(field, Tickbox):
                 value = self.csv_manager.get_field_value(self.current_tiff_index, field.name)
                 if value:
-                    field.value = value.lower() in ['true', '1', 'yes', 'checked']
+                    field.value = value.lower() in ['true', '1', 'yes', 'checked', 'ticked', 'tick']
             
             elif isinstance(field, TextField):
                 value = self.csv_manager.get_field_value(self.current_tiff_index, field.name)
@@ -711,7 +712,7 @@ class FieldIndexerWindow(QMainWindow):
             self.csv_manager.set_field_value(
                 self.current_tiff_index,
                 field.name,
-                'True' if field.value else 'False'
+                'Ticked' if field.value else ''
             )
             self.csv_manager.save_csv()
             
