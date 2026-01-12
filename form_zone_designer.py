@@ -10,8 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QPixmap, QImage
 from PIL import Image
 from dotenv import load_dotenv
-from orm_matcher import ORMMatcher
-from fields import Field
+from util import ORMMatcher
 from util import detect_rectangles, load_page_fields, save_page_fields
 import logging
 
@@ -254,13 +253,14 @@ class FormZoneDesigner(QMainWindow):
             self.image_display.update_display()
             self.update_thumbnail(self.current_page_idx)
             self.undo_button.setEnabled(False)
-            logger.info(f"Cleared all fields on page {self.current_page_idx + 1}")
+            logger.debug(f"Cleared all fields on page {self.current_page_idx + 1}")
     
     def detect_rectangles(self):
         """Detect rectangles on the current page using computer vision."""
         if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.pages)):
             logger.warning("No page selected for rectangle detection")
             return
+
         logger.debug(f"Detecting rectangles on page {self.current_page_idx + 1}...")
         page = self.pages[self.current_page_idx]
         
