@@ -14,7 +14,7 @@ from PIL import Image
 from dotenv import load_dotenv
 from orm_matcher import ORMMatcher
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
-from rectangle_detector import detect_rectangles_multi_method
+from util import detect_rectangles
 import logging
 
 from ui import FieldConfigDialog, ImageDisplayWidget, DesignerThumbnailPanel
@@ -172,7 +172,7 @@ class FormZoneDesigner(QMainWindow):
                     except EOFError:
                         break
             
-            print(f"Loaded {len(self.pages)} pages from {tiff_path}")
+            logger.debug(f"Loaded {len(self.pages)} pages from {tiff_path}")
             
             # Process each page with ORM matcher
             self.process_pages()
@@ -305,7 +305,7 @@ class FormZoneDesigner(QMainWindow):
         if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.pages)):
             logger.warning("No page selected for rectangle detection")
             return
-        
+        logger.debug(f"Detecting rectangles on page {self.current_page_idx + 1}...")
         page = self.pages[self.current_page_idx]
         
         # Convert PIL Image to OpenCV format
@@ -313,21 +313,18 @@ class FormZoneDesigner(QMainWindow):
         page_cv = cv2.cvtColor(page_array, cv2.COLOR_RGB2BGR)
         
         # Run rectangle detection
-        logger.info(f"Detecting rectangles on page {self.current_page_idx + 1}...")
-        detected_rects = detect_rectangles_multi_method(page_cv, min_area=500, max_area=50000)
+        
+        detected_rects = detect_rectangles(page_cv, min_area=500, max_area=50000)
         
         # Store detected rectangles
         self.page_detected_rects[self.current_page_idx] = detected_rects
         self.image_display.detected_rects = detected_rects
         
-        logger.info(f"Detected {len(detected_rects)} rectangles on page {self.current_page_idx + 1}")
+        logger.debug(f"Detected {len(detected_rects)} rectangles on page {self.current_page_idx + 1}")
         
         # Update display to show detected rectangles
         self.image_display.update_display()
         
-        # Show info message
-        if detected_rects:
-            logger.info(f"Right-click on a detected rectangle (shown in red) to convert it to a field")
     
     def update_thumbnail(self, page_idx):
         """Update the thumbnail for a specific page to reflect current field rectangles."""

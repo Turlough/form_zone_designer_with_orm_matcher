@@ -1,0 +1,1 @@
+from .rectangle_detector import detect_rectangles_multi_method as detect_rectangles
