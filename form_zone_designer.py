@@ -2,15 +2,16 @@ import sys
 import os
 import cv2
 import numpy as np
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QScrollArea, QPushButton,
+    QScrollArea, QPushButton, QFileDialog, QMessageBox,
 )
 
-from PyQt6.QtGui import QPixmap, QImage
+from PyQt6.QtGui import QPixmap, QImage, QAction
 from PIL import Image
 from dotenv import load_dotenv
-from util import ORMMatcher
+from util import ORMMatcher, DesignerConfig
 from util import detect_rectangles, load_page_fields, save_page_fields
 import logging
 
@@ -28,23 +29,12 @@ class FormZoneDesigner(QMainWindow):
         self.setWindowTitle("Form Zone Designer")
         self.setGeometry(100, 100, 1200, 800)
         
-        # Load environment variables
+        # Load environment variables for default folder location
         load_dotenv()
-        self.logo_path = os.getenv('LOGO_PATH')
-        self.tiff_path = os.getenv('MULTIPAGE_TIFF')
-        self.json_folder = os.getenv('JSON_FOLDER', './json_data')
+        self.default_config_folder = os.getenv('DESIGNER_CONFIG_FOLDER', '')
         
-        # Create JSON folder if it doesn't exist
-        if not os.path.exists(self.json_folder):
-            os.makedirs(self.json_folder)
-            logger.info(f"Created JSON folder: {self.json_folder}")
-        
-        # Initialize ORM matcher
-        if self.logo_path and os.path.exists(self.logo_path):
-            self.matcher = ORMMatcher(self.logo_path)
-        else:
-            self.matcher = None
-            print(f"Warning: Logo path not found or not set: {self.logo_path}")
+        # DesignerConfig instance (set when user loads a config folder)
+        self.config = None
         
         # Storage for pages and their bounding boxes
         self.pages = []  # List of PIL Images
@@ -54,17 +44,23 @@ class FormZoneDesigner(QMainWindow):
         self.page_detected_rects = []  # List of lists of detected rectangles for each page
         self.current_page_idx = None  # Track currently displayed page
         
+        # ORM matcher (initialized when config is loaded)
+        self.matcher = None
+        
         # Initialize UI
         self.init_ui()
-        
-        # Load the TIFF file
-        if self.tiff_path and os.path.exists(self.tiff_path):
-            self.load_multipage_tiff(self.tiff_path)
-        else:
-            print(f"Warning: TIFF path not found or not set: {self.tiff_path}")
     
     def init_ui(self):
         """Initialize the user interface."""
+        # Create menu bar
+        menubar = self.menuBar()
+        file_menu = menubar.addMenu('File')
+        
+        load_config_action = QAction('Load Config Folder', self)
+        load_config_action.setShortcut('Ctrl+O')
+        load_config_action.triggered.connect(self.load_config_folder)
+        file_menu.addAction(load_config_action)
+        
         # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -110,6 +106,71 @@ class FormZoneDesigner(QMainWindow):
         right_layout.addWidget(self.scroll_area, stretch=1)
         
         main_layout.addWidget(right_panel, stretch=1)
+    
+    def load_config_folder(self):
+        """Open folder picker to select a config folder and load it."""
+        # Get default folder from environment variable
+        default_path = self.default_config_folder if self.default_config_folder else str(Path.home())
+        
+        # Open folder picker
+        folder_path = QFileDialog.getExistingDirectory(
+            self,
+            "Select Config Folder",
+            default_path,
+            QFileDialog.Option.ShowDirsOnly
+        )
+        
+        if not folder_path:
+            # User cancelled
+            return
+        
+        try:
+            # Create DesignerConfig instance
+            config_folder = Path(folder_path)
+            self.config = DesignerConfig(config_folder)
+            
+            logger.info(f"Loaded config folder: {config_folder}")
+            
+            # Initialize ORM matcher if logo exists in fiducials folder
+            # Look for common logo file names
+            logo_candidates = ['logo.png', 'logo.tif', 'fiducial.png', 'fiducial.jpg']
+            logo_path = None
+            for candidate in logo_candidates:
+                candidate_path = self.config.fiducials_folder / candidate
+                if candidate_path.exists():
+                    logo_path = str(candidate_path)
+                    break
+            
+            if logo_path:
+                self.matcher = ORMMatcher(logo_path)
+                logger.info(f"Initialized ORM matcher with logo: {logo_path}")
+            else:
+                self.matcher = None
+                logger.warning("No logo found in fiducials folder, ORM matcher not initialized")
+            
+            # Load the template TIFF file
+            if self.config.template_path.exists():
+                self.load_multipage_tiff(str(self.config.template_path))
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Template Not Found",
+                    f"Template file not found: {self.config.template_path}"
+                )
+            
+        except FileNotFoundError as e:
+            QMessageBox.critical(
+                self,
+                "Config Error",
+                f"Failed to load config folder:\n{str(e)}"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred while loading config folder:\n{str(e)}"
+            )
+            logger.error(f"Error loading config folder: {e}", exc_info=True)
     
     def load_multipage_tiff(self, tiff_path):
         """Load a multipage TIFF file and process each page."""
@@ -170,12 +231,13 @@ class FormZoneDesigner(QMainWindow):
             self.page_detected_rects.append([])
         
         # Load fields from JSON for each page
-        for idx in range(len(self.pages)):
-            fields = load_page_fields(self.json_folder, idx)
-            self.page_field_data[idx] = fields
-            # Update field_rects from loaded fields
-            for field in fields:
-                self.page_field_rects[idx].append((field.x, field.y, field.width, field.height))
+        if self.config:
+            for idx in range(len(self.pages)):
+                fields = load_page_fields(str(self.config.json_folder), idx, self.config.config_folder)
+                self.page_field_data[idx] = fields
+                # Update field_rects from loaded fields
+                for field in fields:
+                    self.page_field_rects[idx].append((field.x, field.y, field.width, field.height))
     
     def on_thumbnail_clicked(self, page_idx):
         """Handle thumbnail click event to display full-size page."""
@@ -202,7 +264,8 @@ class FormZoneDesigner(QMainWindow):
             # Set callback to update thumbnail when a rectangle is added
             def on_rect_added_handler(field_obj):
                 self.page_field_data[self.current_page_idx].append(field_obj)
-                save_page_fields(self.json_folder, self.current_page_idx, self.page_field_data)
+                if self.config:
+                    save_page_fields(str(self.config.json_folder), self.current_page_idx, self.page_field_data, self.config.config_folder)
                 self.update_thumbnail(self.current_page_idx)
                 self.undo_button.setEnabled(True)
                 logger.info(f"Page {self.current_page_idx + 1}: Added {field_obj.__class__.__name__} '{field_obj.name}' at ({field_obj.x}, {field_obj.y})")
@@ -230,7 +293,8 @@ class FormZoneDesigner(QMainWindow):
                     self.image_display.field_data.pop()
                 
                 # Save updated fields to JSON
-                save_page_fields(self.json_folder, self.current_page_idx, self.page_field_data)
+                if self.config:
+                    save_page_fields(str(self.config.json_folder), self.current_page_idx, self.page_field_data, self.config.config_folder)
                 
                 self.image_display.update_display()
                 self.update_thumbnail(self.current_page_idx)
@@ -248,7 +312,8 @@ class FormZoneDesigner(QMainWindow):
             self.image_display.field_data.clear()
             
             # Save updated (empty) fields to JSON
-            save_page_fields(self.json_folder, self.current_page_idx, self.page_field_data)
+            if self.config:
+                save_page_fields(str(self.config.json_folder), self.current_page_idx, self.page_field_data, self.config.config_folder)
             
             self.image_display.update_display()
             self.update_thumbnail(self.current_page_idx)
