@@ -1,0 +1,215 @@
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QListWidget, QListWidgetItem
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtGui import QPixmap, QImage
+from PIL import Image
+import numpy as np
+import logging
+
+from .designer_thumbnail_widget import DesignerThumbnailWidget
+from fields import Field
+
+logger = logging.getLogger(__name__)
+
+
+class DesignerThumbnailPanel(QWidget):
+    """Panel to display thumbnails of pages."""
+    
+    # Signal emitted when a thumbnail is clicked
+    thumbnail_clicked = pyqtSignal(int)  # Emits page_idx
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        
+        # Main layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Thumbnail list widget
+        self.thumbnail_list = QListWidget()
+        self.thumbnail_list.setMaximumWidth(250)
+        # Icon size includes margin (200 + 2*10 = 220)
+        self.thumbnail_list.setIconSize(QSize(220, 220))
+        self.thumbnail_list.itemClicked.connect(self._on_item_clicked)
+        layout.addWidget(self.thumbnail_list)
+        
+        # Internal storage for thumbnail data (references, not copies)
+        self._pages = []
+        self._page_bboxes = []
+        self._page_field_data = []
+    
+    def populate_thumbnails(self, pages, page_bboxes, page_field_data):
+        """Populate the thumbnail list with pages.
+        
+        Args:
+            pages: List of PIL Images
+            page_bboxes: List of (top_left, bottom_right) tuples for logos
+            page_field_data: List of lists of Field objects for each page
+        """
+        # Clear existing items
+        self.thumbnail_list.clear()
+        
+        # Store references to data
+        self._pages = pages
+        self._page_bboxes = page_bboxes
+        self._page_field_data = page_field_data
+        
+        # Generate and add thumbnails
+        for idx, page in enumerate(pages):
+            bbox = page_bboxes[idx] if idx < len(page_bboxes) else None
+            field_data = page_field_data[idx] if idx < len(page_field_data) else []
+            self._add_thumbnail(idx, page, bbox, field_data)
+    
+    def update_thumbnail(self, page_idx, page, bbox, field_data):
+        """Update a specific thumbnail after fields change.
+        
+        Args:
+            page_idx: Index of the page to update
+            page: PIL Image for the page
+            bbox: Bounding box tuple (top_left, bottom_right) for logo
+            field_data: List of Field objects for this page
+        """
+        if 0 <= page_idx < len(self._pages):
+            # Update stored references
+            self._pages[page_idx] = page
+            if page_idx < len(self._page_bboxes):
+                self._page_bboxes[page_idx] = bbox
+            if page_idx < len(self._page_field_data):
+                self._page_field_data[page_idx] = field_data
+            
+            # Regenerate the thumbnail widget
+            self._update_thumbnail_widget(page_idx, page, bbox, field_data)
+    
+    def _add_thumbnail(self, page_idx, page, bbox, field_data):
+        """Internal method to create and add a single thumbnail.
+        
+        Args:
+            page_idx: Index of the page
+            page: PIL Image for the page
+            bbox: Bounding box tuple (top_left, bottom_right) for logo
+            field_data: List of Field objects for this page
+        """
+        # Create thumbnail
+        thumbnail = page.copy()
+        thumbnail.thumbnail((200, 200), Image.Resampling.LANCZOS)
+        
+        # Convert PIL Image to QPixmap
+        thumbnail_array = np.array(thumbnail)
+        height, width, channel = thumbnail_array.shape
+        bytes_per_line = 3 * width
+        q_image = QImage(thumbnail_array.data, width, height, 
+                       bytes_per_line, QImage.Format.Format_RGB888)
+        thumbnail_pixmap = QPixmap.fromImage(q_image)
+        
+        # Scale bounding box to thumbnail size if it exists
+        scaled_bbox = None
+        if bbox:
+            scale_x = thumbnail.width / page.width
+            scale_y = thumbnail.height / page.height
+            top_left = (int(bbox[0][0] * scale_x), int(bbox[0][1] * scale_y))
+            bottom_right = (int(bbox[1][0] * scale_x), int(bbox[1][1] * scale_y))
+            scaled_bbox = (top_left, bottom_right)
+        else:
+            logger.warning(f"Page {page_idx + 1}: No bounding box found for page {page_idx + 1}")
+        
+        # Scale field data to thumbnail size
+        scaled_field_data = []
+        scale_x = thumbnail.width / page.width
+        scale_y = thumbnail.height / page.height
+        for field in field_data:
+            if isinstance(field, Field):
+                # Create a scaled copy of the field for thumbnail
+                # Field coordinates are relative to logo, convert to absolute first
+                abs_x = field.x
+                abs_y = field.y
+                if bbox:
+                    abs_x += bbox[0][0]
+                    abs_y += bbox[0][1]
+                
+                field_dict = field.to_dict()
+                field_dict['x'] = int(abs_x * scale_x)
+                field_dict['y'] = int(abs_y * scale_y)
+                field_dict['width'] = int(field.width * scale_x)
+                field_dict['height'] = int(field.height * scale_y)
+                scaled_field = Field.from_dict(field_dict)
+                scaled_field_data.append(scaled_field)
+        
+        # Create custom thumbnail widget with overlay
+        thumbnail_widget = DesignerThumbnailWidget(thumbnail_pixmap, scaled_bbox, [], scaled_field_data)
+        
+        # Create list item
+        item = QListWidgetItem(self.thumbnail_list)
+        item.setText(f"Page {page_idx + 1}")
+        # Use the actual widget size (including margins) for the item size hint
+        item.setSizeHint(thumbnail_widget.size())
+        item.setData(Qt.ItemDataRole.UserRole, page_idx)  # Store page index
+        
+        # Set the custom widget
+        self.thumbnail_list.addItem(item)
+        self.thumbnail_list.setItemWidget(item, thumbnail_widget)
+    
+    def _update_thumbnail_widget(self, page_idx, page, bbox, field_data):
+        """Internal method to regenerate and update a thumbnail widget.
+        
+        Args:
+            page_idx: Index of the page to update
+            page: PIL Image for the page
+            bbox: Bounding box tuple (top_left, bottom_right) for logo
+            field_data: List of Field objects for this page
+        """
+        # Create thumbnail
+        thumbnail = page.copy()
+        thumbnail.thumbnail((200, 200), Image.Resampling.LANCZOS)
+        
+        # Convert PIL Image to QPixmap
+        thumbnail_array = np.array(thumbnail)
+        height, width, channel = thumbnail_array.shape
+        bytes_per_line = 3 * width
+        q_image = QImage(thumbnail_array.data, width, height, 
+                       bytes_per_line, QImage.Format.Format_RGB888)
+        thumbnail_pixmap = QPixmap.fromImage(q_image)
+        
+        # Scale bounding box to thumbnail size if it exists
+        scaled_bbox = None
+        if bbox:
+            scale_x = thumbnail.width / page.width
+            scale_y = thumbnail.height / page.height
+            top_left = (int(bbox[0][0] * scale_x), int(bbox[0][1] * scale_y))
+            bottom_right = (int(bbox[1][0] * scale_x), int(bbox[1][1] * scale_y))
+            scaled_bbox = (top_left, bottom_right)
+        
+        # Scale field data to thumbnail size
+        scaled_field_data = []
+        scale_x = thumbnail.width / page.width
+        scale_y = thumbnail.height / page.height
+        for field in field_data:
+            if isinstance(field, Field):
+                # Create a scaled copy of the field for thumbnail
+                # Field coordinates are relative to logo, convert to absolute first
+                abs_x = field.x
+                abs_y = field.y
+                if bbox:
+                    abs_x += bbox[0][0]
+                    abs_y += bbox[0][1]
+                
+                field_dict = field.to_dict()
+                field_dict['x'] = int(abs_x * scale_x)
+                field_dict['y'] = int(abs_y * scale_y)
+                field_dict['width'] = int(field.width * scale_x)
+                field_dict['height'] = int(field.height * scale_y)
+                scaled_field = Field.from_dict(field_dict)
+                scaled_field_data.append(scaled_field)
+        
+        # Create custom thumbnail widget with overlay
+        thumbnail_widget = DesignerThumbnailWidget(thumbnail_pixmap, scaled_bbox, [], scaled_field_data)
+        
+        # Update the existing list item
+        item = self.thumbnail_list.item(page_idx)
+        if item:
+            item.setSizeHint(thumbnail_widget.size())
+            self.thumbnail_list.setItemWidget(item, thumbnail_widget)
+    
+    def _on_item_clicked(self, item):
+        """Internal handler that emits the thumbnail_clicked signal."""
+        page_idx = item.data(Qt.ItemDataRole.UserRole)
+        if page_idx is not None:
+            self.thumbnail_clicked.emit(page_idx)
