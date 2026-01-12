@@ -1,23 +1,21 @@
 import sys
 import os
-import json
 import cv2
 import numpy as np
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QLabel, QScrollArea, QPushButton,
-    QDialog, QRadioButton, QButtonGroup, QLineEdit, QDialogButtonBox
+    QScrollArea, QPushButton,
 )
-from PyQt6.QtCore import Qt, QSize, QPoint, QRect
-from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent
+
+from PyQt6.QtGui import QPixmap, QImage
 from PIL import Image
 from dotenv import load_dotenv
 from orm_matcher import ORMMatcher
-from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
-from util import detect_rectangles
+from fields import Field
+from util import detect_rectangles, load_page_fields, save_page_fields
 import logging
 
-from ui import FieldConfigDialog, ImageDisplayWidget, DesignerThumbnailPanel
+from ui import ImageDisplayWidget, DesignerThumbnailPanel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -114,48 +112,6 @@ class FormZoneDesigner(QMainWindow):
         
         main_layout.addWidget(right_panel, stretch=1)
     
-    def save_page_fields_to_json(self, page_idx):
-        """Save fields for a specific page to JSON file."""
-        if 0 <= page_idx < len(self.page_field_data):
-            json_path = os.path.join(self.json_folder, f"{page_idx + 1}.json")
-            
-            # Convert field data to Field objects and then to dict
-            fields_data = []
-            for field_obj in self.page_field_data[page_idx]:
-                if isinstance(field_obj, Field):
-                    fields_data.append(field_obj.to_dict())
-            
-            try:
-                with open(json_path, 'w') as f:
-                    json.dump(fields_data, f, indent=2)
-                logger.info(f"Saved {len(fields_data)} fields to {json_path}")
-            except Exception as e:
-                logger.error(f"Error saving fields to {json_path}: {e}")
-    
-    def load_page_fields_from_json(self, page_idx):
-        """Load fields for a specific page from JSON file."""
-        json_path = os.path.join(self.json_folder, f"{page_idx + 1}.json")
-        
-        if not os.path.exists(json_path):
-            logger.info(f"No JSON file found for page {page_idx + 1}")
-            return []
-        
-        try:
-            with open(json_path, 'r') as f:
-                fields_data = json.load(f)
-            
-            # Convert JSON data to Field objects
-            fields = []
-            for field_dict in fields_data:
-                field_obj = Field.from_dict(field_dict)
-                fields.append(field_obj)
-            
-            logger.info(f"Loaded {len(fields)} fields from {json_path}")
-            return fields
-        except Exception as e:
-            logger.error(f"Error loading fields from {json_path}: {e}")
-            return []
-    
     def load_multipage_tiff(self, tiff_path):
         """Load a multipage TIFF file and process each page."""
         try:
@@ -216,7 +172,7 @@ class FormZoneDesigner(QMainWindow):
         
         # Load fields from JSON for each page
         for idx in range(len(self.pages)):
-            fields = self.load_page_fields_from_json(idx)
+            fields = load_page_fields(self.json_folder, idx)
             self.page_field_data[idx] = fields
             # Update field_rects from loaded fields
             for field in fields:
@@ -247,7 +203,7 @@ class FormZoneDesigner(QMainWindow):
             # Set callback to update thumbnail when a rectangle is added
             def on_rect_added_handler(field_obj):
                 self.page_field_data[self.current_page_idx].append(field_obj)
-                self.save_page_fields_to_json(self.current_page_idx)
+                save_page_fields(self.json_folder, self.current_page_idx, self.page_field_data)
                 self.update_thumbnail(self.current_page_idx)
                 self.undo_button.setEnabled(True)
                 logger.info(f"Page {self.current_page_idx + 1}: Added {field_obj.__class__.__name__} '{field_obj.name}' at ({field_obj.x}, {field_obj.y})")
@@ -275,7 +231,7 @@ class FormZoneDesigner(QMainWindow):
                     self.image_display.field_data.pop()
                 
                 # Save updated fields to JSON
-                self.save_page_fields_to_json(self.current_page_idx)
+                save_page_fields(self.json_folder, self.current_page_idx, self.page_field_data)
                 
                 self.image_display.update_display()
                 self.update_thumbnail(self.current_page_idx)
@@ -293,7 +249,7 @@ class FormZoneDesigner(QMainWindow):
             self.image_display.field_data.clear()
             
             # Save updated (empty) fields to JSON
-            self.save_page_fields_to_json(self.current_page_idx)
+            save_page_fields(self.json_folder, self.current_page_idx, self.page_field_data)
             
             self.image_display.update_display()
             self.update_thumbnail(self.current_page_idx)

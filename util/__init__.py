@@ -1,1 +1,2 @@
 from .rectangle_detector import detect_rectangles_multi_method as detect_rectangles
+from .designer_persistence import load_page_fields, save_page_fields
