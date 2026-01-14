@@ -4,8 +4,16 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+blur_kernel = (3, 3)
+canny_low_threshold = 50
+canny_high_threshold = 150
+dilate_iterations = 2
+epsilon_factor = 0.02
+overlap_threshold_value = 0.7
+min_area = 500
+max_area = 5000
 
-def detect_rectangles_multi_method(image_cv, min_area=500, max_area=50000):
+def detect_rectangles_multi_method(image_cv, min_area=min_area, max_area=max_area):
     """
     Detect rectangles using multiple methods and combine results.
     
@@ -22,11 +30,11 @@ def detect_rectangles_multi_method(image_cv, min_area=500, max_area=50000):
     # Method 1: Standard edge detection with Canny
     gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(blurred, 50, 150)
+    edges = cv2.Canny(blurred, canny_low_threshold, canny_high_threshold)
     
     # Dilate edges to connect nearby contours
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    dilated = cv2.dilate(edges, kernel, iterations=2)
+    dilated = cv2.dilate(edges, kernel, iterations=dilate_iterations)
     
     contours, _ = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     
@@ -36,7 +44,7 @@ def detect_rectangles_multi_method(image_cv, min_area=500, max_area=50000):
             continue
         
         perimeter = cv2.arcLength(contour, True)
-        approx = cv2.approxPolyDP(contour, 0.02 * perimeter, True)
+        approx = cv2.approxPolyDP(contour, epsilon_factor * perimeter, True)
         
         if len(approx) == 4:
             x, y, w, h = cv2.boundingRect(approx)
@@ -54,7 +62,7 @@ def detect_rectangles_multi_method(image_cv, min_area=500, max_area=50000):
     return unique_rectangles
 
 
-def detect_rectangles(image_cv, min_area=500, max_area=50000, epsilon_factor=0.02):
+def detect_rectangles(image_cv, min_area=min_area, max_area=max_area, epsilon_factor=epsilon_factor):
     """
     Detect rectangles in an image using adaptive thresholding.
     
@@ -113,13 +121,12 @@ def detect_rectangles(image_cv, min_area=500, max_area=50000, epsilon_factor=0.0
     return rectangles
 
 
-def remove_duplicate_rectangles(rectangles, overlap_threshold=0.7):
+def remove_duplicate_rectangles(rectangles):
     """
     Remove duplicate rectangles based on overlap.
     
     Args:
         rectangles: List of rectangles as (x, y, width, height)
-        overlap_threshold: IoU threshold for considering rectangles as duplicates
     
     Returns:
         List of unique rectangles
@@ -134,7 +141,7 @@ def remove_duplicate_rectangles(rectangles, overlap_threshold=0.7):
     for rect in sorted_rects:
         is_duplicate = False
         for unique_rect in unique:
-            if calculate_iou(rect, unique_rect) > overlap_threshold:
+            if calculate_iou(rect, unique_rect) > overlap_threshold_value:
                 is_duplicate = True
                 break
         

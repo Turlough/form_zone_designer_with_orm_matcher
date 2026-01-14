@@ -4,7 +4,6 @@ from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent
 
 from PyQt6.QtWidgets import QDialog
 from fields import Field, RadioGroup, RadioButton, Tickbox, TextField
-from ui import FieldConfigDialog
 import logging
 
 logger = logging.getLogger(__name__)
@@ -41,6 +40,9 @@ class ImageDisplayWidget(QLabel):
         
         # Callback for when a rectangle is added
         self.on_rect_added = None
+
+        # Callback for when an existing field / rectangle is selected
+        self.on_field_selected = None
     
     def set_image(self, pixmap, bbox=None, field_rects=None, field_data=None, detected_rects=None):
         """Set the image, bounding box, and field rectangles to display."""
@@ -312,74 +314,74 @@ class ImageDisplayWidget(QLabel):
             for i, rect in enumerate(self.detected_rects):
                 x, y, w, h = rect
                 if x <= click_x <= x + w and y <= click_y <= y + h:
-                    # Show dialog to configure field
-                    dialog = FieldConfigDialog(self.window(), event.globalPosition().toPoint())
-                    if dialog.exec() == QDialog.DialogCode.Accepted:
-                        field_type = dialog.get_field_type()
-                        field_name = dialog.get_field_name()
-                        
-                        # Make coordinates relative to fiducial/logo bounding box if available
-                        rel_x = x
-                        rel_y = y
-                        if self.bbox:
-                            logo_top_left = self.bbox[0]
-                            rel_x = x - logo_top_left[0]
-                            rel_y = y - logo_top_left[1]
-                        
-                        # Create appropriate Field object based on type
-                        field_classes = {
-                            'Field': Field,
-                            'Tickbox': Tickbox,
-                            'RadioButton': RadioButton,
-                            'RadioGroup': RadioGroup,
-                            'TextField': TextField
-                        }
-                        
-                        field_class = field_classes.get(field_type, Field)
-                        
-                        # Create field object with default parameters
-                        if field_type == 'RadioGroup':
-                            field_obj = field_class(
-                                name=field_name,
-                                x=int(rel_x),
-                                y=int(rel_y),
-                                width=int(w),
-                                height=int(h),
-                                label=field_name,
-                                value="",
-                                radio_buttons=[],
-                                colour=None
-                            )
-                        else:
-                            field_obj = field_class(
-                                name=field_name,
-                                x=int(rel_x),
-                                y=int(rel_y),
-                                width=int(w),
-                                height=int(h),
-                                label=field_name,
-                                value=False if field_type in ['Tickbox', 'RadioButton'] else "",
-                                colour=None
-                            )
-                        
-                        # Remove from detected rectangles and add to fields
-                        self.detected_rects.pop(i)
-                        new_rect = (int(rel_x), int(rel_y), int(w), int(h))
-                        self.field_rects.append(new_rect)
-                        self.field_data.append(field_obj)
-                        logger.info(f"Converted detected rectangle to {field_type} field '{field_name}'")
-                        
-                        # If RadioGroup, find and add all RadioButtons within its bounds
-                        if field_type == 'RadioGroup':
-                            self.find_radio_buttons_in_group(field_obj)
-                        
-                        # Notify parent via callback
-                        if self.on_rect_added:
-                            self.on_rect_added(field_obj)
-                        
-                        self.update_display()
+                    # Make coordinates relative to fiducial/logo bounding box if available
+                    rel_x = x
+                    rel_y = y
+                    if self.bbox:
+                        logo_top_left = self.bbox[0]
+                        rel_x = x - logo_top_left[0]
+                        rel_y = y - logo_top_left[1]
+
+                    # Create a default Field object; the side edit panel will refine its type/name
+                    field_name = "Field"
+                    field_obj = Field(
+                        colour=None,
+                        name=field_name,
+                        x=int(rel_x),
+                        y=int(rel_y),
+                        width=int(w),
+                        height=int(h),
+                        label=field_name,
+                        value="",
+                        fiducial_path="",
+                    )
+
+                    # Remove from detected rectangles and add to fields
+                    self.detected_rects.pop(i)
+                    new_rect = (int(rel_x), int(rel_y), int(w), int(h))
+                    self.field_rects.append(new_rect)
+                    self.field_data.append(field_obj)
+                    logger.info(f"Converted detected rectangle to Field '{field_name}'")
+
+                    # Notify parent via callbacks
+                    if self.on_rect_added:
+                        self.on_rect_added(field_obj)
+                    if self.on_field_selected:
+                        self.on_field_selected(field_obj, event.globalPosition().toPoint())
+
+                    self.update_display()
                     break
         elif event.button() == Qt.MouseButton.LeftButton and self.base_pixmap:
+            # First, check if the user clicked on an existing field; if so, treat as selection
+            click_x = (event.pos().x() - self.image_offset_x) / self.scale_x
+            click_y = (event.pos().y() - self.image_offset_y) / self.scale_y
+
+            # Try to find a Field under the cursor
+            selected_field = None
+            if self.field_data:
+                for field in self.field_data:
+                    if isinstance(field, Field):
+                        abs_x = field.x
+                        abs_y = field.y
+                        if self.bbox:
+                            logo_top_left = self.bbox[0]
+                            abs_x += logo_top_left[0]
+                            abs_y += logo_top_left[1]
+
+                        if (
+                            abs_x <= click_x <= abs_x + field.width
+                            and abs_y <= click_y <= abs_y + field.height
+                        ):
+                            selected_field = field
+                            break
+
+            if selected_field is not None:
+                logger.info(f"Selected field '{selected_field.name}'")
+                if self.on_field_selected:
+                    self.on_field_selected(selected_field, event.globalPosition().toPoint())
+                return
+
+            # Otherwise, start drawing a new rectangle
             self.is_drawing = True
             self.start_point = event.pos()
             self.current_point = event.pos()
@@ -417,63 +419,31 @@ class ImageDisplayWidget(QLabel):
             # Only add rectangle if it has some size
             if width > 5 and height > 5:
                 new_rect = (int(left), int(top), int(width), int(height))
-                
-                # Show dialog to configure field
-                dialog = FieldConfigDialog(self.window(), event.globalPosition().toPoint())
-                if dialog.exec() == QDialog.DialogCode.Accepted:
-                    field_type = dialog.get_field_type()
-                    field_name = dialog.get_field_name()
-                    
-                    # Create appropriate Field object based on type
-                    field_classes = {
-                        'Field': Field,
-                        'Tickbox': Tickbox,
-                        'RadioButton': RadioButton,
-                        'RadioGroup': RadioGroup,
-                        'TextField': TextField
-                    }
-                    
-                    field_class = field_classes.get(field_type, Field)
-                    
-                    # Create field object with default parameters
-                    if field_type == 'RadioGroup':
-                        field_obj = field_class(
-                            name=field_name,
-                            x=int(left),
-                            y=int(top),
-                            width=int(width),
-                            height=int(height),
-                            label=field_name,
-                            value="",
-                            radio_buttons=[],
-                            colour=None  # Will use default from __post_init__
-                        )
-                    else:
-                        field_obj = field_class(
-                            name=field_name,
-                            x=int(left),
-                            y=int(top),
-                            width=int(width),
-                            height=int(height),
-                            label=field_name,
-                            value=False if field_type in ['Tickbox', 'RadioButton'] else "",
-                            colour=None  # Will use default from __post_init__
-                        )
-                    
-                    # Add rectangle and field data
-                    self.field_rects.append(new_rect)
-                    self.field_data.append(field_obj)
-                    logger.info(f"Added {field_type} field '{field_name}': {new_rect}")
-                    
-                    # If RadioGroup, find and add all RadioButtons within its bounds
-                    if field_type == 'RadioGroup':
-                        self.find_radio_buttons_in_group(field_obj)
-                    
-                    # Notify parent via callback
-                    if self.on_rect_added:
-                        self.on_rect_added(field_obj)
-                else:
-                    logger.info("Field creation cancelled")
+
+                # Create a default Field object; the side edit panel will refine its type/name
+                field_name = "Field"
+                field_obj = Field(
+                    colour=None,
+                    name=field_name,
+                    x=int(left),
+                    y=int(top),
+                    width=int(width),
+                    height=int(height),
+                    label=field_name,
+                    value="",
+                    fiducial_path="",
+                )
+
+                # Add rectangle and field data
+                self.field_rects.append(new_rect)
+                self.field_data.append(field_obj)
+                logger.info(f"Added Field '{field_name}': {new_rect}")
+
+                # Notify parent via callbacks
+                if self.on_rect_added:
+                    self.on_rect_added(field_obj)
+                if self.on_field_selected:
+                    self.on_field_selected(field_obj, event.globalPosition().toPoint())
             
             self.start_point = None
             self.current_point = None

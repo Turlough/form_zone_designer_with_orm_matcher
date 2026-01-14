@@ -4,8 +4,16 @@ import cv2
 import numpy as np
 from pathlib import Path
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QScrollArea, QPushButton, QFileDialog, QMessageBox, QToolButton,
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QScrollArea,
+    QPushButton,
+    QFileDialog,
+    QMessageBox,
+    QToolButton,
 )
 
 from PyQt6.QtGui import QPixmap, QImage, QAction
@@ -15,7 +23,14 @@ from util import ORMMatcher, DesignerConfig
 from util import detect_rectangles, load_page_fields, save_page_fields
 import logging
 
-from ui import ImageDisplayWidget, DesignerThumbnailPanel, DesignerButtonLayout
+from ui import (
+    ImageDisplayWidget,
+    DesignerThumbnailPanel,
+    DesignerButtonLayout,
+    DesignerEditPanel,
+)
+from fields import Field
+import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -49,6 +64,9 @@ class FormZoneDesigner(QMainWindow):
         
         # Initialize UI
         self.init_ui()
+        # Connect edit panel JSON changes
+        if hasattr(self, "edit_panel"):
+            self.edit_panel.page_json_changed.connect(self.on_page_json_changed)
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -71,7 +89,7 @@ class FormZoneDesigner(QMainWindow):
         self.thumbnail_panel.thumbnail_clicked.connect(self.on_thumbnail_clicked)
         main_layout.addWidget(self.thumbnail_panel)
         
-        # Right panel: Image display with controls
+        # Center panel: Image display with controls
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
@@ -88,8 +106,15 @@ class FormZoneDesigner(QMainWindow):
         self.image_display = ImageDisplayWidget(self.scroll_area)
         self.scroll_area.setWidget(self.image_display)
         right_layout.addWidget(self.scroll_area, stretch=1)
-        
-        main_layout.addWidget(right_panel, stretch=1)
+
+        main_layout.addWidget(right_panel, stretch=2)
+
+        # Right-side panel: field / rectangle editor and JSON view
+        self.edit_panel = DesignerEditPanel(self)
+        main_layout.addWidget(self.edit_panel, stretch=1)
+
+        # Wire selection callback from image widget to edit panel
+        self.image_display.on_field_selected = self.on_field_selected
     
     def load_config_folder(self):
         """Open folder picker to select a config folder and load it."""
@@ -241,7 +266,7 @@ class FormZoneDesigner(QMainWindow):
             q_image = QImage(page_array.data, width, height, 
                            bytes_per_line, QImage.Format.Format_RGB888)
             page_pixmap = QPixmap.fromImage(q_image)
-            
+
             # Display with bounding box overlay and field rectangles
             self.image_display.set_image(page_pixmap, bbox, field_rects, field_data, detected_rects)
             
@@ -255,6 +280,9 @@ class FormZoneDesigner(QMainWindow):
                 logger.info(f"Page {self.current_page_idx + 1}: Added {field_obj.__class__.__name__} '{field_obj.name}' at ({field_obj.x}, {field_obj.y})")
             
             self.image_display.on_rect_added = on_rect_added_handler
+
+            # Update JSON editor for the current page
+            self._update_edit_panel_json(page_idx)
             
             # Enable/disable buttons based on current state
             self.detect_button.setEnabled(True)
@@ -267,6 +295,128 @@ class FormZoneDesigner(QMainWindow):
             self.autofit_button.setEnabled(True)
             self.zoom_in_button.setEnabled(True)
             self.zoom_out_button.setEnabled(True)
+
+            # Update JSON editor for the current page
+            self._update_edit_panel_json(page_idx)
+
+    def on_page_json_changed(self, json_text: str):
+        """Handle edits to the page JSON from the edit panel."""
+        if self.current_page_idx is None:
+            return
+
+        if not json_text.strip():
+            # Empty JSON area - treat as no-op for now
+            return
+
+        try:
+            data = json.loads(json_text)
+        except json.JSONDecodeError:
+            # Ignore invalid JSON while the user is typing
+            logger.warning("Invalid JSON in edit panel; ignoring until valid")
+            return
+
+        if not isinstance(data, list):
+            logger.warning("Page JSON is not a list; ignoring")
+            return
+
+        # Recreate Field objects from JSON dicts
+        fields = []
+        for item in data:
+            if isinstance(item, dict):
+                try:
+                    fields.append(Field.from_dict(item, self.config.config_folder if self.config else None))
+                except Exception as e:
+                    logger.error(f"Error converting JSON item to Field: {e}")
+
+        page_idx = self.current_page_idx
+        if page_idx < 0 or page_idx >= len(self.page_field_data):
+            return
+
+        # Update in-memory structures
+        self.page_field_data[page_idx] = fields
+        self.page_field_rects[page_idx] = [
+            (field.x, field.y, field.width, field.height) for field in fields
+        ]
+
+        # Persist to disk
+        if self.config:
+            save_page_fields(str(self.config.json_folder), page_idx, self.page_field_data, self.config.config_folder)
+
+        # Update UI (image display + thumbnail)
+        self.image_display.field_data = fields
+        self.image_display.field_rects = self.page_field_rects[page_idx]
+        self.image_display.update_display()
+        self.update_thumbnail(page_idx)
+
+    def _update_edit_panel_json(self, page_idx: int):
+        """Populate the edit panel JSON area with the current page's fields."""
+        if not self.edit_panel:
+            return
+
+        if page_idx < 0 or page_idx >= len(self.page_field_data):
+            self.edit_panel.set_page_json("")
+            return
+
+        fields_for_page = self.page_field_data[page_idx]
+
+        # Convert field objects to serializable dicts using the same logic as save_page_fields
+        fields_data = []
+        for field_obj in fields_for_page:
+            if isinstance(field_obj, Field):
+                fields_data.append(field_obj.to_dict(self.config.config_folder if self.config else None))
+
+        try:
+            json_text = json.dumps(fields_data, indent=2, default=str)
+        except TypeError:
+            json_text = ""
+
+        self.edit_panel.set_page_json(json_text)
+
+    def on_field_selected(self, field_obj, global_pos):
+        """
+        Called when the user clicks on an existing field / rectangle on the image.
+        Updates the edit panel's preview strip and field controls.
+        """
+        if not self.edit_panel or self.current_page_idx is None:
+            return
+
+        # Update the field controls to reflect this field
+        self.edit_panel.set_field_from_object(field_obj)
+
+        # Build a horizontal strip preview for the selected field.
+        page = self.pages[self.current_page_idx]
+        page_array = np.array(page)
+        height, width, _ = page_array.shape
+
+        # Field coordinates are relative to logo; convert to absolute image coords
+        abs_x = field_obj.x
+        abs_y = field_obj.y
+        if self.page_bboxes[self.current_page_idx]:
+            logo_top_left = self.page_bboxes[self.current_page_idx][0]
+            abs_x += logo_top_left[0]
+            abs_y += logo_top_left[1]
+
+        top = max(0, abs_y - 20)
+        bottom = min(height, abs_y + field_obj.height + 20)
+
+        # Create a strip spanning full width, between top and bottom
+        strip = page_array[top:bottom, :, :]
+
+        if strip.size == 0:
+            self.edit_panel.set_preview_pixmap(QPixmap())
+            return
+
+        strip_height, strip_width, channel = strip.shape
+        bytes_per_line = 3 * strip_width
+        q_image = QImage(
+            strip.data,
+            strip_width,
+            strip_height,
+            bytes_per_line,
+            QImage.Format.Format_RGB888,
+        )
+        strip_pixmap = QPixmap.fromImage(q_image)
+        self.edit_panel.set_preview_pixmap(strip_pixmap)
 
     # ---- Zoom / fit button handlers ----
 
