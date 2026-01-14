@@ -29,7 +29,7 @@ from ui import (
     DesignerButtonLayout,
     DesignerEditPanel,
 )
-from fields import Field
+from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import json
 
 logging.basicConfig(level=logging.INFO)
@@ -59,14 +59,19 @@ class FormZoneDesigner(QMainWindow):
         self.page_detected_rects = []  # List of lists of detected rectangles for each page
         self.current_page_idx = None  # Track currently displayed page
         
+        # Track currently selected field for config updates
+        self.selected_field_obj = None  # The currently selected Field object
+        self.selected_field_index = None  # Index of selected field in page_field_data
+        
         # ORM matcher (initialized when config is loaded)
         self.matcher = None
         
         # Initialize UI
         self.init_ui()
-        # Connect edit panel JSON changes
+        # Connect edit panel signals
         if hasattr(self, "edit_panel"):
             self.edit_panel.page_json_changed.connect(self.on_page_json_changed)
+            self.edit_panel.field_config_changed.connect(self.on_field_config_changed)
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -252,6 +257,12 @@ class FormZoneDesigner(QMainWindow):
         """Handle thumbnail click event to display full-size page."""
         
         if 0 <= page_idx < len(self.pages):
+            # Clear selected field when changing pages
+            self.selected_field_obj = None
+            self.selected_field_index = None
+            if self.edit_panel:
+                self.edit_panel.set_field_from_object(None)
+            
             self.current_page_idx = page_idx
             page = self.pages[page_idx]
             bbox = self.page_bboxes[page_idx]
@@ -380,6 +391,24 @@ class FormZoneDesigner(QMainWindow):
         if not self.edit_panel or self.current_page_idx is None:
             return
 
+        # Store reference to selected field and find its index
+        self.selected_field_obj = field_obj
+        self.selected_field_index = None
+        
+        # Find the field index in page_field_data
+        if 0 <= self.current_page_idx < len(self.page_field_data):
+            field_data = self.page_field_data[self.current_page_idx]
+            for idx, field in enumerate(field_data):
+                # Match by identity or by position/size (in case object was recreated)
+                if field is field_obj or (
+                    field.x == field_obj.x and
+                    field.y == field_obj.y and
+                    field.width == field_obj.width and
+                    field.height == field_obj.height
+                ):
+                    self.selected_field_index = idx
+                    break
+
         # Update the field controls to reflect this field
         self.edit_panel.set_field_from_object(field_obj)
 
@@ -417,6 +446,103 @@ class FormZoneDesigner(QMainWindow):
         )
         strip_pixmap = QPixmap.fromImage(q_image)
         self.edit_panel.set_preview_pixmap(strip_pixmap)
+
+    def on_field_config_changed(self, config: dict):
+        """
+        Handle changes to field type or name from the edit panel.
+        Updates the currently selected field with the new configuration.
+        """
+        if self.current_page_idx is None or self.selected_field_index is None:
+            return
+        
+        if not (0 <= self.current_page_idx < len(self.page_field_data)):
+            return
+        
+        if not (0 <= self.selected_field_index < len(self.page_field_data[self.current_page_idx])):
+            return
+        
+        # Get the old field to preserve position, dimensions, and other properties
+        old_field = self.page_field_data[self.current_page_idx][self.selected_field_index]
+        
+        # Extract new type and name from config
+        field_type = config.get("field_type", "Field")
+        field_name = config.get("field_name", "Unnamed")
+        
+        # Create a new field of the correct type, preserving position and dimensions
+        field_kwargs = {
+            "colour": old_field.colour,
+            "name": field_name,
+            "x": old_field.x,
+            "y": old_field.y,
+            "width": old_field.width,
+            "height": old_field.height,
+            "label": field_name,  # Use name as label
+            "fiducial_path": old_field.fiducial_path or "",
+        }
+        
+        # Create appropriate field type based on selection
+        type_map = {
+            "Field": Field,
+            "Tickbox": Tickbox,
+            "RadioButton": RadioButton,
+            "RadioGroup": RadioGroup,
+            "TextField": TextField,
+        }
+        
+        field_class = type_map.get(field_type, Field)
+        
+        # Set default value based on field type
+        if field_class == Tickbox or field_class == RadioButton:
+            field_kwargs["value"] = False
+        elif field_class == TextField:
+            field_kwargs["value"] = ""
+        elif field_class == RadioGroup:
+            field_kwargs["value"] = ""
+            field_kwargs["radio_buttons"] = []
+        else:
+            field_kwargs["value"] = False
+        
+        # Create new field instance
+        new_field = field_class(**field_kwargs)
+        
+        # Replace the field in the data structure
+        self.page_field_data[self.current_page_idx][self.selected_field_index] = new_field
+        
+        # Update field_rects (should be the same, but update for consistency)
+        if 0 <= self.current_page_idx < len(self.page_field_rects):
+            if 0 <= self.selected_field_index < len(self.page_field_rects[self.current_page_idx]):
+                self.page_field_rects[self.current_page_idx][self.selected_field_index] = (
+                    new_field.x, new_field.y, new_field.width, new_field.height
+                )
+        
+        # Update stored reference
+        self.selected_field_obj = new_field
+        
+        # Persist to disk
+        if self.config:
+            save_page_fields(
+                str(self.config.json_folder),
+                self.current_page_idx,
+                self.page_field_data,
+                self.config.config_folder
+            )
+        
+        # Update image display
+        if self.image_display:
+            self.image_display.field_data = self.page_field_data[self.current_page_idx]
+            self.image_display.field_rects = self.page_field_rects[self.current_page_idx]
+            self.image_display.update_display()
+        
+        # Update thumbnail
+        self.update_thumbnail(self.current_page_idx)
+        
+        # Update JSON editor to reflect the change
+        self._update_edit_panel_json(self.current_page_idx)
+        
+        logger.info(
+            f"Page {self.current_page_idx + 1}: Updated field to {field_type} '{field_name}' "
+            f"at ({new_field.x}, {new_field.y})"
+        )
 
     # ---- Zoom / fit button handlers ----
 
@@ -462,6 +588,14 @@ class FormZoneDesigner(QMainWindow):
                 self.image_display.update_display()
                 self.update_thumbnail(self.current_page_idx)
                 
+                # Clear selected field if it was the one removed
+                if (self.selected_field_index is not None and 
+                    self.selected_field_index >= len(self.page_field_data[self.current_page_idx])):
+                    self.selected_field_obj = None
+                    self.selected_field_index = None
+                    if self.edit_panel:
+                        self.edit_panel.set_field_from_object(None)
+                
                 # Disable undo button if no more rectangles
                 if not self.page_field_rects[self.current_page_idx]:
                     self.undo_button.setEnabled(False)
@@ -481,6 +615,13 @@ class FormZoneDesigner(QMainWindow):
             self.image_display.update_display()
             self.update_thumbnail(self.current_page_idx)
             self.undo_button.setEnabled(False)
+            
+            # Clear selected field since all fields were removed
+            self.selected_field_obj = None
+            self.selected_field_index = None
+            if self.edit_panel:
+                self.edit_panel.set_field_from_object(None)
+            
             logger.debug(f"Cleared all fields on page {self.current_page_idx + 1}")
     
     def detect_rectangles(self):

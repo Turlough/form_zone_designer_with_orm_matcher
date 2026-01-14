@@ -93,9 +93,8 @@ class DesignerEditPanel(QWidget):
         actions_layout = QHBoxLayout()
         field_layout.addLayout(actions_layout)
 
-        # Wire control changes to a single handler
-        self.button_group.idClicked.connect(self._emit_field_config_changed)
-        self.name_input.textChanged.connect(self._emit_field_config_changed)
+        # Only emit signal when Enter key is pressed in name input (not on every text change)
+        self.name_input.returnPressed.connect(self._emit_field_config_changed)
 
         main_layout.addWidget(field_group)
 
