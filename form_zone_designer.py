@@ -15,7 +15,7 @@ from util import ORMMatcher, DesignerConfig
 from util import detect_rectangles, load_page_fields, save_page_fields
 import logging
 
-from ui import ImageDisplayWidget, DesignerThumbnailPanel
+from ui import ImageDisplayWidget, DesignerThumbnailPanel, DesignerButtonLayout
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -76,61 +76,8 @@ class FormZoneDesigner(QMainWindow):
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Control buttons
-        button_layout = QHBoxLayout()
-        
-        self.detect_button = QPushButton("Detect Rectangles")
-        self.detect_button.clicked.connect(self.detect_rectangles)
-        self.detect_button.setEnabled(False)
-        button_layout.addWidget(self.detect_button)
-        
-        self.undo_button = QPushButton("Undo Last Field")
-        self.undo_button.clicked.connect(self.undo_last_field)
-        self.undo_button.setEnabled(False)
-        button_layout.addWidget(self.undo_button)
-        
-        self.clear_button = QPushButton("Clear All Fields on Page")
-        self.clear_button.clicked.connect(self.clear_current_page_fields)
-        self.clear_button.setEnabled(False)
-        button_layout.addWidget(self.clear_button)
-
-        # Zoom / fit controls (icon-only buttons affecting ImageDisplayWidget zoom)
-        self.fit_width_button = QToolButton()
-        self.fit_width_button.setText("↔")
-        self.fit_width_button.setToolTip("Fit Width")
-        self.fit_width_button.clicked.connect(self.on_fit_width_clicked)
-        self.fit_width_button.setEnabled(False)
-        button_layout.addWidget(self.fit_width_button)
-
-        self.fit_height_button = QToolButton()
-        self.fit_height_button.setText("↕")
-        self.fit_height_button.setToolTip("Fit Height")
-        self.fit_height_button.clicked.connect(self.on_fit_height_clicked)
-        self.fit_height_button.setEnabled(False)
-        button_layout.addWidget(self.fit_height_button)
-
-        self.autofit_button = QToolButton()
-        self.autofit_button.setText("⤢")
-        self.autofit_button.setToolTip("Autofit")
-        self.autofit_button.clicked.connect(self.on_autofit_clicked)
-        self.autofit_button.setEnabled(False)
-        button_layout.addWidget(self.autofit_button)
-
-        self.zoom_in_button = QToolButton()
-        self.zoom_in_button.setText("+")
-        self.zoom_in_button.setToolTip("Zoom In")
-        self.zoom_in_button.clicked.connect(self.on_zoom_in_clicked)
-        self.zoom_in_button.setEnabled(False)
-        button_layout.addWidget(self.zoom_in_button)
-
-        self.zoom_out_button = QToolButton()
-        self.zoom_out_button.setText("−")
-        self.zoom_out_button.setToolTip("Zoom Out")
-        self.zoom_out_button.clicked.connect(self.on_zoom_out_clicked)
-        self.zoom_out_button.setEnabled(False)
-        button_layout.addWidget(self.zoom_out_button)
-
-        button_layout.addStretch()
+        # Control buttons (moved into DesignerButtonLayout)
+        button_layout = DesignerButtonLayout(self)
         right_layout.addLayout(button_layout)
         
         # Image display

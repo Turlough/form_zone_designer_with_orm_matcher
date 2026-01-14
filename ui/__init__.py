@@ -2,3 +2,4 @@ from .field_config_dialog import FieldConfigDialog
 from .designer_thumbnail_widget import DesignerThumbnailWidget
 from .designer_thumbnail_panel import DesignerThumbnailPanel
 from .designer_main_image_widget import ImageDisplayWidget
+from .designer_button_layout import DesignerButtonLayout
