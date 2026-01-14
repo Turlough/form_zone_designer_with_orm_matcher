@@ -34,6 +34,11 @@ class ImageDisplayWidget(QLabel):
         self.image_offset_x = 0
         self.image_offset_y = 0
         
+        # Zoom state
+        # zoom_mode: 'autofit', 'fit_width', 'fit_height', or 'manual'
+        self.zoom_mode = 'autofit'
+        self.zoom_factor = 1.0
+        
         # Callback for when a rectangle is added
         self.on_rect_added = None
     
@@ -47,6 +52,60 @@ class ImageDisplayWidget(QLabel):
         self.is_drawing = False
         self.start_point = None
         self.current_point = None
+        # Reset zoom to autofit whenever a new image is set
+        self.zoom_mode = 'autofit'
+        self.zoom_factor = 1.0
+        self.update_display()
+
+    # ---- Zoom / fit API used by the main window ----
+
+    def set_fit_width(self):
+        """Zoom so that the image fits the scroll area's width."""
+        if not self.base_pixmap:
+            return
+        self.zoom_mode = 'fit_width'
+        self.update_display()
+
+    def set_fit_height(self):
+        """Zoom so that the image fits the scroll area's height."""
+        if not self.base_pixmap:
+            return
+        self.zoom_mode = 'fit_height'
+        self.update_display()
+
+    def set_autofit(self):
+        """Zoom so the whole image fits within the scroll area."""
+        if not self.base_pixmap:
+            return
+        self.zoom_mode = 'autofit'
+        self.update_display()
+
+    def zoom_in(self, factor: float = 1.25):
+        """Incrementally zoom in."""
+        if not self.base_pixmap:
+            return
+        if self.zoom_mode != 'manual':
+            # Start manual zoom from current visible scale
+            self.zoom_factor = self.scale_x or 1.0
+            self.zoom_mode = 'manual'
+        self.zoom_factor *= factor
+        # Clamp to a reasonable upper bound
+        if self.zoom_factor > 10.0:
+            self.zoom_factor = 10.0
+        self.update_display()
+
+    def zoom_out(self, factor: float = 1.25):
+        """Incrementally zoom out."""
+        if not self.base_pixmap:
+            return
+        if self.zoom_mode != 'manual':
+            # Start manual zoom from current visible scale
+            self.zoom_factor = self.scale_x or 1.0
+            self.zoom_mode = 'manual'
+        self.zoom_factor /= factor
+        # Clamp to a reasonable lower bound
+        if self.zoom_factor < 0.05:
+            self.zoom_factor = 0.05
         self.update_display()
     
     def find_radio_buttons_in_group(self, radio_group):
@@ -78,14 +137,38 @@ class ImageDisplayWidget(QLabel):
                 self.field_rects.pop(i)
     
     def update_display(self):
-        """Redraw the image with bounding box overlay, scaled to fit."""
+        """Redraw the image with bounding box overlay, applying current zoom/fit mode."""
         if self.base_pixmap and self.parent_scroll_area:
-            # Get available size from parent scroll area
-            available_size = self.parent_scroll_area.viewport().size()
-            
-            # Scale the base pixmap to fit within available space while maintaining aspect ratio
+            viewport_size = self.parent_scroll_area.viewport().size()
+            base_width = self.base_pixmap.width()
+            base_height = self.base_pixmap.height()
+
+            if base_width == 0 or base_height == 0:
+                return
+
+            # Determine scale based on zoom mode
+            if self.zoom_mode == 'fit_width':
+                scale = viewport_size.width() / base_width
+            elif self.zoom_mode == 'fit_height':
+                scale = viewport_size.height() / base_height
+            elif self.zoom_mode == 'manual':
+                scale = self.zoom_factor
+            else:  # 'autofit' (fit within both dimensions)
+                scale_w = viewport_size.width() / base_width
+                scale_h = viewport_size.height() / base_height
+                scale = min(scale_w, scale_h)
+
+            # Guard against degenerate scales
+            if scale <= 0:
+                scale = 0.01
+
+            target_width = int(base_width * scale)
+            target_height = int(base_height * scale)
+
+            # Scale the base pixmap while maintaining aspect ratio
             scaled_pixmap = self.base_pixmap.scaled(
-                available_size,
+                target_width,
+                target_height,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )

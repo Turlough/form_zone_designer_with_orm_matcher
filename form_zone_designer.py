@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QScrollArea, QPushButton, QFileDialog, QMessageBox,
+    QScrollArea, QPushButton, QFileDialog, QMessageBox, QToolButton,
 )
 
 from PyQt6.QtGui import QPixmap, QImage, QAction
@@ -93,6 +93,43 @@ class FormZoneDesigner(QMainWindow):
         self.clear_button.clicked.connect(self.clear_current_page_fields)
         self.clear_button.setEnabled(False)
         button_layout.addWidget(self.clear_button)
+
+        # Zoom / fit controls (icon-only buttons affecting ImageDisplayWidget zoom)
+        self.fit_width_button = QToolButton()
+        self.fit_width_button.setText("↔")
+        self.fit_width_button.setToolTip("Fit Width")
+        self.fit_width_button.clicked.connect(self.on_fit_width_clicked)
+        self.fit_width_button.setEnabled(False)
+        button_layout.addWidget(self.fit_width_button)
+
+        self.fit_height_button = QToolButton()
+        self.fit_height_button.setText("↕")
+        self.fit_height_button.setToolTip("Fit Height")
+        self.fit_height_button.clicked.connect(self.on_fit_height_clicked)
+        self.fit_height_button.setEnabled(False)
+        button_layout.addWidget(self.fit_height_button)
+
+        self.autofit_button = QToolButton()
+        self.autofit_button.setText("⤢")
+        self.autofit_button.setToolTip("Autofit")
+        self.autofit_button.clicked.connect(self.on_autofit_clicked)
+        self.autofit_button.setEnabled(False)
+        button_layout.addWidget(self.autofit_button)
+
+        self.zoom_in_button = QToolButton()
+        self.zoom_in_button.setText("+")
+        self.zoom_in_button.setToolTip("Zoom In")
+        self.zoom_in_button.clicked.connect(self.on_zoom_in_clicked)
+        self.zoom_in_button.setEnabled(False)
+        button_layout.addWidget(self.zoom_in_button)
+
+        self.zoom_out_button = QToolButton()
+        self.zoom_out_button.setText("−")
+        self.zoom_out_button.setToolTip("Zoom Out")
+        self.zoom_out_button.clicked.connect(self.on_zoom_out_clicked)
+        self.zoom_out_button.setEnabled(False)
+        button_layout.addWidget(self.zoom_out_button)
+
         button_layout.addStretch()
         right_layout.addLayout(button_layout)
         
@@ -276,6 +313,35 @@ class FormZoneDesigner(QMainWindow):
             self.detect_button.setEnabled(True)
             self.clear_button.setEnabled(True)
             self.undo_button.setEnabled(len(field_rects) > 0)
+
+            # Enable zoom/fit controls now that an image is available
+            self.fit_width_button.setEnabled(True)
+            self.fit_height_button.setEnabled(True)
+            self.autofit_button.setEnabled(True)
+            self.zoom_in_button.setEnabled(True)
+            self.zoom_out_button.setEnabled(True)
+
+    # ---- Zoom / fit button handlers ----
+
+    def on_fit_width_clicked(self):
+        if self.image_display:
+            self.image_display.set_fit_width()
+
+    def on_fit_height_clicked(self):
+        if self.image_display:
+            self.image_display.set_fit_height()
+
+    def on_autofit_clicked(self):
+        if self.image_display:
+            self.image_display.set_autofit()
+
+    def on_zoom_in_clicked(self):
+        if self.image_display:
+            self.image_display.zoom_in()
+
+    def on_zoom_out_clicked(self):
+        if self.image_display:
+            self.image_display.zoom_out()
     
     def undo_last_field(self):
         """Remove the last field rectangle drawn on the current page."""
