@@ -50,7 +50,6 @@ class Field:
         
         # Map type name to class
         type_map = {
-            'Field': Field,
             'Tickbox': Tickbox,
             'RadioButton': RadioButton,
             'RadioGroup': RadioGroup,
