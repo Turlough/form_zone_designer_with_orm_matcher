@@ -396,8 +396,8 @@ class FormZoneDesigner(QMainWindow):
             abs_x += logo_top_left[0]
             abs_y += logo_top_left[1]
 
-        top = max(0, abs_y - 20)
-        bottom = min(height, abs_y + field_obj.height + 20)
+        top = max(0, abs_y - 50)
+        bottom = min(height, abs_y + field_obj.height + 50)
 
         # Create a strip spanning full width, between top and bottom
         strip = page_array[top:bottom, :, :]
