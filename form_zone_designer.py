@@ -374,7 +374,7 @@ class FormZoneDesigner(QMainWindow):
         fields_data = []
         for field_obj in fields_for_page:
             if isinstance(field_obj, Field):
-                fields_data.append(field_obj.to_dict(self.config.config_folder if self.config else None))
+                fields_data.append(field_obj.to_dict())
 
         try:
             json_text = json.dumps(fields_data, indent=2, default=str)

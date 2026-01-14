@@ -1,5 +1,5 @@
 from dataclasses import dataclass, asdict
-from pathlib import Path
+
 
 @dataclass
 class Field:
@@ -24,13 +24,12 @@ class Field:
 
     def __repr__(self):
         return f"Field(name={self.name}, x={self.x}, y={self.y}, width={self.width}, height={self.height}, label={self.label})"
-    
-    def to_dict(self, config_folder=None):
+        
+    def to_dict(self):
         """Convert field to dictionary for JSON serialization.
         
         Args:
-            config_folder: Optional Path to config folder. If provided, fiducial_path
-                          will be stored as relative to this folder.
+            config_folder: Optional Path to config folder. 
         """
         data = asdict(self)
         data['_type'] = self.__class__.__name__
@@ -38,13 +37,11 @@ class Field:
         return data
     
     @staticmethod
-    def from_dict(data, config_folder=None):
+    def from_dict(data: dict):
         """Create field from dictionary (JSON deserialization).
         
         Args:
             data: Dictionary containing field data
-            config_folder: Optional Path to config folder. If provided, relative
-                          fiducial_path will be converted to absolute string.
         """
         field_type = data.pop('_type', 'Field')
         
@@ -104,7 +101,7 @@ class RadioGroup(Field):
     def remove_radio_button(self, radio_button: RadioButton):
         self.radio_buttons.remove(radio_button)
     
-    def to_dict(self, config_folder=None):
+    def to_dict(self):
         """Convert RadioGroup to dictionary with properly serialized radio buttons."""
                
         data = {
@@ -115,7 +112,7 @@ class RadioGroup(Field):
             'y': self.y,
             'width': self.width,
             'height': self.height,
-            'radio_buttons': [rb.to_dict(config_folder) for rb in self.radio_buttons]
+            'radio_buttons': [rb.to_dict() for rb in self.radio_buttons]
         }
         return data
 

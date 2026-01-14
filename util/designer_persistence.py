@@ -63,7 +63,7 @@ def save_page_fields(json_folder, page_idx, page_field_data, config_folder=None)
     fields_data = []
     for field_obj in page_field_data[page_idx]:
         if isinstance(field_obj, Field):
-            fields_data.append(field_obj.to_dict(config_folder))
+            fields_data.append(field_obj.to_dict())
     
     try:
         with open(json_path, 'w') as f:
