@@ -61,22 +61,19 @@ class DesignerEditPanel(QWidget):
 
         self.button_group = QButtonGroup(self)
 
-        self.field_radio = QRadioButton("Field")
         self.tickbox_radio = QRadioButton("Tickbox")
         self.radiobutton_radio = QRadioButton("RadioButton")
         self.radiogroup_radio = QRadioButton("RadioGroup")
         self.textfield_radio = QRadioButton("TextField")
 
         # default selection
-        self.field_radio.setChecked(True)
+        self.tickbox_radio.setChecked(True)
 
-        self.button_group.addButton(self.field_radio, 0)
         self.button_group.addButton(self.tickbox_radio, 1)
         self.button_group.addButton(self.radiobutton_radio, 2)
         self.button_group.addButton(self.radiogroup_radio, 3)
         self.button_group.addButton(self.textfield_radio, 4)
 
-        field_layout.addWidget(self.field_radio)
         field_layout.addWidget(self.tickbox_radio)
         field_layout.addWidget(self.radiobutton_radio)
         field_layout.addWidget(self.radiogroup_radio)
@@ -149,19 +146,18 @@ class DesignerEditPanel(QWidget):
         """
         if field_obj is None:
             # Reset to defaults
-            self.field_radio.setChecked(True)
+            self.tickbox_radio.setChecked(True)
             self.name_input.clear()
             return
 
         type_name = field_obj.__class__.__name__
         mapping = {
-            "Field": self.field_radio,
             "Tickbox": self.tickbox_radio,
             "RadioButton": self.radiobutton_radio,
             "RadioGroup": self.radiogroup_radio,
             "TextField": self.textfield_radio,
         }
-        radio = mapping.get(type_name, self.field_radio)
+        radio = mapping.get(type_name, self.tickbox_radio)
         radio.setChecked(True)
 
         # Block signal emission while we programmatically update the name

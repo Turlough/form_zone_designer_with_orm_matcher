@@ -476,13 +476,10 @@ class FormZoneDesigner(QMainWindow):
             "y": old_field.y,
             "width": old_field.width,
             "height": old_field.height,
-            "label": field_name,  # Use name as label
-            "fiducial_path": old_field.fiducial_path or "",
         }
         
         # Create appropriate field type based on selection
         type_map = {
-            "Field": Field,
             "Tickbox": Tickbox,
             "RadioButton": RadioButton,
             "RadioGroup": RadioGroup,
@@ -492,15 +489,9 @@ class FormZoneDesigner(QMainWindow):
         field_class = type_map.get(field_type, Field)
         
         # Set default value based on field type
-        if field_class == Tickbox or field_class == RadioButton:
-            field_kwargs["value"] = False
-        elif field_class == TextField:
-            field_kwargs["value"] = ""
-        elif field_class == RadioGroup:
-            field_kwargs["value"] = ""
+        if field_class == RadioGroup:
             field_kwargs["radio_buttons"] = []
-        else:
-            field_kwargs["value"] = False
+
         
         # Create new field instance
         new_field = field_class(**field_kwargs)

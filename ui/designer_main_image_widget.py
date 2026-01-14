@@ -331,9 +331,6 @@ class ImageDisplayWidget(QLabel):
                         y=int(rel_y),
                         width=int(w),
                         height=int(h),
-                        label=field_name,
-                        value="",
-                        fiducial_path="",
                     )
 
                     # Remove from detected rectangles and add to fields
@@ -429,9 +426,6 @@ class ImageDisplayWidget(QLabel):
                     y=int(top),
                     width=int(width),
                     height=int(height),
-                    label=field_name,
-                    value="",
-                    fiducial_path="",
                 )
 
                 # Add rectangle and field data
