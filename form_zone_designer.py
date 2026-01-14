@@ -495,6 +495,44 @@ class FormZoneDesigner(QMainWindow):
         # Create new field instance
         new_field = field_class(**field_kwargs)
         
+        # If the new field is a RadioGroup, find and move RadioButtons within its bounds
+        if isinstance(new_field, RadioGroup):
+            page_fields = self.page_field_data[self.current_page_idx]
+            page_rects = self.page_field_rects[self.current_page_idx]
+            radio_buttons_to_remove = []
+            
+            # Find all RadioButtons that lie within the RadioGroup's bounds
+            for i, field in enumerate(page_fields):
+                # Skip the field being converted (at selected_field_index)
+                if i == self.selected_field_index:
+                    continue
+                
+                if isinstance(field, RadioButton):
+                    # Check if the RadioButton's center point is within the RadioGroup's bounds
+                    rb_center_x = field.x + field.width // 2
+                    rb_center_y = field.y + field.height // 2
+                    
+                    # Check if center is within RadioGroup bounds
+                    if (new_field.x <= rb_center_x <= new_field.x + new_field.width and
+                        new_field.y <= rb_center_y <= new_field.y + new_field.height):
+                        # Add to RadioGroup
+                        new_field.add_radio_button(field)
+                        radio_buttons_to_remove.append(i)
+                        logger.info(
+                            f"Page {self.current_page_idx + 1}: Moved RadioButton '{field.name}' "
+                            f"into RadioGroup '{new_field.name}'"
+                        )
+            
+            # Remove RadioButtons from top-level list (in reverse order to maintain indices)
+            # Also adjust selected_field_index if we remove items before it
+            for i in reversed(radio_buttons_to_remove):
+                page_fields.pop(i)
+                if i < len(page_rects):
+                    page_rects.pop(i)
+                # Adjust selected_field_index if we removed an item before it
+                if i < self.selected_field_index:
+                    self.selected_field_index -= 1
+        
         # Replace the field in the data structure
         self.page_field_data[self.current_page_idx][self.selected_field_index] = new_field
         
