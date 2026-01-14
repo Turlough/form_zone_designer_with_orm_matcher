@@ -70,7 +70,7 @@ class FormZoneDesigner(QMainWindow):
         self.init_ui()
         # Connect edit panel signals
         if hasattr(self, "edit_panel"):
-            self.edit_panel.page_json_changed.connect(self.on_page_json_changed)
+            # self.edit_panel.page_json_changed.connect(self.on_page_json_changed)
             self.edit_panel.field_config_changed.connect(self.on_field_config_changed)
     
     def init_ui(self):
@@ -284,8 +284,7 @@ class FormZoneDesigner(QMainWindow):
             # Set callback to update thumbnail when a rectangle is added
             def on_rect_added_handler(field_obj):
                 self.page_field_data[self.current_page_idx].append(field_obj)
-                if self.config:
-                    save_page_fields(str(self.config.json_folder), self.current_page_idx, self.page_field_data, self.config.config_folder)
+                self.page_field_rects[self.current_page_idx].append((field_obj.x, field_obj.y, field_obj.width, field_obj.height))
                 self.update_thumbnail(self.current_page_idx)
                 self.undo_button.setEnabled(True)
                 logger.info(f"Page {self.current_page_idx + 1}: Added {field_obj.__class__.__name__} '{field_obj.name}' at ({field_obj.x}, {field_obj.y})")
@@ -590,6 +589,58 @@ class FormZoneDesigner(QMainWindow):
                 # Disable undo button if no more rectangles
                 if not self.page_field_rects[self.current_page_idx]:
                     self.undo_button.setEnabled(False)
+    
+    def delete_current_rectangle(self):
+        """Delete the currently selected field rectangle on the current page."""
+        if self.current_page_idx is None or self.selected_field_index is None:
+            return
+        
+        if not (0 <= self.current_page_idx < len(self.page_field_rects)):
+            return
+        
+        if not (0 <= self.selected_field_index < len(self.page_field_data[self.current_page_idx])):
+            return
+        
+        # Remove the selected field from data structures
+        removed_data = self.page_field_data[self.current_page_idx].pop(self.selected_field_index)
+        removed_rect = self.page_field_rects[self.current_page_idx].pop(self.selected_field_index)
+        
+        logger.info(f"Removed field on page {self.current_page_idx + 1}: {removed_data}")
+        
+        # Update image display
+        if (self.image_display.field_data and 
+            self.selected_field_index < len(self.image_display.field_data)):
+            self.image_display.field_data.pop(self.selected_field_index)
+        if (self.image_display.field_rects and 
+            self.selected_field_index < len(self.image_display.field_rects)):
+            self.image_display.field_rects.pop(self.selected_field_index)
+        
+        # Save updated fields to JSON
+        if self.config:
+            save_page_fields(
+                str(self.config.json_folder), 
+                self.current_page_idx, 
+                self.page_field_data, 
+                self.config.config_folder
+            )
+        
+        # Clear selected field since it was deleted
+        self.selected_field_obj = None
+        self.selected_field_index = None
+        if self.edit_panel:
+            self.edit_panel.set_field_from_object(None)
+            self.edit_panel.set_preview_pixmap(None)
+        
+        # Update display and thumbnail
+        self.image_display.update_display()
+        self.update_thumbnail(self.current_page_idx)
+        
+        # Update JSON editor to reflect the change
+        self._update_edit_panel_json(self.current_page_idx)
+        
+        # Disable undo button if no more rectangles
+        if not self.page_field_rects[self.current_page_idx]:
+            self.undo_button.setEnabled(False)
     
     def clear_current_page_fields(self):
         """Clear all field rectangles on the current page."""

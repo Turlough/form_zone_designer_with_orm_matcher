@@ -11,7 +11,7 @@ dilate_iterations = 2
 epsilon_factor = 0.02
 overlap_threshold_value = 0.7
 min_area = 500
-max_area = 5000
+max_area = 3000
 
 def detect_rectangles_multi_method(image_cv, min_area=min_area, max_area=max_area):
     """

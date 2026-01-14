@@ -8,7 +8,8 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QGroupBox,
     QHBoxLayout,
-)
+    QPushButton,
+    )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap, QFont
 
@@ -50,6 +51,11 @@ class DesignerEditPanel(QWidget):
             "QLabel { background-color: #3c3f41; color: #dddddd; border: 1px solid #555555; }"
         )
         main_layout.addWidget(self.preview_label)
+
+        # TODO: Add a button to delete the current rectangle
+        self.delete_button = QPushButton("Delete Rectangle")
+        self.delete_button.clicked.connect(self.parent().delete_current_rectangle)
+        main_layout.addWidget(self.delete_button)
 
         # ---- 2. Field configuration controls (from FieldConfigDialog) ----
         field_group = QGroupBox("Field Configuration")
