@@ -53,15 +53,14 @@ class FormZoneDesigner(QMainWindow):
         
         # Storage for pages and their bounding boxes
         self.pages = []  # List of PIL Images
-        self.page_bboxes = []  # List of (top_left, bottom_right) tuples for logos
-        self.page_field_rects = []  # List of lists of field rectangles for each page
-        self.page_field_data = []  # List of lists of (rect, field_type, field_name) for each page
+        self.fiducials = []  # List of (top_left, bottom_right) tuples for logos
+        self.page_field_list = []  # List of lists of Field objects for each page
         self.page_detected_rects = []  # List of lists of detected rectangles for each page
         self.current_page_idx = None  # Track currently displayed page
         
         # Track currently selected field for config updates
         self.selected_field_obj = None  # The currently selected Field object
-        self.selected_field_index = None  # Index of selected field in page_field_data
+        self.selected_field_index = None  # Index of selected field in page_field_list
         
         # ORM matcher (initialized when config is loaded)
         self.matcher = None
@@ -208,7 +207,7 @@ class FormZoneDesigner(QMainWindow):
             self.process_pages()
             
             # Generate thumbnails and populate list
-            self.thumbnail_panel.populate_thumbnails(self.pages, self.page_bboxes, self.page_field_data)
+            self.thumbnail_panel.populate_thumbnails(self.pages, self.fiducials, self.page_field_list)
             
         except Exception as e:
             print(f"Error loading TIFF: {e}")
@@ -217,9 +216,8 @@ class FormZoneDesigner(QMainWindow):
         """Run ORM matcher on each page to find logo bounding boxes."""
         if not self.matcher:
             logger.warning("No matcher available, skipping logo detection")
-            self.page_bboxes = [None] * len(self.pages)
-            self.page_field_rects = [[] for _ in range(len(self.pages))]
-            self.page_field_data = [[] for _ in range(len(self.pages))]
+            self.fiducials = [None] * len(self.pages)
+            self.page_field_list = [[] for _ in range(len(self.pages))]
             self.page_detected_rects = [[] for _ in range(len(self.pages))]
             return
         
@@ -233,25 +231,21 @@ class FormZoneDesigner(QMainWindow):
             
             # Store the bounding box
             if self.matcher.top_left and self.matcher.bottom_right:
-                self.page_bboxes.append((self.matcher.top_left, self.matcher.bottom_right))
+                self.fiducials.append((self.matcher.top_left, self.matcher.bottom_right))
                 logger.info(f"Page {idx + 1}: Logo found at {self.matcher.top_left}")
             else:
-                self.page_bboxes.append(None)
+                self.fiducials.append(None)
                 logger.warning(f"Page {idx + 1}: No logo found")
             
-            # Initialize empty field rectangles and data for this page
-            self.page_field_rects.append([])
-            self.page_field_data.append([])
+            # Initialize empty field list for this page
+            self.page_field_list.append([])
             self.page_detected_rects.append([])
         
         # Load fields from JSON for each page
         if self.config:
             for idx in range(len(self.pages)):
                 fields = load_page_fields(str(self.config.json_folder), idx, self.config.config_folder)
-                self.page_field_data[idx] = fields
-                # Update field_rects from loaded fields
-                for field in fields:
-                    self.page_field_rects[idx].append((field.x, field.y, field.width, field.height))
+                self.page_field_list[idx] = fields
     
     def on_thumbnail_clicked(self, page_idx):
         """Handle thumbnail click event to display full-size page."""
@@ -265,9 +259,8 @@ class FormZoneDesigner(QMainWindow):
             
             self.current_page_idx = page_idx
             page = self.pages[page_idx]
-            bbox = self.page_bboxes[page_idx]
-            field_rects = self.page_field_rects[page_idx]
-            field_data = self.page_field_data[page_idx]
+            bbox = self.fiducials[page_idx]
+            field_list = self.page_field_list[page_idx]
             detected_rects = self.page_detected_rects[page_idx]
             
             # Convert PIL Image to QPixmap
@@ -278,13 +271,12 @@ class FormZoneDesigner(QMainWindow):
                            bytes_per_line, QImage.Format.Format_RGB888)
             page_pixmap = QPixmap.fromImage(q_image)
 
-            # Display with bounding box overlay and field rectangles
-            self.image_display.set_image(page_pixmap, bbox, field_rects, field_data, detected_rects)
+            # Display with bounding box overlay and field list
+            self.image_display.set_image(page_pixmap, bbox, field_list, detected_rects)
             
             # Set callback to update thumbnail when a rectangle is added
             def on_rect_added_handler(field_obj):
-                self.page_field_data[self.current_page_idx].append(field_obj)
-                self.page_field_rects[self.current_page_idx].append((field_obj.x, field_obj.y, field_obj.width, field_obj.height))
+                self.page_field_list[self.current_page_idx].append(field_obj)
                 self.update_thumbnail(self.current_page_idx)
                 self.undo_button.setEnabled(True)
                 logger.info(f"Page {self.current_page_idx + 1}: Added {field_obj.__class__.__name__} '{field_obj.name}' at ({field_obj.x}, {field_obj.y})")
@@ -297,7 +289,7 @@ class FormZoneDesigner(QMainWindow):
             # Enable/disable buttons based on current state
             self.detect_button.setEnabled(True)
             self.clear_button.setEnabled(True)
-            self.undo_button.setEnabled(len(field_rects) > 0)
+            self.undo_button.setEnabled(len(field_list) > 0)
 
             # Enable zoom/fit controls now that an image is available
             self.fit_width_button.setEnabled(True)
@@ -334,27 +326,28 @@ class FormZoneDesigner(QMainWindow):
         for item in data:
             if isinstance(item, dict):
                 try:
-                    fields.append(Field.from_dict(item, self.config.config_folder if self.config else None))
+                    field = Field.from_dict(item, self.config.config_folder if self.config else None)
+                    # Only allow valid field types. Return if invalid.
+                    if field.type not in ["Tickbox", "RadioButton", "RadioGroup", "TextField"]:
+                        return
+                    # Otherwise continue
+                    fields.append(field)
                 except Exception as e:
                     logger.error(f"Error converting JSON item to Field: {e}")
 
         page_idx = self.current_page_idx
-        if page_idx < 0 or page_idx >= len(self.page_field_data):
+        if page_idx < 0 or page_idx >= len(self.page_field_list):
             return
 
         # Update in-memory structures
-        self.page_field_data[page_idx] = fields
-        self.page_field_rects[page_idx] = [
-            (field.x, field.y, field.width, field.height) for field in fields
-        ]
+        self.page_field_list[page_idx] = fields
 
         # Persist to disk
         if self.config:
-            save_page_fields(str(self.config.json_folder), page_idx, self.page_field_data, self.config.config_folder)
+            save_page_fields(str(self.config.json_folder), page_idx, self.page_field_list, self.config.config_folder)
 
         # Update UI (image display + thumbnail)
-        self.image_display.field_data = fields
-        self.image_display.field_rects = self.page_field_rects[page_idx]
+        self.image_display.field_list = fields
         self.image_display.update_display()
         self.update_thumbnail(page_idx)
 
@@ -363,17 +356,19 @@ class FormZoneDesigner(QMainWindow):
         if not self.edit_panel:
             return
 
-        if page_idx < 0 or page_idx >= len(self.page_field_data):
+        if page_idx < 0 or page_idx >= len(self.page_field_list):
             self.edit_panel.set_page_json("")
             return
 
-        fields_for_page = self.page_field_data[page_idx]
+        fields_for_page = self.page_field_list[page_idx]
 
         # Convert field objects to serializable dicts using the same logic as save_page_fields
         fields_data = []
         for field_obj in fields_for_page:
             if isinstance(field_obj, Field):
-                fields_data.append(field_obj.to_dict())
+                # Filter out base Field instances
+                if type(field_obj) != Field:
+                    fields_data.append(field_obj.to_dict())
 
         try:
             json_text = json.dumps(fields_data, indent=2, default=str)
@@ -394,10 +389,10 @@ class FormZoneDesigner(QMainWindow):
         self.selected_field_obj = field_obj
         self.selected_field_index = None
         
-        # Find the field index in page_field_data
-        if 0 <= self.current_page_idx < len(self.page_field_data):
-            field_data = self.page_field_data[self.current_page_idx]
-            for idx, field in enumerate(field_data):
+        # Find the field index in page_field_list
+        if 0 <= self.current_page_idx < len(self.page_field_list):
+            field_list = self.page_field_list[self.current_page_idx]
+            for idx, field in enumerate(field_list):
                 # Match by identity or by position/size (in case object was recreated)
                 if field is field_obj or (
                     field.x == field_obj.x and
@@ -419,8 +414,8 @@ class FormZoneDesigner(QMainWindow):
         # Field coordinates are relative to logo; convert to absolute image coords
         abs_x = field_obj.x
         abs_y = field_obj.y
-        if self.page_bboxes[self.current_page_idx]:
-            logo_top_left = self.page_bboxes[self.current_page_idx][0]
+        if self.fiducials[self.current_page_idx]:
+            logo_top_left = self.fiducials[self.current_page_idx][0]
             abs_x += logo_top_left[0]
             abs_y += logo_top_left[1]
 
@@ -454,18 +449,18 @@ class FormZoneDesigner(QMainWindow):
         if self.current_page_idx is None or self.selected_field_index is None:
             return
         
-        if not (0 <= self.current_page_idx < len(self.page_field_data)):
+        if not (0 <= self.current_page_idx < len(self.page_field_list)):
             return
         
-        if not (0 <= self.selected_field_index < len(self.page_field_data[self.current_page_idx])):
+        if not (0 <= self.selected_field_index < len(self.page_field_list[self.current_page_idx])):
             return
         
         # Get the old field to preserve position, dimensions, and other properties
-        old_field = self.page_field_data[self.current_page_idx][self.selected_field_index]
+        old_field = self.page_field_list[self.current_page_idx][self.selected_field_index]
         
         # Extract new type and name from config
-        field_type = config.get("field_type", "Field")
-        field_name = config.get("field_name", "Unnamed")
+        field_type = config.get("field_type")
+        field_name = config.get("field_name")
         
         # Create a new field of the correct type, preserving position and dimensions
         field_kwargs = {
@@ -485,7 +480,11 @@ class FormZoneDesigner(QMainWindow):
             "TextField": TextField,
         }
         
-        field_class = type_map.get(field_type, Field)
+        field_class = type_map.get(field_type)
+
+        if not field_class:
+            logger.error(f"Invalid field type: {field_type}")
+            return
         
         # Set default value based on field type
         if field_class == RadioGroup:
@@ -497,8 +496,7 @@ class FormZoneDesigner(QMainWindow):
         
         # If the new field is a RadioGroup, find and move RadioButtons within its bounds
         if isinstance(new_field, RadioGroup):
-            page_fields = self.page_field_data[self.current_page_idx]
-            page_rects = self.page_field_rects[self.current_page_idx]
+            page_fields = self.page_field_list[self.current_page_idx]
             radio_buttons_to_remove = []
             
             # Find all RadioButtons that lie within the RadioGroup's bounds
@@ -527,21 +525,12 @@ class FormZoneDesigner(QMainWindow):
             # Also adjust selected_field_index if we remove items before it
             for i in reversed(radio_buttons_to_remove):
                 page_fields.pop(i)
-                if i < len(page_rects):
-                    page_rects.pop(i)
                 # Adjust selected_field_index if we removed an item before it
                 if i < self.selected_field_index:
                     self.selected_field_index -= 1
         
         # Replace the field in the data structure
-        self.page_field_data[self.current_page_idx][self.selected_field_index] = new_field
-        
-        # Update field_rects (should be the same, but update for consistency)
-        if 0 <= self.current_page_idx < len(self.page_field_rects):
-            if 0 <= self.selected_field_index < len(self.page_field_rects[self.current_page_idx]):
-                self.page_field_rects[self.current_page_idx][self.selected_field_index] = (
-                    new_field.x, new_field.y, new_field.width, new_field.height
-                )
+        self.page_field_list[self.current_page_idx][self.selected_field_index] = new_field
         
         # Update stored reference
         self.selected_field_obj = new_field
@@ -551,14 +540,13 @@ class FormZoneDesigner(QMainWindow):
             save_page_fields(
                 str(self.config.json_folder),
                 self.current_page_idx,
-                self.page_field_data,
+                self.page_field_list,
                 self.config.config_folder
             )
         
         # Update image display
         if self.image_display:
-            self.image_display.field_data = self.page_field_data[self.current_page_idx]
-            self.image_display.field_rects = self.page_field_rects[self.current_page_idx]
+            self.image_display.field_list = self.page_field_list[self.current_page_idx]
             self.image_display.update_display()
         
         # Update thumbnail
@@ -596,36 +584,32 @@ class FormZoneDesigner(QMainWindow):
     
     def undo_last_field(self):
         """Remove the last field rectangle drawn on the current page."""
-        if self.current_page_idx is not None and 0 <= self.current_page_idx < len(self.page_field_rects):
-            if self.page_field_rects[self.current_page_idx]:
-                removed = self.page_field_rects[self.current_page_idx].pop()
-                if self.page_field_data[self.current_page_idx]:
-                    removed_data = self.page_field_data[self.current_page_idx].pop()
-                    logger.info(f"Removed last field on page {self.current_page_idx + 1}: {removed_data}")
+        if self.current_page_idx is not None and 0 <= self.current_page_idx < len(self.page_field_list):
+            if self.page_field_list[self.current_page_idx]:
+                removed_data = self.page_field_list[self.current_page_idx].pop()
+                logger.info(f"Removed last field on page {self.current_page_idx + 1}: {removed_data}")
                 
                 # Update image display
-                if self.image_display.field_rects:
-                    self.image_display.field_rects.pop()
-                if self.image_display.field_data:
-                    self.image_display.field_data.pop()
+                if self.image_display.field_list:
+                    self.image_display.field_list.pop()
                 
                 # Save updated fields to JSON
                 if self.config:
-                    save_page_fields(str(self.config.json_folder), self.current_page_idx, self.page_field_data, self.config.config_folder)
+                    save_page_fields(str(self.config.json_folder), self.current_page_idx, self.page_field_list, self.config.config_folder)
                 
                 self.image_display.update_display()
                 self.update_thumbnail(self.current_page_idx)
                 
                 # Clear selected field if it was the one removed
                 if (self.selected_field_index is not None and 
-                    self.selected_field_index >= len(self.page_field_data[self.current_page_idx])):
+                    self.selected_field_index >= len(self.page_field_list[self.current_page_idx])):
                     self.selected_field_obj = None
                     self.selected_field_index = None
                     if self.edit_panel:
                         self.edit_panel.set_field_from_object(None)
                 
-                # Disable undo button if no more rectangles
-                if not self.page_field_rects[self.current_page_idx]:
+                # Disable undo button if no more fields
+                if not self.page_field_list[self.current_page_idx]:
                     self.undo_button.setEnabled(False)
     
     def delete_current_rectangle(self):
@@ -633,32 +617,28 @@ class FormZoneDesigner(QMainWindow):
         if self.current_page_idx is None or self.selected_field_index is None:
             return
         
-        if not (0 <= self.current_page_idx < len(self.page_field_rects)):
+        if not (0 <= self.current_page_idx < len(self.page_field_list)):
             return
         
-        if not (0 <= self.selected_field_index < len(self.page_field_data[self.current_page_idx])):
+        if not (0 <= self.selected_field_index < len(self.page_field_list[self.current_page_idx])):
             return
         
         # Remove the selected field from data structures
-        removed_data = self.page_field_data[self.current_page_idx].pop(self.selected_field_index)
-        removed_rect = self.page_field_rects[self.current_page_idx].pop(self.selected_field_index)
+        removed_data = self.page_field_list[self.current_page_idx].pop(self.selected_field_index)
         
         logger.info(f"Removed field on page {self.current_page_idx + 1}: {removed_data}")
         
         # Update image display
-        if (self.image_display.field_data and 
-            self.selected_field_index < len(self.image_display.field_data)):
-            self.image_display.field_data.pop(self.selected_field_index)
-        if (self.image_display.field_rects and 
-            self.selected_field_index < len(self.image_display.field_rects)):
-            self.image_display.field_rects.pop(self.selected_field_index)
+        if (self.image_display.field_list and 
+            self.selected_field_index < len(self.image_display.field_list)):
+            self.image_display.field_list.pop(self.selected_field_index)
         
         # Save updated fields to JSON
         if self.config:
             save_page_fields(
                 str(self.config.json_folder), 
                 self.current_page_idx, 
-                self.page_field_data, 
+                self.page_field_list, 
                 self.config.config_folder
             )
         
@@ -676,21 +656,19 @@ class FormZoneDesigner(QMainWindow):
         # Update JSON editor to reflect the change
         self._update_edit_panel_json(self.current_page_idx)
         
-        # Disable undo button if no more rectangles
-        if not self.page_field_rects[self.current_page_idx]:
+        # Disable undo button if no more fields
+        if not self.page_field_list[self.current_page_idx]:
             self.undo_button.setEnabled(False)
     
     def clear_current_page_fields(self):
         """Clear all field rectangles on the current page."""
-        if self.current_page_idx is not None and 0 <= self.current_page_idx < len(self.page_field_rects):
-            self.page_field_rects[self.current_page_idx].clear()
-            self.page_field_data[self.current_page_idx].clear()
-            self.image_display.field_rects.clear()
-            self.image_display.field_data.clear()
+        if self.current_page_idx is not None and 0 <= self.current_page_idx < len(self.page_field_list):
+            self.page_field_list[self.current_page_idx].clear()
+            self.image_display.field_list.clear()
             
             # Save updated (empty) fields to JSON
             if self.config:
-                save_page_fields(str(self.config.json_folder), self.current_page_idx, self.page_field_data, self.config.config_folder)
+                save_page_fields(str(self.config.json_folder), self.current_page_idx, self.page_field_list, self.config.config_folder)
             
             self.image_display.update_display()
             self.update_thumbnail(self.current_page_idx)
@@ -735,9 +713,9 @@ class FormZoneDesigner(QMainWindow):
         """Update the thumbnail for a specific page to reflect current field rectangles."""
         if 0 <= page_idx < len(self.pages):
             page = self.pages[page_idx]
-            bbox = self.page_bboxes[page_idx] if page_idx < len(self.page_bboxes) else None
-            field_data = self.page_field_data[page_idx] if page_idx < len(self.page_field_data) else []
-            self.thumbnail_panel.update_thumbnail(page_idx, page, bbox, field_data)
+            bbox = self.fiducials[page_idx] if page_idx < len(self.fiducials) else None
+            field_list = self.page_field_list[page_idx] if page_idx < len(self.page_field_list) else []
+            self.thumbnail_panel.update_thumbnail(page_idx, page, bbox, field_list)
 
 
 def main():

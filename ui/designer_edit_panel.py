@@ -75,10 +75,10 @@ class DesignerEditPanel(QWidget):
         # default selection
         self.tickbox_radio.setChecked(True)
 
-        self.button_group.addButton(self.tickbox_radio, 1)
-        self.button_group.addButton(self.radiobutton_radio, 2)
-        self.button_group.addButton(self.radiogroup_radio, 3)
-        self.button_group.addButton(self.textfield_radio, 4)
+        self.button_group.addButton(self.tickbox_radio, 0)
+        self.button_group.addButton(self.radiobutton_radio, 1)
+        self.button_group.addButton(self.radiogroup_radio, 2)
+        self.button_group.addButton(self.textfield_radio, 3)
 
         field_layout.addWidget(self.tickbox_radio)
         field_layout.addWidget(self.radiobutton_radio)
@@ -172,18 +172,19 @@ class DesignerEditPanel(QWidget):
         self.name_input.blockSignals(old_block)
 
         # After syncing, explicitly emit current config (without relying on events)
-        self._emit_field_config_changed()
+        # self._emit_field_config_changed()
 
     def get_current_field_config(self) -> dict:
         """Return a dict with the currently selected field type and name."""
         button_id = self.button_group.checkedId()
-        field_types = ["Field", "Tickbox", "RadioButton", "RadioGroup", "TextField"]
+        field_types = ["Tickbox", "RadioButton", "RadioGroup", "TextField"]
         if 0 <= button_id < len(field_types):
             field_type = field_types[button_id]
-        else:
-            field_type = "Field"
-        field_name = self.name_input.text().strip() or "Unnamed"
-        return {"field_type": field_type, "field_name": field_name}
+            field_name = self.name_input.text().strip() or None
+            if not field_name:
+                return None
+            return {"field_type": field_type, "field_name": field_name}
+        return None
 
     def set_page_json(self, json_text: str):
         """Set the JSON text for the current page without emitting change signals."""
@@ -201,7 +202,9 @@ class DesignerEditPanel(QWidget):
 
     def _emit_field_config_changed(self, *args, **kwargs):
         config = self.get_current_field_config()
-        self.field_config_changed.emit(config)
+        if config:
+            self.field_config_changed.emit(config)
+
 
     def _on_json_text_changed(self):
         text = self.get_page_json()

@@ -15,8 +15,7 @@ class ImageDisplayWidget(QLabel):
         super().__init__(parent)
         self.base_pixmap = None
         self.bbox = None
-        self.field_rects = []  # List of field rectangles for current page
-        self.field_data = []  # List of (rect, field_type, field_name) tuples
+        self.field_list = []  # List of Field objects for current page
         self.detected_rects = []  # List of detected rectangles (not yet converted to fields)
         self.parent_scroll_area = parent
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -44,12 +43,11 @@ class ImageDisplayWidget(QLabel):
         # Callback for when an existing field / rectangle is selected
         self.on_field_selected = None
     
-    def set_image(self, pixmap, bbox=None, field_rects=None, field_data=None, detected_rects=None):
-        """Set the image, bounding box, and field rectangles to display."""
+    def set_image(self, pixmap, bbox=None, field_list=None, detected_rects=None):
+        """Set the image, bounding box, and field list to display."""
         self.base_pixmap = pixmap
         self.bbox = bbox
-        self.field_rects = field_rects or []
-        self.field_data = field_data or []
+        self.field_list = field_list or []
         self.detected_rects = detected_rects or []
         self.is_drawing = False
         self.start_point = None
@@ -118,7 +116,7 @@ class ImageDisplayWidget(QLabel):
         radio_buttons_to_remove = []
         
         # Iterate through all fields to find RadioButtons within the group's bounds
-        for i, field in enumerate(self.field_data):
+        for i, field in enumerate(self.field_list):
             if isinstance(field, RadioButton):
                 # Check if the RadioButton is within the RadioGroup's bounds
                 # RadioButton center point
@@ -134,9 +132,7 @@ class ImageDisplayWidget(QLabel):
         
         # Remove RadioButtons from the main field list (in reverse order to maintain indices)
         for i in reversed(radio_buttons_to_remove):
-            self.field_data.pop(i)
-            if i < len(self.field_rects):
-                self.field_rects.pop(i)
+            self.field_list.pop(i)
     
     def update_display(self):
         """Redraw the image with bounding box overlay, applying current zoom/fit mode."""
@@ -203,9 +199,9 @@ class ImageDisplayWidget(QLabel):
                                scaled_bottom_right[0] - scaled_top_left[0], 
                                scaled_bottom_right[1] - scaled_top_left[1])
             
-            # Draw field rectangles with colors from field data
-            if self.field_data:
-                for field in self.field_data:
+            # Draw field rectangles with colors from field list
+            if self.field_list:
+                for field in self.field_list:
                     if isinstance(field, Field):
                         # Get color from field object
                         color = QColor(*field.colour)
@@ -249,27 +245,6 @@ class ImageDisplayWidget(QLabel):
                                     int(radio_button.height * self.scale_y)
                                 )
                                 painter.drawRect(rb_scaled_rect)
-            elif self.field_rects:
-                # Fallback to red if no field data available
-                pen = QPen(QColor(255, 0, 0), 1)
-                painter.setPen(pen)
-                for rect in self.field_rects:
-                    if rect:
-                        # Field coordinates are relative to logo, convert to absolute
-                        abs_x = rect[0]
-                        abs_y = rect[1]
-                        if self.bbox:
-                            logo_top_left = self.bbox[0]
-                            abs_x += logo_top_left[0]
-                            abs_y += logo_top_left[1]
-                        
-                        scaled_rect = QRect(
-                            int(abs_x * self.scale_x),
-                            int(abs_y * self.scale_y),
-                            int(rect[2] * self.scale_x),
-                            int(rect[3] * self.scale_y)
-                        )
-                        painter.drawRect(scaled_rect)
             
             # Draw detected rectangles (red)
             if self.detected_rects:
@@ -323,10 +298,10 @@ class ImageDisplayWidget(QLabel):
                         rel_y = y - logo_top_left[1]
 
                     # Create a default Field object; the side edit panel will refine its type/name
-                    field_name = "Field"
+
                     field_obj = Field(
                         colour=None,
-                        name=field_name,
+                        name=None,
                         x=int(rel_x),
                         y=int(rel_y),
                         width=int(w),
@@ -335,10 +310,8 @@ class ImageDisplayWidget(QLabel):
 
                     # Remove from detected rectangles and add to fields
                     self.detected_rects.pop(i)
-                    new_rect = (int(rel_x), int(rel_y), int(w), int(h))
-                    self.field_rects.append(new_rect)
-                    self.field_data.append(field_obj)
-                    logger.info(f"Converted detected rectangle to Field '{field_name}'")
+                    self.field_list.append(field_obj)
+                    logger.info(f"Converted detected rectangle to Field")
 
                     # Notify parent via callbacks
                     if self.on_rect_added:
@@ -355,8 +328,8 @@ class ImageDisplayWidget(QLabel):
 
             # Try to find a Field under the cursor
             selected_field = None
-            if self.field_data:
-                for field in self.field_data:
+            if self.field_list:
+                for field in self.field_list:
                     if isinstance(field, Field):
                         abs_x = field.x
                         abs_y = field.y
@@ -415,8 +388,6 @@ class ImageDisplayWidget(QLabel):
             
             # Only add rectangle if it has some size
             if width > 5 and height > 5:
-                new_rect = (int(left), int(top), int(width), int(height))
-
                 # Create a default Field object; the side edit panel will refine its type/name
                 field_name = "Field"
                 field_obj = Field(
@@ -428,10 +399,9 @@ class ImageDisplayWidget(QLabel):
                     height=int(height),
                 )
 
-                # Add rectangle and field data
-                self.field_rects.append(new_rect)
-                self.field_data.append(field_obj)
-                logger.info(f"Added Field '{field_name}': {new_rect}")
+                # Add field to list
+                self.field_list.append(field_obj)
+                logger.info(f"Added Field '{field_name}' at ({int(left)}, {int(top)}, {int(width)}, {int(height)})")
 
                 # Notify parent via callbacks
                 if self.on_rect_added:

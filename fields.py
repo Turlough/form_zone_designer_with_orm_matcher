@@ -3,7 +3,6 @@ from dataclasses import dataclass, asdict
 
 @dataclass
 class Field:
-    
     colour: tuple[int, int, int]
     name: str
     x: int
@@ -26,11 +25,15 @@ class Field:
         return f"Field(name={self.name}, x={self.x}, y={self.y}, width={self.width}, height={self.height}, label={self.label})"
         
     def to_dict(self):
-        """Convert field to dictionary for JSON serialization.
-        
-        Args:
-            config_folder: Optional Path to config folder. 
-        """
+        """Convert field to dictionary for JSON serialization."""
+
+        # Prevent serializing base Field instances
+        if type(self) == Field:
+            raise ValueError(
+                "Base Field class cannot be serialized. "
+                "Field instances are temporary and must be converted to a concrete type "
+                "(Tickbox, RadioButton, RadioGroup, or TextField) before serialization."
+            )
         data = asdict(self)
         data['_type'] = self.__class__.__name__
         
@@ -43,7 +46,7 @@ class Field:
         Args:
             data: Dictionary containing field data
         """
-        field_type = data.pop('_type', 'Field')
+        field_type = data.pop('_type')
         
         # Map type name to class
         type_map = {

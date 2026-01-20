@@ -31,8 +31,9 @@ def load_page_fields(json_folder, page_idx, config_folder=None):
         # Convert JSON data to Field objects
         fields = []
         for field_dict in fields_data:
-            field_obj = Field.from_dict(field_dict, config_folder)
-            fields.append(field_obj)
+            field_obj = Field.from_dict(field_dict)
+            if type(field_obj) != Field:
+                fields.append(field_obj)
         
         logger.info(f"Loaded {len(fields)} fields from {json_path}")
         return fields
@@ -40,16 +41,16 @@ def load_page_fields(json_folder, page_idx, config_folder=None):
         logger.error(f"Error loading fields from {json_path}: {e}")
         return []
 
-def save_page_fields(json_folder, page_idx, page_field_data, config_folder=None):
+def save_page_fields(json_folder, page_idx, page_field_list, config_folder=None):
     """Save fields for a specific page to JSON file.
     
     Args:
         json_folder: Path to folder containing JSON files
         page_idx: Zero-based page index
-        page_field_data: List of field data for all pages
+        page_field_list: List of field lists for all pages
         config_folder: Optional Path to config folder for converting fiducial_paths to relative paths
     """
-    if page_idx < 0 or page_idx >= len(page_field_data):
+    if page_idx < 0 or page_idx >= len(page_field_list):
         logger.error(f"Invalid page index: {page_idx}")
         return
 
@@ -59,11 +60,12 @@ def save_page_fields(json_folder, page_idx, page_field_data, config_folder=None)
     if config_folder and not isinstance(config_folder, Path):
         config_folder = Path(config_folder)
     
-    # Convert field data to Field objects and then to dict
+    # Convert field list to Field objects and then to dict
     fields_data = []
-    for field_obj in page_field_data[page_idx]:
+    for field_obj in page_field_list[page_idx]:
         if isinstance(field_obj, Field):
-            fields_data.append(field_obj.to_dict())
+            if type(field_obj) != Field:
+                fields_data.append(field_obj.to_dict())
     
     try:
         with open(json_path, 'w') as f:

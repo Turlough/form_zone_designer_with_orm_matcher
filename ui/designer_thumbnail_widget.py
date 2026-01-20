@@ -5,12 +5,11 @@ from fields import Field, RadioGroup
 class DesignerThumbnailWidget(QWidget):
     """Custom widget to display a thumbnail with bounding box overlay."""
     
-    def __init__(self, pixmap, bbox=None, field_rects=None, field_data=None, margin=10):
+    def __init__(self, pixmap, bbox=None, field_list=None, margin=10):
         super().__init__()
         self.pixmap = pixmap
         self.bbox = bbox  # (top_left, bottom_right) tuples for logo
-        self.field_rects = field_rects or []  # List of field rectangles (fallback)
-        self.field_data = field_data or []  # List of Field objects
+        self.field_list = field_list or []  # List of Field objects
         self.margin = margin
         
         # Set fixed size to include margin
@@ -38,10 +37,10 @@ class DesignerThumbnailWidget(QWidget):
                            bottom_right[0] - top_left[0], 
                            bottom_right[1] - top_left[1])
         
-        # Draw field rectangles with colors from field data
+        # Draw field rectangles with colors from field list
         # Note: Field coordinates are already scaled and include logo offset for thumbnails
-        if self.field_data:
-            for field in self.field_data:
+        if self.field_list:
+            for field in self.field_list:
                 if isinstance(field, Field):
                     color = QColor(*field.colour)
                     pen = QPen(color, 1)
@@ -57,13 +56,5 @@ class DesignerThumbnailWidget(QWidget):
                             painter.setPen(rb_pen)
                             painter.drawRect(radio_button.x + self.margin, radio_button.y + self.margin,
                                            radio_button.width, radio_button.height)
-        elif self.field_rects:
-            # Fallback to red if no field data available
-            pen = QPen(QColor(255, 0, 0), 1)
-            painter.setPen(pen)
-            for rect in self.field_rects:
-                if rect:
-                    painter.drawRect(rect[0] + self.margin, rect[1] + self.margin,
-                                   rect[2], rect[3])
         
         painter.end()
