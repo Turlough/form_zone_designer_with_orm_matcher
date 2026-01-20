@@ -69,7 +69,7 @@ class FormZoneDesigner(QMainWindow):
         self.init_ui()
         # Connect edit panel signals
         if hasattr(self, "edit_panel"):
-            # self.edit_panel.page_json_changed.connect(self.on_page_json_changed)
+            self.edit_panel.page_json_changed.connect(self.on_page_json_changed)
             self.edit_panel.field_config_changed.connect(self.on_field_config_changed)
     
     def init_ui(self):
@@ -326,7 +326,7 @@ class FormZoneDesigner(QMainWindow):
         for item in data:
             if isinstance(item, dict):
                 try:
-                    field = Field.from_dict(item, self.config.config_folder if self.config else None)
+                    field = Field.from_dict(item)
                     # Only allow valid field types. Return if invalid.
                     if field.type not in ["Tickbox", "RadioButton", "RadioGroup", "TextField"]:
                         return
