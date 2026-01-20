@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QDropEvent
+from PyQt6.QtGui import QDropEvent, QPainter, QPen
 import json
 import copy
 import logging
@@ -27,6 +27,7 @@ class DesignerFieldList(QTableWidget):
         self.setDragDropMode(QTableWidget.DragDropMode.InternalMove)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setAlternatingRowColors(True)
+        self.setAcceptDrops(True)
         
         # Store the full field data for each row (to reconstruct JSON)
         self._field_data_list = []
@@ -36,6 +37,10 @@ class DesignerFieldList(QTableWidget):
         
         # Track the source row index when dragging starts
         self._drag_source_row = None
+
+        # Track the visual drop indicator (insert-before row index)
+        # None => no indicator, 0..rowCount() => insert before that row
+        self._drop_indicator_row = None
     
     def startDrag(self, supportedActions):
         """Override to capture the source row index before dragging begins."""
@@ -49,6 +54,39 @@ class DesignerFieldList(QTableWidget):
         
         # Call parent to handle the actual drag operation
         super().startDrag(supportedActions)
+
+    def dragMoveEvent(self, event):
+        """Show a visual insertion line between rows while dragging."""
+        # If we're updating programmatically, don't interfere
+        if self._updating_table:
+            super().dragMoveEvent(event)
+            return
+
+        pos = event.position().toPoint()
+        index = self.indexAt(pos)
+
+        if index.isValid():
+            rect = self.visualRect(index)
+            y = pos.y()
+            halfway = rect.top() + rect.height() / 2
+
+            # Decide whether insertion is before or after this row
+            if y < halfway:
+                self._drop_indicator_row = index.row()
+            else:
+                self._drop_indicator_row = index.row() + 1
+        else:
+            # Not over any row – treat as after the last row
+            self._drop_indicator_row = self.rowCount()
+
+        self.viewport().update()
+        event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event):
+        """Clear insertion indicator when drag leaves the widget."""
+        self._drop_indicator_row = None
+        self.viewport().update()
+        super().dragLeaveEvent(event)
     
     def set_page_json(self, json_text: str):
         """Set the fields table from JSON text without emitting change signals."""
@@ -152,6 +190,37 @@ class DesignerFieldList(QTableWidget):
             return json.dumps(self._field_data_list, indent=2, default=str)
         except TypeError:
             return "[]"
+
+    def paintEvent(self, event):
+        """Draw the table and, if present, an insertion line between rows."""
+        super().paintEvent(event)
+
+        if self._drop_indicator_row is None:
+            return
+
+        painter = QPainter(self.viewport())
+        try:
+            pen = QPen(self.palette().highlight().color())
+            pen.setWidth(2)
+            painter.setPen(pen)
+
+            # Determine y coordinate for the insertion line
+            if self.rowCount() == 0:
+                return
+
+            if self._drop_indicator_row >= self.rowCount():
+                # After the last row
+                last_index = self.model().index(self.rowCount() - 1, 0)
+                rect = self.visualRect(last_index)
+                y = rect.bottom()
+            else:
+                index = self.model().index(self._drop_indicator_row, 0)
+                rect = self.visualRect(index)
+                y = rect.top()
+
+            painter.drawLine(rect.left(), int(y), rect.right(), int(y))
+        finally:
+            painter.end()
     
     def dropEvent(self, event: QDropEvent):
         """Handle drop event to manually reorder rows with proper insertion behavior."""
@@ -160,23 +229,17 @@ class DesignerFieldList(QTableWidget):
             super().dropEvent(event)
             return
         
-        # Get source and destination rows
+        # Get source row that started the drag
         source_row = self._drag_source_row
-        if source_row is None:
-            # Fallback to default behavior if source wasn't tracked
-            super().dropEvent(event)
-            self._sync_field_data_from_table()
-            json_text = self._reconstruct_json_from_table()
-            self.page_json_changed.emit(json_text)
-            return
-        
-        # Get the destination row from the drop position
-        drop_position = event.position().toPoint()
-        destination_row = self.indexAt(drop_position).row()
-        
-        # Handle drop at end of table (when destination_row is -1)
-        if destination_row < 0:
-            destination_row = self.rowCount()
+
+        # Determine destination row: prefer visual indicator if set
+        if self._drop_indicator_row is not None:
+            destination_row = self._drop_indicator_row
+        else:
+            drop_position = event.position().toPoint()
+            destination_row = self.indexAt(drop_position).row()
+            if destination_row < 0:
+                destination_row = self.rowCount()
         
         # Validate indices
         if not (0 <= source_row < self.rowCount()):
@@ -191,6 +254,8 @@ class DesignerFieldList(QTableWidget):
         
         # If source == destination, no change needed
         if source_row == destination_row:
+            self._drop_indicator_row = None
+            self.viewport().update()
             event.accept()
             return
         
@@ -237,6 +302,9 @@ class DesignerFieldList(QTableWidget):
         
         finally:
             self._updating_table = False
+            # Clear visual indicator after drop
+            self._drop_indicator_row = None
+            self.viewport().update()
         
         # Emit the updated JSON
         json_text = self._reconstruct_json_from_table()
