@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap, QFont
+from .designer_field_list import DesignerFieldList
 
 
 class DesignerEditPanel(QWidget):
@@ -101,22 +102,16 @@ class DesignerEditPanel(QWidget):
 
         main_layout.addWidget(field_group)
 
-        # ---- 3. JSON editor for current page ----
-        json_group = QGroupBox("Page JSON")
+        # ---- 3. Fields table for current page ----
+        json_group = QGroupBox("Page Fields")
         json_layout = QVBoxLayout()
         json_group.setLayout(json_layout)
 
-        self.json_editor = QPlainTextEdit()
-        self.json_editor.setPlaceholderText("Page JSON will appear here when a page is loaded...")
-        font = QFont("Courier New")
-        font.setStyleHint(QFont.StyleHint.Monospace)
-        self.json_editor.setFont(font)
-        self.json_editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.fields_table = DesignerFieldList()
+        # Connect table changes to update JSON
+        self.fields_table.page_json_changed.connect(self.page_json_changed)
 
-        json_layout.addWidget(self.json_editor)
-
-        # Connect JSON changes; validation / application is handled by the main window.
-        self.json_editor.textChanged.connect(self._on_json_text_changed)
+        json_layout.addWidget(self.fields_table)
 
         main_layout.addWidget(json_group, stretch=1)
 
@@ -187,14 +182,12 @@ class DesignerEditPanel(QWidget):
         return None
 
     def set_page_json(self, json_text: str):
-        """Set the JSON text for the current page without emitting change signals."""
-        old_block = self.json_editor.blockSignals(True)
-        self.json_editor.setPlainText(json_text or "")
-        self.json_editor.blockSignals(old_block)
+        """Set the fields table from JSON text without emitting change signals."""
+        self.fields_table.set_page_json(json_text)
 
     def get_page_json(self) -> str:
-        """Return the raw JSON text from the editor."""
-        return self.json_editor.toPlainText()
+        """Return the raw JSON text reconstructed from the table order."""
+        return self.fields_table.get_page_json()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -204,9 +197,3 @@ class DesignerEditPanel(QWidget):
         config = self.get_current_field_config()
         if config:
             self.field_config_changed.emit(config)
-
-
-    def _on_json_text_changed(self):
-        text = self.get_page_json()
-        # Emit raw text; the main window decides when/how to validate & apply.
-        self.page_json_changed.emit(text)
