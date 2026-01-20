@@ -301,55 +301,91 @@ class FormZoneDesigner(QMainWindow):
             # Update JSON editor for the current page
             self._update_edit_panel_json(page_idx)
 
-    def on_page_json_changed(self, json_text: str):
-        """Handle edits to the page JSON from the edit panel."""
+    def on_page_json_changed(self, field_order: list):
+        """
+        Handle field order changes from the field list table (drag/drop).
+        
+        Args:
+            field_order: List of (field_name, field_type) tuples in the new order
+        """
         if self.current_page_idx is None:
             return
 
-        if not json_text.strip():
-            # Empty JSON area - treat as no-op for now
+        if not field_order:
+            # Empty order - treat as no-op
             return
-
-        try:
-            data = json.loads(json_text)
-        except json.JSONDecodeError:
-            # Ignore invalid JSON while the user is typing
-            logger.warning("Invalid JSON in edit panel; ignoring until valid")
-            return
-
-        if not isinstance(data, list):
-            logger.warning("Page JSON is not a list; ignoring")
-            return
-
-        # Recreate Field objects from JSON dicts
-        fields = []
-        for item in data:
-            if isinstance(item, dict):
-                try:
-                    field = Field.from_dict(item)
-                    # Only allow valid field types. Return if invalid.
-                    if field.type not in ["Tickbox", "RadioButton", "RadioGroup", "TextField"]:
-                        return
-                    # Otherwise continue
-                    fields.append(field)
-                except Exception as e:
-                    logger.error(f"Error converting JSON item to Field: {e}")
 
         page_idx = self.current_page_idx
         if page_idx < 0 or page_idx >= len(self.page_field_list):
             return
 
+        # Get current fields for this page
+        current_fields = self.page_field_list[page_idx]
+        
+        # Create lookup: (name, type) -> list of Field objects (handles duplicates)
+        # We use a list because there could be multiple fields with same name+type
+        field_lookup = {}
+        for idx, field in enumerate(current_fields):
+            if type(field) == Field:
+                # Skip base Field instances
+                continue
+            field_type = field.__class__.__name__
+            key = (field.name, field_type)
+            if key not in field_lookup:
+                field_lookup[key] = []
+            field_lookup[key].append((idx, field))
+        
+        # Reorder fields based on the new order
+        reordered_fields = []
+        used_indices = set()
+        
+        # First pass: match fields by (name, type)
+        for field_name, field_type in field_order:
+            key = (field_name, field_type)
+            if key in field_lookup and field_lookup[key]:
+                # Get the first unused field with this name+type
+                for idx, field in field_lookup[key]:
+                    if idx not in used_indices:
+                        reordered_fields.append(field)
+                        used_indices.add(idx)
+                        break
+                else:
+                    # All fields with this name+type are used, log warning
+                    logger.warning(
+                        f"Field '{field_name}' (type: {field_type}) in order list "
+                        f"but all matching fields already used"
+                    )
+            else:
+                # Field not found in current fields
+                logger.warning(
+                    f"Field '{field_name}' (type: {field_type}) in order list "
+                    f"but not found in page_field_list"
+                )
+        
+        # Second pass: add any remaining fields that weren't in the order list
+        # (preserve them at the end)
+        for idx, field in enumerate(current_fields):
+            if idx not in used_indices and type(field) != Field:
+                reordered_fields.append(field)
+                logger.debug(
+                    f"Preserving field '{field.name}' (type: {field.__class__.__name__}) "
+                    f"that wasn't in order list"
+                )
+
         # Update in-memory structures
-        self.page_field_list[page_idx] = fields
+        self.page_field_list[page_idx] = reordered_fields
 
         # Persist to disk
         if self.config:
             save_page_fields(str(self.config.json_folder), page_idx, self.page_field_list, self.config.config_folder)
 
         # Update UI (image display + thumbnail)
-        self.image_display.field_list = fields
+        self.image_display.field_list = reordered_fields
         self.image_display.update_display()
         self.update_thumbnail(page_idx)
+        
+        # Update JSON editor to reflect the reordered fields
+        self._update_edit_panel_json(page_idx)
 
     def _update_edit_panel_json(self, page_idx: int):
         """Populate the edit panel JSON area with the current page's fields."""

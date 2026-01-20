@@ -2,7 +2,6 @@ from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QDropEvent, QPainter, QPen
 import json
-import copy
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,9 +13,9 @@ class DesignerFieldList(QTableWidget):
     Shows field name and type, with special handling for RadioGroups.
     """
     
-    # Emitted whenever the JSON text changes due to row reordering.
-    # Payload is the raw JSON string.
-    page_json_changed = pyqtSignal(str)
+    # Emitted whenever the field order changes due to row reordering.
+    # Payload is a list of (field_name, field_type) tuples in the new order.
+    page_json_changed = pyqtSignal(list)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -29,8 +28,9 @@ class DesignerFieldList(QTableWidget):
         self.setAlternatingRowColors(True)
         self.setAcceptDrops(True)
         
-        # Store the full field data for each row (to reconstruct JSON)
-        self._field_data_list = []
+        # Store field identifiers (name, type) for each row in order
+        # This is lightweight and only tracks order - full data comes from page_field_list
+        self._field_order = []  # List of (field_name, field_type) tuples
         
         # Flag to prevent JSON updates during programmatic table changes
         self._updating_table = False
@@ -98,14 +98,14 @@ class DesignerFieldList(QTableWidget):
         finally:
             self._updating_table = False
     
-    def get_page_json(self) -> str:
-        """Return the raw JSON text reconstructed from the table order."""
-        return self._reconstruct_json_from_table()
+    def get_field_order(self) -> list:
+        """Return the field order as a list of (field_name, field_type) tuples."""
+        return self._get_field_order_from_table()
     
     def _update_table_from_json(self, json_text: str):
         """Parse JSON and populate the table, filtering out RadioButtons."""
         self.setRowCount(0)
-        self._field_data_list = []
+        self._field_order = []
         
         if not json_text or not json_text.strip():
             logger.debug("Empty JSON text provided to _update_table_from_json")
@@ -142,14 +142,15 @@ class DesignerFieldList(QTableWidget):
                 logger.debug(f"Skipping RadioButton at index {idx}")
                 continue
             
+            field_name = item.get('name', '')
+            
             # Handle RadioGroup - show with button count
             if field_type == 'RadioGroup':
                 radio_buttons = item.get('radio_buttons', [])
                 button_count = len(radio_buttons)
-                field_name = item.get('name', '')
                 display_name = f"{field_name} ({button_count})" if button_count > 0 else field_name
             else:
-                display_name = item.get('name', '')
+                display_name = field_name
             
             # Add row to table
             row = self.rowCount()
@@ -157,9 +158,9 @@ class DesignerFieldList(QTableWidget):
             
             name_item = QTableWidgetItem(display_name or '')
             name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            # Store the index into _field_data_list in the item's UserRole
-            # This allows us to track which field data belongs to which row after drag/drop
-            name_item.setData(Qt.ItemDataRole.UserRole, len(self._field_data_list))
+            # Store the index into _field_order in the item's UserRole
+            # This allows us to track which field belongs to which row after drag/drop
+            name_item.setData(Qt.ItemDataRole.UserRole, len(self._field_order))
             
             type_item = QTableWidgetItem(field_type)
             type_item.setFlags(type_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -167,8 +168,8 @@ class DesignerFieldList(QTableWidget):
             self.setItem(row, 0, name_item)
             self.setItem(row, 1, type_item)
             
-            # Store the full field data for this row (deep copy to avoid reference issues)
-            self._field_data_list.append(copy.deepcopy(item))
+            # Store only field name and type (lightweight identifier)
+            self._field_order.append((field_name, field_type))
             rows_added += 1
         
         logger.debug(f"Added {rows_added} rows to table")
@@ -178,18 +179,19 @@ class DesignerFieldList(QTableWidget):
         self.update()
         self.repaint()
     
-    def _reconstruct_json_from_table(self) -> str:
-        """Reconstruct JSON from the current table order."""
-        if not self._field_data_list:
-            return "[]"
+    def _get_field_order_from_table(self) -> list:
+        """Get the field order as a list of (field_name, field_type) tuples from the current table order."""
+        if not self._field_order:
+            return []
         
-        # _field_data_list is already in the correct order after drag/drop
-        # Each item in _field_data_list contains the complete field data
-        # (RadioGroups include their nested radio_buttons array)
-        try:
-            return json.dumps(self._field_data_list, indent=2, default=str)
-        except TypeError:
-            return "[]"
+        # After drag/drop, _field_order is kept in sync with table rows
+        # and UserRole indices match row positions, so we can use row index directly
+        order = []
+        for row in range(self.rowCount()):
+            if row < len(self._field_order):
+                order.append(self._field_order[row])
+        
+        return order
 
     def paintEvent(self, event):
         """Draw the table and, if present, an insertion line between rows."""
@@ -270,15 +272,15 @@ class DesignerFieldList(QTableWidget):
             source_type_item = self.takeItem(source_row, 1)
             self.removeRow(source_row)
             
-            # Get the field data index from the source row's UserRole
-            field_data_index = source_name_item.data(Qt.ItemDataRole.UserRole)
-            if field_data_index is None or not (0 <= field_data_index < len(self._field_data_list)):
-                logger.error(f"Invalid field_data_index {field_data_index} for source row {source_row}")
+            # Get the field order index from the source row's UserRole
+            field_order_index = source_name_item.data(Qt.ItemDataRole.UserRole)
+            if field_order_index is None or not (0 <= field_order_index < len(self._field_order)):
+                logger.error(f"Invalid field_order_index {field_order_index} for source row {source_row}")
                 self._updating_table = False
                 return
             
-            # Remove the field data from the list
-            moved_field_data = self._field_data_list.pop(field_data_index)
+            # Remove the field identifier from the list
+            moved_field_identifier = self._field_order.pop(field_order_index)
             
             # Adjust destination if source was before it (after removal, indices shift)
             if source_row < destination_row:
@@ -291,8 +293,8 @@ class DesignerFieldList(QTableWidget):
             self.setItem(insert_position, 0, source_name_item)
             self.setItem(insert_position, 1, source_type_item)
             
-            # Insert the field data at the corresponding position
-            self._field_data_list.insert(insert_position, moved_field_data)
+            # Insert the field identifier at the corresponding position
+            self._field_order.insert(insert_position, moved_field_identifier)
             
             # Update all UserRole indices to match new positions
             for row in range(self.rowCount()):
@@ -306,46 +308,8 @@ class DesignerFieldList(QTableWidget):
             self._drop_indicator_row = None
             self.viewport().update()
         
-        # Emit the updated JSON
-        json_text = self._reconstruct_json_from_table()
-        self.page_json_changed.emit(json_text)
+        # Emit the updated field order
+        field_order = self._get_field_order_from_table()
+        self.page_json_changed.emit(field_order)
     
-    def _sync_field_data_from_table(self):
-        """Synchronize _field_data_list with the current table row order."""
-        # Reconstruct _field_data_list by reading the field data indices
-        # stored in each row's name item UserRole, in the order they appear in the table
-        new_field_data_list = []
-        skipped_rows = []
-        
-        for row in range(self.rowCount()):
-            name_item = self.item(row, 0)
-            if name_item is None:
-                logger.warning(f"Row {row} has no name item, skipping")
-                skipped_rows.append(row)
-                continue
-                
-            field_data_index = name_item.data(Qt.ItemDataRole.UserRole)
-            if field_data_index is None:
-                logger.warning(f"Row {row} name item has no UserRole data, skipping")
-                skipped_rows.append(row)
-                continue
-                
-            if not (0 <= field_data_index < len(self._field_data_list)):
-                logger.warning(f"Row {row} has invalid field_data_index {field_data_index} (list length: {len(self._field_data_list)}), skipping")
-                skipped_rows.append(row)
-                continue
-            
-            # Copy the field data to the new list in the new order
-            new_field_data_list.append(copy.deepcopy(self._field_data_list[field_data_index]))
-            # Update the UserRole to reflect the new index in the new list
-            name_item.setData(Qt.ItemDataRole.UserRole, len(new_field_data_list) - 1)
-        
-        if skipped_rows:
-            logger.warning(f"Skipped {len(skipped_rows)} rows during field data sync: {skipped_rows}")
-        
-        # Replace the old list with the reordered one
-        if len(new_field_data_list) != len(self._field_data_list):
-            logger.warning(f"Field data list length changed: {len(self._field_data_list)} -> {len(new_field_data_list)}")
-        
-        self._field_data_list = new_field_data_list
     

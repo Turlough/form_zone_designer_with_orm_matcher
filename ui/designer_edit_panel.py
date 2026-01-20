@@ -31,9 +31,9 @@ class DesignerEditPanel(QWidget):
     # Payload is a simple dict: {"field_type": str, "field_name": str}
     field_config_changed = pyqtSignal(dict)
 
-    # Emitted whenever the JSON text changes and is syntactically valid.
-    # Payload is the raw JSON string.
-    page_json_changed = pyqtSignal(str)
+    # Emitted whenever the field order changes due to drag/drop in the table.
+    # Payload is a list of (field_name, field_type) tuples in the new order.
+    page_json_changed = pyqtSignal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -185,9 +185,9 @@ class DesignerEditPanel(QWidget):
         """Set the fields table from JSON text without emitting change signals."""
         self.fields_table.set_page_json(json_text)
 
-    def get_page_json(self) -> str:
-        """Return the raw JSON text reconstructed from the table order."""
-        return self.fields_table.get_page_json()
+    def get_field_order(self) -> list:
+        """Return the field order as a list of (field_name, field_type) tuples."""
+        return self.fields_table.get_field_order()
 
     # ------------------------------------------------------------------
     # Internal helpers
