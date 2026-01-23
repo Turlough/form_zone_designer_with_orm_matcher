@@ -86,6 +86,7 @@ class FieldIndexerWindow(QMainWindow):
         self.current_tiff_images = []  # List of PIL Images for current TIFF
         self.page_fields = []  # Fields for current page
         self.page_bbox = None  # Logo bbox for current page
+        self.field_values = {}  # Dictionary mapping field names to values for current page
         
         # Initialize UI
         self.init_ui()
@@ -266,7 +267,7 @@ class FieldIndexerWindow(QMainWindow):
         self.populate_field_values()
         
         # Display
-        self.image_label.set_image(pixmap, self.page_bbox, self.page_fields)
+        self.image_label.set_image(pixmap, self.page_bbox, self.page_fields, self.field_values)
     
     def detect_logo(self, pil_image):
         """Detect logo in the image, return bounding box or None."""
@@ -321,25 +322,26 @@ class FieldIndexerWindow(QMainWindow):
         if self.current_tiff_index < 0:
             return
         
+        # Clear existing values for this page
+        self.field_values = {}
+        
         for field in self.page_fields:
             if isinstance(field, RadioGroup):
                 # Get value for radio group
                 value = self.csv_manager.get_field_value(self.current_tiff_index, field.name)
                 if value:
-                    field.value = value
-                    # Set the corresponding radio button
-                    for rb in field.radio_buttons:
-                        rb.value = (rb.name == value)
+                    self.field_values[field.name] = value
             
             elif isinstance(field, Tickbox):
                 value = self.csv_manager.get_field_value(self.current_tiff_index, field.name)
                 if value:
-                    field.value = value.lower() in ['true', '1', 'yes', 'checked', 'ticked', 'tick']
+                    is_checked = value.lower() in ['ticked','true', '1', 'yes', 'checked', 'tick']
+                    self.field_values[field.name] = is_checked
             
             elif isinstance(field, TextField):
                 value = self.csv_manager.get_field_value(self.current_tiff_index, field.name)
                 if value:
-                    field.value = value
+                    self.field_values[field.name] = value
     
     def previous_page(self):
         """Navigate to previous page."""
@@ -357,26 +359,31 @@ class FieldIndexerWindow(QMainWindow):
         """Handle field click events."""
         if isinstance(field, Tickbox):
             # Toggle tickbox
-            field.value = not field.value
+            current_value = self.field_values.get(field.name, False)
+            new_value = not current_value
+            self.field_values[field.name] = new_value
+            
+            # Update ImageLabel's field_values
+            self.image_label.field_values = self.field_values.copy()
             
             # Save to CSV
             self.csv_manager.set_field_value(
                 self.current_tiff_index,
                 field.name,
-                'Ticked' if field.value else ''
+                'Ticked' if new_value else ''
             )
             self.csv_manager.save_csv()
             
             # Update display
             self.image_label.update_display()
-            logger.info(f"Tickbox '{field.name}' set to {field.value}")
+            logger.info(f"Tickbox '{field.name}' set to {new_value}")
         
         elif isinstance(field, RadioGroup) and sub_field:
             # Select radio button
-            for rb in field.radio_buttons:
-                rb.value = (rb == sub_field)
+            self.field_values[field.name] = sub_field.name
             
-            field.value = sub_field.name
+            # Update ImageLabel's field_values
+            self.image_label.field_values = self.field_values.copy()
             
             # Save to CSV
             self.csv_manager.set_field_value(
@@ -392,10 +399,14 @@ class FieldIndexerWindow(QMainWindow):
         
         elif isinstance(field, TextField):
             # Show text entry dialog
-            dialog = TextFieldDialog(self, field.value)
+            current_value = self.field_values.get(field.name, "")
+            dialog = TextFieldDialog(self, current_value)
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 new_text = dialog.get_text()
-                field.value = new_text
+                self.field_values[field.name] = new_text
+                
+                # Update ImageLabel's field_values
+                self.image_label.field_values = self.field_values.copy()
                 
                 # Save to CSV
                 self.csv_manager.set_field_value(

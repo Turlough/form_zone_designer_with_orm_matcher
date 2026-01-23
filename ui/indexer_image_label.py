@@ -16,6 +16,7 @@ class ImageLabel(QLabel):
         self.base_pixmap = None
         self.bbox = None  # Logo bounding box
         self.field_data = []  # List of Field objects
+        self.field_values = {}  # Dictionary mapping field name to field value
         self.scale_x = 1.0
         self.scale_y = 1.0
         self.image_offset_x = 0
@@ -28,11 +29,12 @@ class ImageLabel(QLabel):
         # Callback for field clicks
         self.on_field_click = None
     
-    def set_image(self, pixmap, bbox=None, field_data=None):
-        """Set the image, bounding box, and fields to display."""
+    def set_image(self, pixmap, bbox=None, field_data=None, field_values=None):
+        """Set the image, bounding box, fields, and field values to display."""
         self.base_pixmap = pixmap
         self.bbox = bbox
         self.field_data = field_data or []
+        self.field_values = field_values or {}
         self.update_display()
     
     def update_display(self):
@@ -109,6 +111,7 @@ class ImageLabel(QLabel):
                 painter.drawRect(scaled_rect)
                 
                 # Draw individual radio buttons
+                selected_rb_name = self.field_values.get(field.name, None)
                 for rb in field.radio_buttons:
                     rb_abs_x = rb.x + logo_offset[0]
                     rb_abs_y = rb.y + logo_offset[1]
@@ -121,12 +124,13 @@ class ImageLabel(QLabel):
                     )
                     
                     # Use thicker border if selected
-                    rb_pen = QPen(color, 3 if rb.value else 1)
+                    is_selected = (rb.name == selected_rb_name)
+                    rb_pen = QPen(color, 3 if is_selected else 1)
                     painter.setPen(rb_pen)
                     painter.drawRect(rb_scaled_rect)
                     
                     # Fill if selected
-                    if rb.value:
+                    if is_selected:
                         fill_color = QColor(*rb.colour) if rb.colour else QColor(150, 255, 0)
                         fill_color.setAlpha(100)
                         painter.fillRect(rb_scaled_rect, fill_color)
@@ -134,11 +138,14 @@ class ImageLabel(QLabel):
             elif isinstance(field, (Tickbox, TextField)):
                 color = QColor(*field.colour) if field.colour else QColor(0, 255, 0)
                 
+                # Get field value from dictionary
+                field_value = self.field_values.get(field.name, False if isinstance(field, Tickbox) else "")
+                
                 # Use thicker border if tickbox is checked or textfield has text
                 border_width = 1
-                if isinstance(field, Tickbox) and field.value:
+                if isinstance(field, Tickbox) and field_value:
                     border_width = 3
-                elif isinstance(field, TextField) and field.value:
+                elif isinstance(field, TextField) and field_value:
                     border_width = 3
                 
                 pen = QPen(color, border_width)
@@ -156,13 +163,13 @@ class ImageLabel(QLabel):
                 painter.drawRect(scaled_rect)
                 
                 # Fill tickbox if checked
-                if isinstance(field, Tickbox) and field.value:
+                if isinstance(field, Tickbox) and field_value:
                     fill_color = QColor(*field.colour) if field.colour else QColor(0, 255, 0)
                     fill_color.setAlpha(100)
                     painter.fillRect(scaled_rect, fill_color)
                 
                 # Fill and show text for TextField
-                if isinstance(field, TextField) and field.value:
+                if isinstance(field, TextField) and field_value:
                     # Fill with semitransparent color
                     fill_color = QColor(*field.colour) if field.colour else QColor(0, 255, 0)
                     fill_color.setAlpha(100)
@@ -179,7 +186,7 @@ class ImageLabel(QLabel):
                         scaled_rect.width() * 3,  # Allow text to extend
                         20
                     )
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft, field.value)
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft, field_value)
         
         painter.end()
         self.setPixmap(display_pixmap)
