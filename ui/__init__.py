@@ -3,5 +3,5 @@ from .designer_thumbnail_panel import DesignerThumbnailPanel
 from .designer_main_image_widget import ImageDisplayWidget
 from .designer_button_layout import DesignerButtonLayout
 from .designer_edit_panel import DesignerEditPanel
-from .indexer_image_label import ImageLabel
-from .index_detail_panel import IndexDetailPanel
+from .index_main_image_panel import MainImageIndexPanel
+from .index_details_panel import IndexDetailPanel

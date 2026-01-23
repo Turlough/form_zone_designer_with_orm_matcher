@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class ImageLabel(QLabel):
+class MainImageIndexPanel(QLabel):
     """Custom QLabel for displaying form pages with field overlays."""
     
     def __init__(self, parent=None):

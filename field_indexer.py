@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from util import ORMMatcher, CSVManager
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import logging
-from ui import ImageLabel, IndexDetailPanel
+from ui import MainImageIndexPanel, IndexDetailPanel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -141,7 +141,7 @@ class FieldIndexerWindow(QMainWindow):
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
-        self.image_label = ImageLabel()
+        self.image_label = MainImageIndexPanel()
         self.image_label.on_field_click = self.on_field_click
         scroll_area.setWidget(self.image_label)
         
