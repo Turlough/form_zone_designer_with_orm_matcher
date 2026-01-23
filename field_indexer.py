@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from util import ORMMatcher, CSVManager
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import logging
-from ui import ImageLabel
+from ui import ImageLabel, IndexDetailPanel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -112,13 +112,13 @@ class FieldIndexerWindow(QMainWindow):
         
         main_layout.addLayout(left_panel, 1)
         
-        # Right panel - Image display and navigation
-        right_panel = QVBoxLayout()
+        # Center panel - Image display and navigation
+        center_panel = QVBoxLayout()
         
         # Page info label
         self.page_info_label = QLabel("No file loaded")
         self.page_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        right_panel.addWidget(self.page_info_label)
+        center_panel.addWidget(self.page_info_label)
         
         # Navigation buttons
         nav_layout = QHBoxLayout()
@@ -133,7 +133,7 @@ class FieldIndexerWindow(QMainWindow):
         self.next_button.setEnabled(False)
         nav_layout.addWidget(self.next_button)
         
-        right_panel.addLayout(nav_layout)
+        center_panel.addLayout(nav_layout)
         
         # Image display
         scroll_area = QScrollArea()
@@ -145,9 +145,14 @@ class FieldIndexerWindow(QMainWindow):
         self.image_label.on_field_click = self.on_field_click
         scroll_area.setWidget(self.image_label)
         
-        right_panel.addWidget(scroll_area)
+        center_panel.addWidget(scroll_area)
         
-        main_layout.addLayout(right_panel, 3)
+        main_layout.addLayout(center_panel, 3)
+        
+        # Right panel - Field detail panel
+        self.detail_panel = IndexDetailPanel()
+        self.detail_panel.field_value_changed.connect(self.on_detail_panel_value_changed)
+        main_layout.addWidget(self.detail_panel, stretch=1)
     
     def load_import_file(self):
         """Load the import CSV/TXT file."""
@@ -268,6 +273,16 @@ class FieldIndexerWindow(QMainWindow):
         
         # Display
         self.image_label.set_image(pixmap, self.page_bbox, self.page_fields, self.field_values)
+        
+        # Update detail panel (clear selection when page changes)
+        if hasattr(self, 'detail_panel'):
+            self.detail_panel.set_current_field(
+                None,
+                page_image=pil_image,
+                page_bbox=self.page_bbox,
+                page_fields=self.page_fields,
+                field_values=self.field_values
+            )
     
     def detect_logo(self, pil_image):
         """Detect logo in the image, return bounding box or None."""
@@ -357,6 +372,19 @@ class FieldIndexerWindow(QMainWindow):
     
     def on_field_click(self, field, sub_field=None):
         """Handle field click events."""
+        # Update detail panel to show the clicked field
+        if hasattr(self, 'detail_panel') and self.current_tiff_images:
+            current_pil_image = self.current_tiff_images[self.current_page_index]
+            # For RadioGroups, show the group itself, not the individual button
+            field_to_show = field
+            self.detail_panel.set_current_field(
+                field_to_show,
+                page_image=current_pil_image,
+                page_bbox=self.page_bbox,
+                page_fields=self.page_fields,
+                field_values=self.field_values
+            )
+        
         if isinstance(field, Tickbox):
             # Toggle tickbox
             current_value = self.field_values.get(field.name, False)
@@ -376,6 +404,18 @@ class FieldIndexerWindow(QMainWindow):
             
             # Update display
             self.image_label.update_display()
+            
+            # Update detail panel
+            if hasattr(self, 'detail_panel') and self.current_tiff_images:
+                current_pil_image = self.current_tiff_images[self.current_page_index]
+                self.detail_panel.set_current_field(
+                    field,
+                    page_image=current_pil_image,
+                    page_bbox=self.page_bbox,
+                    page_fields=self.page_fields,
+                    field_values=self.field_values
+                )
+            
             logger.info(f"Tickbox '{field.name}' set to {new_value}")
         
         elif isinstance(field, RadioGroup) and sub_field:
@@ -395,6 +435,18 @@ class FieldIndexerWindow(QMainWindow):
             
             # Update display
             self.image_label.update_display()
+            
+            # Update detail panel
+            if hasattr(self, 'detail_panel') and self.current_tiff_images:
+                current_pil_image = self.current_tiff_images[self.current_page_index]
+                self.detail_panel.set_current_field(
+                    field,
+                    page_image=current_pil_image,
+                    page_bbox=self.page_bbox,
+                    page_fields=self.page_fields,
+                    field_values=self.field_values
+                )
+            
             logger.info(f"RadioGroup '{field.name}' set to '{sub_field.name}'")
         
         elif isinstance(field, TextField):
@@ -418,7 +470,40 @@ class FieldIndexerWindow(QMainWindow):
                 
                 # Update display
                 self.image_label.update_display()
+                
+                # Update detail panel
+                if hasattr(self, 'detail_panel') and self.current_tiff_images:
+                    current_pil_image = self.current_tiff_images[self.current_page_index]
+                    self.detail_panel.set_current_field(
+                        field,
+                        page_image=current_pil_image,
+                        page_bbox=self.page_bbox,
+                        page_fields=self.page_fields,
+                        field_values=self.field_values
+                    )
+                
                 logger.info(f"TextField '{field.name}' set to '{new_text}'")
+    
+    def on_detail_panel_value_changed(self, field_name: str, new_value: str):
+        """Handle value changes from the detail panel."""
+        # Update field_values
+        self.field_values[field_name] = new_value
+        
+        # Update ImageLabel's field_values
+        self.image_label.field_values = self.field_values.copy()
+        
+        # Save to CSV
+        self.csv_manager.set_field_value(
+            self.current_tiff_index,
+            field_name,
+            new_value
+        )
+        self.csv_manager.save_csv()
+        
+        # Update display
+        self.image_label.update_display()
+        
+        logger.info(f"Field '{field_name}' value changed to '{new_value}' via detail panel")
 
 
 def main():
