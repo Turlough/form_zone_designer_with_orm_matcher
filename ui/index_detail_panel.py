@@ -54,6 +54,7 @@ class IndexDetailPanel(QWidget):
         self.closeup_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.closeup_label.setMinimumHeight(200)
         self.closeup_label.setMaximumHeight(200)
+        self.closeup_label.setScaledContents(False)  # We'll handle scaling manually
         self.closeup_label.setStyleSheet(
             "QLabel { background-color: #3c3f41; color: #dddddd; border: 1px solid #555555; }"
         )
@@ -201,21 +202,29 @@ class IndexDetailPanel(QWidget):
             )
             pixmap = QPixmap.fromImage(q_image)
             
-            # Always set the pixmap, and scale if label has a valid size
+            # Get the available size of the label (fixed height, variable width)
             label_size = self.closeup_label.size()
-            if label_size.width() > 0 and label_size.height() > 0:
-                scaled = pixmap.scaled(
-                    label_size.width(),
-                    label_size.height(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation
-                )
-                self.closeup_label.setPixmap(scaled)
-            else:
-                # If label doesn't have size yet, set the pixmap directly
-                # It will be rescaled in resizeEvent
-                self.closeup_label.setPixmap(pixmap)
             
+            # If label doesn't have a valid size yet, use minimum dimensions
+            if label_size.width() <= 0 or label_size.height() <= 0:
+                # Use the label's minimum/maximum size hints
+                label_size = self.closeup_label.sizeHint()
+                if label_size.width() <= 0:
+                    label_size = self.closeup_label.minimumSizeHint()
+            
+            # Scale the image to fit the available area while preserving aspect ratio
+            # Account for any margins/padding in the label
+            available_width = max(1, label_size.width() - 4)  # Subtract small margin
+            available_height = max(1, label_size.height() - 4)  # Subtract small margin
+            
+            scaled = pixmap.scaled(
+                available_width,
+                available_height,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            
+            self.closeup_label.setPixmap(scaled)
             self.closeup_label.setText("")
             # Force an update to ensure the label repaints
             self.closeup_label.update()
