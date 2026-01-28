@@ -2,8 +2,9 @@ from PyQt6.QtWidgets import QLabel
 from PyQt6.QtCore import Qt, QRect
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QFont
 
-
 from fields import Field, RadioGroup, RadioButton, Tickbox, TextField
+
+TICK_CHAR = "\u2713"  # ✓
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,23 @@ class MainImageIndexPanel(QLabel):
         
         # Callback for field clicks
         self.on_field_click = None
-    
+
+    def _draw_tick_to_right(self, painter: QPainter, scaled_rect: QRect, color: QColor) -> None:
+        """Draw a tickmark slightly to the right of the right edge of scaled_rect, using color."""
+        offset = 4
+        tick_w = max(12, scaled_rect.height())
+        tick_rect = QRect(
+            scaled_rect.right() + offset,
+            scaled_rect.y(),
+            tick_w,
+            scaled_rect.height(),
+        )
+        painter.setPen(color)
+        font = QFont()
+        font.setPointSize(max(8, scaled_rect.height() - 2))
+        painter.setFont(font)
+        painter.drawText(tick_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, TICK_CHAR)
+
     def set_image(self, pixmap, bbox=None, field_data=None, field_values=None):
         """Set the image, bounding box, fields, and field values to display."""
         self.base_pixmap = pixmap
@@ -134,6 +151,8 @@ class MainImageIndexPanel(QLabel):
                         fill_color = QColor(*rb.colour) if rb.colour else QColor(150, 255, 0)
                         fill_color.setAlpha(100)
                         painter.fillRect(rb_scaled_rect, fill_color)
+                        rb_tick_color = QColor(*rb.colour) if rb.colour else QColor(150, 255, 0)
+                        self._draw_tick_to_right(painter, rb_scaled_rect, rb_tick_color)
             
             elif isinstance(field, (Tickbox, TextField)):
                 color = QColor(*field.colour) if field.colour else QColor(0, 255, 0)
@@ -167,6 +186,7 @@ class MainImageIndexPanel(QLabel):
                     fill_color = QColor(*field.colour) if field.colour else QColor(0, 255, 0)
                     fill_color.setAlpha(100)
                     painter.fillRect(scaled_rect, fill_color)
+                    self._draw_tick_to_right(painter, scaled_rect, color)
                 
                 # Fill and show text for TextField
                 if isinstance(field, TextField) and field_value:
@@ -187,6 +207,7 @@ class MainImageIndexPanel(QLabel):
                         20
                     )
                     painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft, field_value)
+                    self._draw_tick_to_right(painter, scaled_rect, color)
         
         painter.end()
         self.setPixmap(display_pixmap)
