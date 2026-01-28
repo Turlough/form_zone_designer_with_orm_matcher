@@ -86,7 +86,7 @@ class RadioButton(Tickbox):
    
     def __post_init__(self):
         super().__post_init__()
-        self.colour = (150, 255, 0)
+        self.colour = (100, 150, 0)
 
 
 @dataclass
@@ -96,7 +96,7 @@ class RadioGroup(Field):
     def __post_init__(self):
         super().__post_init__()
         self.radio_buttons = self.radio_buttons or []
-        self.colour = (150, 255, 0)
+        self.colour = (100, 150, 0)
 
     def add_radio_button(self, radio_button: RadioButton):
         self.radio_buttons.append(radio_button)
@@ -125,5 +125,5 @@ class TextField(Field):
     
     def __post_init__(self):
         super().__post_init__()
-        self.colour = (0, 255, 255)
+        self.colour = (0, 150, 150)
         
