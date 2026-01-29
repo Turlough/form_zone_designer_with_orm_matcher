@@ -144,6 +144,10 @@ class DesignerEditPanel(QWidget):
         Update the controls based on the given Field-like object.
         field_obj is expected to be one of: Field, Tickbox, RadioButton,
         RadioGroup, TextField (or compatible).
+
+        When field_obj is not None (e.g. user clicked a new rectangle), only
+        the name is synced from the object; the field type radio selection
+        is left unchanged so the user's last choice is preserved.
         """
         if field_obj is None:
             # Reset to defaults
@@ -151,16 +155,8 @@ class DesignerEditPanel(QWidget):
             self.name_input.clear()
             return
 
-        type_name = field_obj.__class__.__name__
-        mapping = {
-            "Tickbox": self.tickbox_radio,
-            "RadioButton": self.radiobutton_radio,
-            "RadioGroup": self.radiogroup_radio,
-            "TextField": self.textfield_radio,
-        }
-        radio = mapping.get(type_name, self.tickbox_radio)
-        radio.setChecked(True)
-
+        # Do not change the field type radio buttons—keep the user's last
+        # selection when a new rectangle is clicked.
         # Block signal emission while we programmatically update the name
         old_block = self.name_input.blockSignals(True)
         self.name_input.setText(getattr(field_obj, "name", "") or "")
