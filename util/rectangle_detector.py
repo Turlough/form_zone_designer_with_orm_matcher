@@ -176,14 +176,65 @@ def remove_duplicate_rectangles(rectangles):
     return unique
 
 
+def rect_contains(outer, inner):
+    """
+    Return True if inner is entirely inside outer (same or strictly inside).
+
+    Args:
+        outer: Tuple (x, y, width, height)
+        inner: Tuple (x, y, width, height)
+
+    Returns:
+        True if inner's bounding box is entirely within outer's.
+    """
+    x_o, y_o, w_o, h_o = outer
+    x_i, y_i, w_i, h_i = inner
+    return (
+        x_i >= x_o
+        and y_i >= y_o
+        and (x_i + w_i) <= (x_o + w_o)
+        and (y_i + h_i) <= (y_o + h_o)
+    )
+
+
+def remove_inner_rectangles(rectangles):
+    """
+    Remove rectangles that are entirely contained within another.
+    When both inner and outer perimeter of the same box are detected,
+    the inner one is removed.
+
+    Args:
+        rectangles: List of rectangles as (x, y, width, height)
+
+    Returns:
+        List of rectangles with inner ones removed.
+    """
+    if not rectangles:
+        return []
+
+    result = []
+    for rect in rectangles:
+        # Keep rect only if no other rectangle fully contains it
+        is_inner = False
+        for other in rectangles:
+            if other == rect:
+                continue
+            if rect_contains(other, rect):
+                is_inner = True
+                break
+        if not is_inner:
+            result.append(rect)
+    return result
+
+
 def calculate_iou(rect1, rect2):
     """
     Calculate Intersection over Union (IoU) between two rectangles.
-    
+
     Args:
         rect1: Tuple (x, y, width, height)
         rect2: Tuple (x, y, width, height)
-    
+
     Returns:
         IoU value (0 to 1)
     """

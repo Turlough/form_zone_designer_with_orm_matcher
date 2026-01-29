@@ -1,4 +1,7 @@
-from .rectangle_detector import detect_rectangles_multi_method as detect_rectangles
+from .rectangle_detector import (
+    detect_rectangles_multi_method as detect_rectangles,
+    remove_inner_rectangles,
+)
 from .designer_persistence import load_page_fields, save_page_fields
 from .orm_matcher import ORMMatcher
 from .designer_config import DesignerConfig

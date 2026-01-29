@@ -19,6 +19,12 @@ class DesignerButtonLayout(QHBoxLayout):
         parent.detect_button.setEnabled(False)
         self.addWidget(parent.detect_button)
 
+        parent.remove_inner_button = QPushButton("Remove inner rectangles")
+        parent.remove_inner_button.setToolTip("Remove detected rectangles that are entirely inside another (inner perimeters of the same box)")
+        parent.remove_inner_button.clicked.connect(parent.remove_inner_rectangles_clicked)
+        parent.remove_inner_button.setEnabled(False)
+        self.addWidget(parent.remove_inner_button)
+
         parent.undo_button = QPushButton("Undo Last Field")
         parent.undo_button.clicked.connect(parent.undo_last_field)
         parent.undo_button.setEnabled(False)

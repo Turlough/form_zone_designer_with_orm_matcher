@@ -20,7 +20,7 @@ from PyQt6.QtGui import QPixmap, QImage, QAction
 from PIL import Image
 from dotenv import load_dotenv
 from util import ORMMatcher, DesignerConfig
-from util import detect_rectangles, load_page_fields, save_page_fields
+from util import detect_rectangles, load_page_fields, save_page_fields, remove_inner_rectangles
 import logging
 
 from ui import (
@@ -292,6 +292,7 @@ class FormZoneDesigner(QMainWindow):
             self.clear_button.setEnabled(True)
             self.undo_button.setEnabled(len(field_list) > 0)
             self.grid_designer_button.setEnabled(bbox is not None)
+            self._update_remove_inner_button_state()
 
             # Enable zoom/fit controls now that an image is available
             self.fit_width_button.setEnabled(True)
@@ -782,13 +783,35 @@ class FormZoneDesigner(QMainWindow):
         # Store detected rectangles
         self.page_detected_rects[self.current_page_idx] = detected_rects
         self.image_display.detected_rects = detected_rects
-        
+
         logger.debug(f"Detected {len(detected_rects)} rectangles on page {self.current_page_idx + 1}")
-        
+
         # Update display to show detected rectangles
         self.image_display.update_display()
-        
-    
+
+        self._update_remove_inner_button_state()
+
+    def remove_inner_rectangles_clicked(self):
+        """Remove detected rectangles that are entirely inside another (inner perimeters)."""
+        if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.pages)):
+            return
+        rects = self.page_detected_rects[self.current_page_idx]
+        if not rects:
+            return
+        filtered = remove_inner_rectangles(rects)
+        removed = len(rects) - len(filtered)
+        self.page_detected_rects[self.current_page_idx] = filtered
+        self.image_display.detected_rects = filtered
+        self.image_display.update_display()
+        self._update_remove_inner_button_state()
+        logger.info(f"Removed {removed} inner rectangle(s) on page {self.current_page_idx + 1}")
+
+    def _update_remove_inner_button_state(self):
+        """Enable Remove inner rectangles when current page has detected rects."""
+        if hasattr(self, "remove_inner_button") and self.current_page_idx is not None:
+            rects = self.page_detected_rects[self.current_page_idx] if 0 <= self.current_page_idx < len(self.page_detected_rects) else []
+            self.remove_inner_button.setEnabled(len(rects) > 0)
+
     def update_thumbnail(self, page_idx):
         """Update the thumbnail for a specific page to reflect current field rectangles."""
         if 0 <= page_idx < len(self.pages):
