@@ -1,4 +1,8 @@
-"""GridDesigner window for designing radio grids (row = RadioGroup, columns = RadioButton names)."""
+"""GridDesigner window for designing radio grids.
+
+Supports horizontal orientation (row = RadioGroup, columns = RadioButton names)
+and vertical orientation (column = RadioGroup, rows = RadioButton names).
+"""
 
 from __future__ import annotations
 
@@ -16,6 +20,8 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QToolButton,
+    QRadioButton,
+    QButtonGroup,
 )
 from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal, QSize
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent
@@ -383,10 +389,24 @@ class GridDesigner(QMainWindow):
         self.setCentralWidget(central)
         main = QVBoxLayout(central)
 
+        orient_row = QHBoxLayout()
+        orient_row.addWidget(QLabel("Orientation:"))
+        self.orient_horizontal_rb = QRadioButton("Horizontal (row = group)")
+        self.orient_vertical_rb = QRadioButton("Vertical (column = group)")
+        self.orient_horizontal_rb.setChecked(True)
+        orient_group = QButtonGroup(self)
+        orient_group.addButton(self.orient_horizontal_rb)
+        orient_group.addButton(self.orient_vertical_rb)
+        self.orient_horizontal_rb.toggled.connect(self._on_orientation_changed)
+        orient_row.addWidget(self.orient_horizontal_rb)
+        orient_row.addWidget(self.orient_vertical_rb)
+        orient_row.addStretch()
+        main.addLayout(orient_row)
+
         mid = QHBoxLayout()
-        col_label = QLabel("Columns (answers):")
-        col_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        mid.addWidget(col_label)
+        self.col_label = QLabel("Columns (answers):")
+        self.col_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        mid.addWidget(self.col_label)
         self.col_container = QHBoxLayout()
         self._add_col_edit()
         self._add_col_edit()
@@ -404,8 +424,8 @@ class GridDesigner(QMainWindow):
         left_panel.setMaximumWidth(220)
         left_layout = QVBoxLayout(left_panel)
         left_layout.addStretch()
-        row_label = QLabel("Rows (questions):")
-        left_layout.addWidget(row_label)
+        self.row_label = QLabel("Rows (questions):")
+        left_layout.addWidget(self.row_label)
         row_edits_widget = QWidget()
         self.row_container = QVBoxLayout(row_edits_widget)
         self._add_row_edit()
@@ -478,6 +498,18 @@ class GridDesigner(QMainWindow):
         self.col_container.addWidget(e)
         self._sync_grid_shape()
 
+    def _orientation_is_vertical(self) -> bool:
+        return self.orient_vertical_rb.isChecked()
+
+    def _on_orientation_changed(self):
+        vertical = self._orientation_is_vertical()
+        if vertical:
+            self.row_label.setText("Rows (answers):")
+            self.col_label.setText("Columns (questions):")
+        else:
+            self.row_label.setText("Rows (questions):")
+            self.col_label.setText("Columns (answers):")
+
     def _sync_grid_shape(self):
         n_rows = max(1, len(self.row_edits))
         n_cols = max(2, len(self.col_edits))
@@ -504,10 +536,17 @@ class GridDesigner(QMainWindow):
     def _validate(self) -> Optional[str]:
         rows = self._row_labels()
         cols = self._col_labels()
-        if len(rows) < 1:
-            return "Add at least one row (question)."
-        if len(cols) < 2:
-            return "Add at least two columns (answers)."
+        vertical = self._orientation_is_vertical()
+        if vertical:
+            if len(rows) < 2:
+                return "Vertical: add at least two rows (answers)."
+            if len(cols) < 1:
+                return "Vertical: add at least one column (question)."
+        else:
+            if len(rows) < 1:
+                return "Add at least one row (question)."
+            if len(cols) < 2:
+                return "Add at least two columns (answers)."
         dup = [x for x in set(rows) if rows.count(x) > 1]
         if dup:
             return f"Duplicate row name: {dup[0]!r}."
@@ -536,26 +575,49 @@ class GridDesigner(QMainWindow):
             self.statusBar().showMessage("Grid shape mismatch.", 4000)
             return
         groups: list[RadioGroup] = []
-        for i, row_name in enumerate(rows):
-            buttons: list[RadioButton] = []
+        if self._orientation_is_vertical():
             for j, col_name in enumerate(cols):
-                x, y, w, h = cells[i][j]
-                rb = RadioButton(
+                buttons: list[RadioButton] = []
+                for i, row_name in enumerate(rows):
+                    x, y, w, h = cells[i][j]
+                    rb = RadioButton(
+                        colour=(100, 150, 0),
+                        name=row_name,
+                        x=x, y=y, width=w, height=h,
+                    )
+                    buttons.append(rb)
+                col_height = sum(cells[k][j][3] for k in range(len(rows)))
+                rg = RadioGroup(
                     colour=(100, 150, 0),
                     name=col_name,
-                    x=x, y=y, width=w, height=h,
+                    x=cells[0][j][0],
+                    y=cells[0][j][1],
+                    width=cells[0][j][2],
+                    height=col_height,
+                    radio_buttons=buttons,
                 )
-                buttons.append(rb)
-            rg = RadioGroup(
-                colour=(100, 150, 0),
-                name=row_name,
-                x=cells[i][0][0],
-                y=cells[i][0][1],
-                width=sum(cells[i][k][2] for k in range(len(cols))),
-                height=cells[i][0][3],
-                radio_buttons=buttons,
-            )
-            groups.append(rg)
+                groups.append(rg)
+        else:
+            for i, row_name in enumerate(rows):
+                buttons: list[RadioButton] = []
+                for j, col_name in enumerate(cols):
+                    x, y, w, h = cells[i][j]
+                    rb = RadioButton(
+                        colour=(100, 150, 0),
+                        name=col_name,
+                        x=x, y=y, width=w, height=h,
+                    )
+                    buttons.append(rb)
+                rg = RadioGroup(
+                    colour=(100, 150, 0),
+                    name=row_name,
+                    x=cells[i][0][0],
+                    y=cells[i][0][1],
+                    width=sum(cells[i][k][2] for k in range(len(cols))),
+                    height=cells[i][0][3],
+                    radio_buttons=buttons,
+                )
+                groups.append(rg)
         self.groups_submitted.emit(groups)
         self.statusBar().showMessage("Grid submitted.")
         self.close()
