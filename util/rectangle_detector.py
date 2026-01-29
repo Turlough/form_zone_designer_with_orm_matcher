@@ -4,14 +4,39 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-blur_kernel = (3, 3)
-canny_low_threshold = 50
-canny_high_threshold = 150
-dilate_iterations = 2
-epsilon_factor = 0.02
-overlap_threshold_value = 0.7
-min_area = 500
-max_area = 3000
+
+## HIGHER values in this section means more rectangles will be detected
+##----------------------------------------------------------------
+
+
+# How much to blur/smoothen the image before detecting edges. Higher values means more blur.
+blur_kernel_size = 5
+
+# Dilate iterations: how much to expand the edges to connect nearby contours
+dilate_iterations = 1  # higher number accepts weaker or slightly broken lines
+
+# epsilon factor is the accuracy factor for contour simplification
+epsilon_factor = 0.02  # the higher the factor, the more irregular the boundary can be
+
+
+## LOWER values in this section means more rectangles will be detected
+##----------------------------------------------------------
+
+# canny low threshold is for edge detection sensitivity
+canny_low_threshold = 50  # Increase this to reduce noise
+# canny high threshold is the threshold for the high threshold of the Canny edge detector
+canny_high_threshold = 150  # Adjust the low threshold first. 
+
+
+## Size of the rectangles to detect, and miscellaneous settings
+##----------------------------------------------------------------
+
+# overlap threshold value is the threshold for removing duplicate rectangles
+overlap_threshold_value = 0.7  # higher value means more rectangles will be detected
+# min area is the minimum area of a rectangle to consider
+min_area = 500  # lower value means more rectangles will be detected
+# max area is the maximum area of a rectangle to consider. Anything smaller will be discarded.
+max_area = 30000  # higher value means more rectangles will be detected
 
 def detect_rectangles_multi_method(image_cv, min_area=min_area, max_area=max_area):
     """
@@ -29,7 +54,7 @@ def detect_rectangles_multi_method(image_cv, min_area=min_area, max_area=max_are
     
     # Method 1: Standard edge detection with Canny
     gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    blurred = cv2.GaussianBlur(gray, (blur_kernel_size, blur_kernel_size), 0)
     edges = cv2.Canny(blurred, canny_low_threshold, canny_high_threshold)
     
     # Dilate edges to connect nearby contours
