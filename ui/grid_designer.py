@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSizePolicy,
+    QToolButton,
 )
 from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal, QSize
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent
@@ -62,6 +63,27 @@ class GridDesignerPageWidget(QLabel):
         self.dragging: Optional[str] = None  # 'col', 'row', or None
         self.drag_index: int = -1
         self.last_pos: Optional[QPoint] = None
+
+        self.zoom_mode = "autofit"  # 'autofit', 'fit_width', 'fit_height', 'manual'
+        self.zoom_factor = 1.0
+
+    def set_fit_width(self):
+        if not self.base_pixmap:
+            return
+        self.zoom_mode = "fit_width"
+        self.update_display()
+
+    def set_fit_height(self):
+        if not self.base_pixmap:
+            return
+        self.zoom_mode = "fit_height"
+        self.update_display()
+
+    def set_autofit(self):
+        if not self.base_pixmap:
+            return
+        self.zoom_mode = "autofit"
+        self.update_display()
 
     def set_image(self, pixmap: QPixmap, bbox=None):
         self.base_pixmap = pixmap
@@ -114,7 +136,14 @@ class GridDesignerPageWidget(QLabel):
         base_h = self.base_pixmap.height()
         if base_w <= 0 or base_h <= 0:
             return
-        scale = min(sz.width() / base_w, sz.height() / base_h)
+        if self.zoom_mode == "fit_width":
+            scale = sz.width() / base_w
+        elif self.zoom_mode == "fit_height":
+            scale = sz.height() / base_h
+        elif self.zoom_mode == "manual":
+            scale = self.zoom_factor
+        else:
+            scale = min(sz.width() / base_w, sz.height() / base_h)
         if scale <= 0:
             scale = 0.01
         target_w = int(base_w * scale)
@@ -354,19 +383,6 @@ class GridDesigner(QMainWindow):
         self.setCentralWidget(central)
         main = QVBoxLayout(central)
 
-        top = QHBoxLayout()
-        row_label = QLabel("Rows (questions):")
-        row_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        top.addWidget(row_label)
-        self.row_container = QVBoxLayout()
-        self._add_row_edit()
-        top.addLayout(self.row_container)
-        add_row_btn = QPushButton("+ Add row")
-        add_row_btn.clicked.connect(self._add_row_edit)
-        top.addWidget(add_row_btn)
-        top.addStretch()
-        main.addLayout(top)
-
         mid = QHBoxLayout()
         col_label = QLabel("Columns (answers):")
         col_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -382,11 +398,55 @@ class GridDesigner(QMainWindow):
         main.addLayout(mid)
 
         main.addWidget(QLabel("Draw a rectangle on the page to define the grid, then drag boundaries to match the template."))
+
+        content = QHBoxLayout()
+        left_panel = QWidget()
+        left_panel.setMaximumWidth(220)
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.addStretch()
+        row_label = QLabel("Rows (questions):")
+        left_layout.addWidget(row_label)
+        row_edits_widget = QWidget()
+        self.row_container = QVBoxLayout(row_edits_widget)
+        self._add_row_edit()
+        left_layout.addWidget(row_edits_widget)
+        add_row_btn = QPushButton("+ Add row")
+        add_row_btn.clicked.connect(self._add_row_edit)
+        left_layout.addWidget(add_row_btn)
+        left_layout.addStretch()
+        content.addWidget(left_panel)
+
+        right_part = QWidget()
+        right_layout = QVBoxLayout(right_part)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        zoom_row = QHBoxLayout()
+        self.autofit_button = QToolButton()
+        self.autofit_button.setText("⤢")
+        self.autofit_button.setToolTip("Autofit")
+        self.autofit_button.clicked.connect(self.page_widget.set_autofit)
+        self.autofit_button.setEnabled(False)
+        zoom_row.addWidget(self.autofit_button)
+        self.fit_width_button = QToolButton()
+        self.fit_width_button.setText("↔")
+        self.fit_width_button.setToolTip("Fit Width")
+        self.fit_width_button.clicked.connect(self.page_widget.set_fit_width)
+        self.fit_width_button.setEnabled(False)
+        zoom_row.addWidget(self.fit_width_button)
+        self.fit_height_button = QToolButton()
+        self.fit_height_button.setText("↕")
+        self.fit_height_button.setToolTip("Fit Height")
+        self.fit_height_button.clicked.connect(self.page_widget.set_fit_height)
+        self.fit_height_button.setEnabled(False)
+        zoom_row.addWidget(self.fit_height_button)
+        zoom_row.addStretch()
+        right_layout.addLayout(zoom_row)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("QScrollArea { background-color: #2b2b2b; }")
         scroll.setWidget(self.page_widget)
-        main.addWidget(scroll, stretch=1)
+        right_layout.addWidget(scroll, stretch=1)
+        content.addWidget(right_part, stretch=1)
+        main.addLayout(content, stretch=1)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -428,6 +488,9 @@ class GridDesigner(QMainWindow):
 
     def set_page(self, pixmap: QPixmap, bbox=None):
         self.page_widget.set_image(pixmap, bbox)
+        self.autofit_button.setEnabled(True)
+        self.fit_width_button.setEnabled(True)
+        self.fit_height_button.setEnabled(True)
 
     def _on_grid_too_small(self):
         self.statusBar().showMessage("Grid rectangle too small. Draw a larger area.", 4000)
