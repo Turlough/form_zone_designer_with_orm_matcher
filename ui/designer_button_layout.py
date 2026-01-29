@@ -29,6 +29,12 @@ class DesignerButtonLayout(QHBoxLayout):
         parent.clear_button.setEnabled(False)
         self.addWidget(parent.clear_button)
 
+        parent.grid_designer_button = QPushButton("Grid Designer")
+        parent.grid_designer_button.setToolTip("Design a radio grid (rows = questions, columns = answers)")
+        parent.grid_designer_button.clicked.connect(parent.open_grid_designer)
+        parent.grid_designer_button.setEnabled(False)
+        self.addWidget(parent.grid_designer_button)
+
         # Zoom / fit controls (icon-only buttons affecting ImageDisplayWidget zoom)
         parent.fit_width_button = QToolButton()
         parent.fit_width_button.setText("↔")

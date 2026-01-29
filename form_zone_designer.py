@@ -28,6 +28,7 @@ from ui import (
     DesignerThumbnailPanel,
     DesignerButtonLayout,
     DesignerEditPanel,
+    GridDesigner,
 )
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import json
@@ -290,6 +291,7 @@ class FormZoneDesigner(QMainWindow):
             self.detect_button.setEnabled(True)
             self.clear_button.setEnabled(True)
             self.undo_button.setEnabled(len(field_list) > 0)
+            self.grid_designer_button.setEnabled(bbox is not None)
 
             # Enable zoom/fit controls now that an image is available
             self.fit_width_button.setEnabled(True)
@@ -300,6 +302,48 @@ class FormZoneDesigner(QMainWindow):
 
             # Update JSON editor for the current page
             self._update_edit_panel_json(page_idx)
+
+    def open_grid_designer(self):
+        """Open the Grid Designer window for the current page. Enabled only when page has a fiducial."""
+        if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.pages)):
+            return
+        bbox = self.fiducials[self.current_page_idx] if self.current_page_idx < len(self.fiducials) else None
+        if bbox is None:
+            return
+        page = self.pages[self.current_page_idx]
+        page_array = np.array(page)
+        h, w = page_array.shape[:2]
+        bytes_per_line = 3 * w
+        q_image = QImage(page_array.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+        page_pixmap = QPixmap.fromImage(q_image)
+        gd = GridDesigner(self)
+        gd.set_page(page_pixmap, bbox)
+        gd.groups_submitted.connect(self._on_grid_designer_submitted)
+        gd.show()
+
+    def _on_grid_designer_submitted(self, groups: list):
+        """Append emitted radio groups to the current page, persist, and refresh UI."""
+        if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.page_field_list)):
+            return
+        for g in groups:
+            self.page_field_list[self.current_page_idx].append(g)
+        if self.config:
+            save_page_fields(
+                str(self.config.json_folder),
+                self.current_page_idx,
+                self.page_field_list,
+                self.config.config_folder,
+            )
+        self.image_display.field_list = self.page_field_list[self.current_page_idx]
+        self.image_display.update_display()
+        self.update_thumbnail(self.current_page_idx)
+        self._update_edit_panel_json(self.current_page_idx)
+        self.undo_button.setEnabled(True)
+        logger.info(
+            "Page %s: Added %d RadioGroup(s) from Grid Designer",
+            self.current_page_idx + 1,
+            len(groups),
+        )
 
     def on_page_json_changed(self, field_order: list):
         """
