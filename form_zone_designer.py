@@ -21,6 +21,7 @@ from PIL import Image
 from dotenv import load_dotenv
 from util import ORMMatcher, DesignerConfig
 from util import detect_rectangles, load_page_fields, save_page_fields, remove_inner_rectangles
+from util.app_state import load_state, save_state
 import logging
 
 from PyQt6.QtCore import QPoint
@@ -75,6 +76,8 @@ class FormZoneDesigner(QMainWindow):
         self.init_ui()
         if hasattr(self, "edit_panel"):
             self.edit_panel.page_json_changed.connect(self.on_page_json_changed)
+        # Restore last folder and page from AppData if available
+        self._try_restore_last_session()
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -124,57 +127,94 @@ class FormZoneDesigner(QMainWindow):
         # Wire selection callback from image widget to edit panel
         self.image_display.on_field_selected = self.on_field_selected
     
+    def _load_config_from_path(self, folder_path: str) -> bool:
+        """Load config from a folder path (no dialog). Clears existing pages. Returns True on success."""
+        # Clear existing state so we don't append to a previous load
+        self.pages.clear()
+        self.fiducials.clear()
+        self.page_field_list.clear()
+        self.page_detected_rects.clear()
+        self.current_page_idx = None
+
+        config_folder = Path(folder_path)
+        self.config = DesignerConfig(config_folder)
+
+        logger.info(f"Loaded config folder: {config_folder}")
+
+        logo_candidates = ['logo.png', 'logo.tif', 'fiducial.png', 'fiducial.jpg']
+        logo_path = None
+        for candidate in logo_candidates:
+            candidate_path = self.config.fiducials_folder / candidate
+            if candidate_path.exists():
+                logo_path = str(candidate_path)
+                break
+
+        if logo_path:
+            self.matcher = ORMMatcher(logo_path)
+            logger.info(f"Initialized ORM matcher with logo: {logo_path}")
+        else:
+            self.matcher = None
+            logger.warning("No logo found in fiducials folder, ORM matcher not initialized")
+
+        if not self.config.template_path.exists():
+            return False
+        self.load_multipage_tiff(str(self.config.template_path))
+        return True
+
+    def _try_restore_last_session(self) -> None:
+        """Restore last config folder and page from AppData if valid."""
+        state = load_state()
+        folder = (state.get("last_config_folder") or "").strip()
+        if not folder or not Path(folder).exists():
+            return
+        if not (Path(folder) / "template.tif").exists():
+            return
+        try:
+            if not self._load_config_from_path(folder):
+                return
+            save_state(last_config_folder=folder)
+            page_idx = state.get("last_page_index")
+            if page_idx is None or page_idx < 0 or page_idx >= len(self.pages):
+                page_idx = 0
+            self.on_thumbnail_clicked(page_idx)
+            save_state(last_page_index=page_idx)
+        except Exception as e:
+            logger.warning("Could not restore last session: %s", e)
+
     def load_config_folder(self):
         """Open folder picker to select a config folder and load it."""
-        # Get default folder from environment variable
-        default_path = self.default_config_folder if self.default_config_folder else str(Path.home())
-        
-        # Open folder picker
+        state = load_state()
+        default_path = (
+            (state.get("last_config_folder") or "").strip()
+            or self.default_config_folder
+            or str(Path.home())
+        )
+
         folder_path = QFileDialog.getExistingDirectory(
             self,
             "Select Config Folder",
             default_path,
             QFileDialog.Option.ShowDirsOnly
         )
-        
+
         if not folder_path:
-            # User cancelled
             return
-        
+
         try:
-            # Create DesignerConfig instance
-            config_folder = Path(folder_path)
-            self.config = DesignerConfig(config_folder)
-            
-            logger.info(f"Loaded config folder: {config_folder}")
-            
-            # Initialize ORM matcher if logo exists in fiducials folder
-            # Look for common logo file names
-            logo_candidates = ['logo.png', 'logo.tif', 'fiducial.png', 'fiducial.jpg']
-            logo_path = None
-            for candidate in logo_candidates:
-                candidate_path = self.config.fiducials_folder / candidate
-                if candidate_path.exists():
-                    logo_path = str(candidate_path)
-                    break
-            
-            if logo_path:
-                self.matcher = ORMMatcher(logo_path)
-                logger.info(f"Initialized ORM matcher with logo: {logo_path}")
-            else:
-                self.matcher = None
-                logger.warning("No logo found in fiducials folder, ORM matcher not initialized")
-            
-            # Load the template TIFF file
-            if self.config.template_path.exists():
-                self.load_multipage_tiff(str(self.config.template_path))
-            else:
+            if not self._load_config_from_path(folder_path):
                 QMessageBox.warning(
                     self,
                     "Template Not Found",
                     f"Template file not found: {self.config.template_path}"
                 )
-            
+                return
+            save_state(last_config_folder=folder_path)
+            state = load_state()
+            page_idx = state.get("last_page_index")
+            if page_idx is None or page_idx < 0 or page_idx >= len(self.pages):
+                page_idx = 0
+            self.on_thumbnail_clicked(page_idx)
+            save_state(last_page_index=page_idx)
         except FileNotFoundError as e:
             QMessageBox.critical(
                 self,
@@ -308,6 +348,10 @@ class FormZoneDesigner(QMainWindow):
 
             # Update JSON editor for the current page
             self._update_edit_panel_json(page_idx)
+
+            # Persist last page viewed so it restores on next launch
+            if self.config:
+                save_state(last_page_index=page_idx)
 
     def open_grid_designer(self):
         """Open the Grid Designer window for the current page. Enabled only when page has a fiducial."""
