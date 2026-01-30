@@ -68,6 +68,9 @@ class FormZoneDesigner(QMainWindow):
         # ORM matcher (initialized when config is loaded)
         self.matcher = None
         
+        # Last field type chosen when converting a detected rect (for default in dialog)
+        self._last_field_type = "Tickbox"
+        
         # Initialize UI
         self.init_ui()
         if hasattr(self, "edit_panel"):
@@ -659,6 +662,7 @@ class FormZoneDesigner(QMainWindow):
             is_just_drawn=False,
             existing_field=None,
             inner_rect_count=0,
+            default_field_type=self._last_field_type,
         )
 
         def on_submit(config: dict):
@@ -666,6 +670,7 @@ class FormZoneDesigner(QMainWindow):
             field_name = config.get("field_name", "").strip()
             if not field_name:
                 return
+            self._last_field_type = field_type
             type_map = {
                 "Tickbox": Tickbox,
                 "RadioButton": RadioButton,
@@ -720,6 +725,7 @@ class FormZoneDesigner(QMainWindow):
             is_just_drawn=True,
             existing_field=None,
             inner_rect_count=inner_count,
+            default_field_type=self._last_field_type,
         )
 
         def on_submit(config: dict):
@@ -727,6 +733,7 @@ class FormZoneDesigner(QMainWindow):
             field_name = config.get("field_name", "").strip()
             if not field_name:
                 return
+            self._last_field_type = field_type
             if field_type == "RadioGroup" and inner_count > 0:
                 inner_names = config.get("inner_names", [])
                 while len(inner_names) < inner_count:

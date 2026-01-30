@@ -43,6 +43,7 @@ class RectangleSelectedDialog(QDialog):
         is_just_drawn: bool = False,
         existing_field=None,
         inner_rect_count: int = 0,
+        default_field_type: str = "Tickbox",
     ):
         super().__init__(parent)
         self.setWindowTitle("Rectangle / Field")
@@ -98,7 +99,7 @@ class RectangleSelectedDialog(QDialog):
         self.cancel_btn.clicked.connect(self.reject)
         self.delete_btn = QPushButton("Delete")
         self.delete_btn.clicked.connect(self._on_delete)
-        
+
         btn_layout.addWidget(self.delete_btn)
         btn_layout.addStretch()
         btn_layout.addWidget(self.cancel_btn)
@@ -113,7 +114,10 @@ class RectangleSelectedDialog(QDialog):
                 self._type_radios[t].setChecked(True)
             self._on_type_changed()
         else:
-            self._type_radios["Tickbox"].setChecked(True)
+            default = default_field_type if default_field_type in self._type_radios else "Tickbox"
+            if default == "RadioGroup" and not is_just_drawn:
+                default = "Tickbox"
+            self._type_radios[default].setChecked(True)
             self._on_type_changed()
 
         self.setMinimumWidth(220)
