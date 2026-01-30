@@ -94,6 +94,7 @@ class RectangleSelectedDialog(QDialog):
         btn_layout = QHBoxLayout()
 
         self.submit_btn = QPushButton("Submit")
+        self.submit_btn.setDefault(True)
         self.submit_btn.clicked.connect(self._on_submit)
         self.cancel_btn = QPushButton("Cancel")    
         self.cancel_btn.clicked.connect(self.reject)
