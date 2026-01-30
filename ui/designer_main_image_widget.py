@@ -37,11 +37,18 @@ class ImageDisplayWidget(QLabel):
         self.zoom_mode = 'autofit'
         self.zoom_factor = 1.0
         
-        # Callback for when a rectangle is added
+        # Callback for when a rectangle is added (used after dialog submit for new field)
         self.on_rect_added = None
 
-        # Callback for when an existing field / rectangle is selected
+        # Callback for when an existing field / rectangle is selected (opens dialog)
         self.on_field_selected = None
+
+        # Callback when user left-clicks a detected rect: on_detected_rect_clicked(rect_index, rect_xywh_abs, global_pos)
+        self.on_detected_rect_clicked = None
+
+        # Callback when user finishes drawing a rect: on_rect_drawn(drawn_rect_rel, inner_rects_rel, global_pos)
+        # drawn_rect_rel / inner_rects_rel are (x,y,w,h) relative to logo
+        self.on_rect_drawn = None
     
     def set_image(self, pixmap, bbox=None, field_list=None, detected_rects=None):
         """Set the image, bounding box, and field list to display."""
@@ -279,82 +286,44 @@ class ImageDisplayWidget(QLabel):
             self.setPixmap(display_pixmap)
     
     def mousePressEvent(self, event: QMouseEvent):
-        """Handle mouse press to start drawing a rectangle or right-click on detected rect."""
-        if event.button() == Qt.MouseButton.RightButton and self.base_pixmap:
-            # Check if right-clicked on a detected rectangle
-            click_x = (event.pos().x() - self.image_offset_x) / self.scale_x
-            click_y = (event.pos().y() - self.image_offset_y) / self.scale_y
-            
-            # Find the detected rectangle that was clicked
-            for i, rect in enumerate(self.detected_rects):
-                x, y, w, h = rect
-                if x <= click_x <= x + w and y <= click_y <= y + h:
-                    # Make coordinates relative to fiducial/logo bounding box if available
-                    rel_x = x
-                    rel_y = y
+        """Handle mouse press: left-click selects field/detected rect or starts drawing; right-click no longer converts."""
+        if event.button() != Qt.MouseButton.LeftButton or not self.base_pixmap:
+            return
+
+        click_x = (event.pos().x() - self.image_offset_x) / self.scale_x
+        click_y = (event.pos().y() - self.image_offset_y) / self.scale_y
+
+        # 1) Check if the user clicked on an existing field → selection (dialog opened by main window)
+        if self.field_list:
+            for field in self.field_list:
+                if isinstance(field, Field):
+                    abs_x = field.x
+                    abs_y = field.y
                     if self.bbox:
                         logo_top_left = self.bbox[0]
-                        rel_x = x - logo_top_left[0]
-                        rel_y = y - logo_top_left[1]
+                        abs_x += logo_top_left[0]
+                        abs_y += logo_top_left[1]
+                    if (
+                        abs_x <= click_x <= abs_x + field.width
+                        and abs_y <= click_y <= abs_y + field.height
+                    ):
+                        logger.info(f"Selected field '{field.name}'")
+                        if self.on_field_selected:
+                            self.on_field_selected(field, event.globalPosition().toPoint())
+                        return
 
-                    # Create a default Field object; the side edit panel will refine its type/name
-
-                    field_obj = Field(
-                        colour=None,
-                        name=None,
-                        x=int(rel_x),
-                        y=int(rel_y),
-                        width=int(w),
-                        height=int(h),
-                    )
-
-                    # Remove from detected rectangles and add to fields
-                    self.detected_rects.pop(i)
-                    self.field_list.append(field_obj)
-                    logger.info(f"Converted detected rectangle to Field")
-
-                    # Notify parent via callbacks
-                    if self.on_rect_added:
-                        self.on_rect_added(field_obj)
-                    if self.on_field_selected:
-                        self.on_field_selected(field_obj, event.globalPosition().toPoint())
-
-                    self.update_display()
-                    break
-        elif event.button() == Qt.MouseButton.LeftButton and self.base_pixmap:
-            # First, check if the user clicked on an existing field; if so, treat as selection
-            click_x = (event.pos().x() - self.image_offset_x) / self.scale_x
-            click_y = (event.pos().y() - self.image_offset_y) / self.scale_y
-
-            # Try to find a Field under the cursor
-            selected_field = None
-            if self.field_list:
-                for field in self.field_list:
-                    if isinstance(field, Field):
-                        abs_x = field.x
-                        abs_y = field.y
-                        if self.bbox:
-                            logo_top_left = self.bbox[0]
-                            abs_x += logo_top_left[0]
-                            abs_y += logo_top_left[1]
-
-                        if (
-                            abs_x <= click_x <= abs_x + field.width
-                            and abs_y <= click_y <= abs_y + field.height
-                        ):
-                            selected_field = field
-                            break
-
-            if selected_field is not None:
-                logger.info(f"Selected field '{selected_field.name}'")
-                if self.on_field_selected:
-                    self.on_field_selected(selected_field, event.globalPosition().toPoint())
+        # 2) Check if the user clicked on a detected rectangle → show dialog (no convert here)
+        for i, rect in enumerate(self.detected_rects):
+            x, y, w, h = rect
+            if x <= click_x <= x + w and y <= click_y <= y + h:
+                if self.on_detected_rect_clicked:
+                    self.on_detected_rect_clicked(i, rect, event.globalPosition().toPoint())
                 return
 
-            # Otherwise, start drawing a new rectangle
-            self.is_drawing = True
-            self.start_point = event.pos()
-            self.current_point = event.pos()
+        # 3) Otherwise, start drawing a new rectangle
+        self.is_drawing = True
+        self.start_point = event.pos()
+        self.current_point = event.pos()
     
     def mouseMoveEvent(self, event: QMouseEvent):
         """Handle mouse move to update the rectangle being drawn."""
@@ -363,55 +332,49 @@ class ImageDisplayWidget(QLabel):
             self.update_display()
     
     def mouseReleaseEvent(self, event: QMouseEvent):
-        """Handle mouse release to complete drawing a rectangle."""
-        if event.button() == Qt.MouseButton.LeftButton and self.is_drawing and self.base_pixmap:
-            self.is_drawing = False
-            self.current_point = event.pos()
-            
-            # Convert to original image coordinates
-            x1 = (self.start_point.x() - self.image_offset_x) / self.scale_x
-            y1 = (self.start_point.y() - self.image_offset_y) / self.scale_y
-            x2 = (self.current_point.x() - self.image_offset_x) / self.scale_x
-            y2 = (self.current_point.y() - self.image_offset_y) / self.scale_y
-            
-            # Normalize coordinates (ensure top-left and bottom-right)
-            left = min(x1, x2)
-            top = min(y1, y2)
-            width = abs(x2 - x1)
-            height = abs(y2 - y1)
-            
-            # Make coordinates relative to fiducial/logo bounding box if available
-            if self.bbox:
-                logo_top_left = self.bbox[0]
-                left = left - logo_top_left[0]
-                top = top - logo_top_left[1]
-            
-            # Only add rectangle if it has some size
-            if width > 5 and height > 5:
-                # Create a default Field object; the side edit panel will refine its type/name
-                field_name = "Field"
-                field_obj = Field(
-                    colour=None,
-                    name=field_name,
-                    x=int(left),
-                    y=int(top),
-                    width=int(width),
-                    height=int(height),
-                )
+        """Handle mouse release: finish drawing and notify main window to show dialog (no add until submit)."""
+        if event.button() != Qt.MouseButton.LeftButton or not self.is_drawing or not self.base_pixmap:
+            return
 
-                # Add field to list
-                self.field_list.append(field_obj)
-                logger.info(f"Added Field '{field_name}' at ({int(left)}, {int(top)}, {int(width)}, {int(height)})")
+        self.is_drawing = False
+        self.current_point = event.pos()
 
-                # Notify parent via callbacks
-                if self.on_rect_added:
-                    self.on_rect_added(field_obj)
-                if self.on_field_selected:
-                    self.on_field_selected(field_obj, event.globalPosition().toPoint())
-            
-            self.start_point = None
-            self.current_point = None
-            self.update_display()
+        x1 = (self.start_point.x() - self.image_offset_x) / self.scale_x
+        y1 = (self.start_point.y() - self.image_offset_y) / self.scale_y
+        x2 = (self.current_point.x() - self.image_offset_x) / self.scale_x
+        y2 = (self.current_point.y() - self.image_offset_y) / self.scale_y
+
+        left_abs = min(x1, x2)
+        top_abs = min(y1, y2)
+        width = abs(x2 - x1)
+        height = abs(y2 - y1)
+
+        logo_top_left = self.bbox[0] if self.bbox else (0, 0)
+        left_rel = left_abs - logo_top_left[0]
+        top_rel = top_abs - logo_top_left[1]
+        drawn_rect_rel = (int(left_rel), int(top_rel), int(width), int(height))
+
+        self.start_point = None
+        self.current_point = None
+        self.update_display()
+
+        if width <= 5 or height <= 5:
+            return
+
+        # Rectangles fully within the drawn rect (from detected_rects, in absolute coords)
+        right_abs = left_abs + width
+        bottom_abs = top_abs + height
+        inner_rects_rel = []
+        for rect in self.detected_rects:
+            rx, ry, rw, rh = rect
+            if (left_abs <= rx and top_abs <= ry and
+                rx + rw <= right_abs and ry + rh <= bottom_abs):
+                rel_x = rx - logo_top_left[0]
+                rel_y = ry - logo_top_left[1]
+                inner_rects_rel.append((int(rel_x), int(rel_y), int(rw), int(rh)))
+
+        if self.on_rect_drawn:
+            self.on_rect_drawn(drawn_rect_rel, inner_rects_rel, event.globalPosition().toPoint())
     
     def resizeEvent(self, event):
         """Handle resize events to rescale the image."""

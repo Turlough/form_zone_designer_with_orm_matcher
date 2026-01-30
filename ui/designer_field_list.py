@@ -101,6 +101,16 @@ class DesignerFieldList(QTableWidget):
     def get_field_order(self) -> list:
         """Return the field order as a list of (field_name, field_type) tuples."""
         return self._get_field_order_from_table()
+
+    def highlight_field(self, field_name: str, field_type: str):
+        """Select the row that matches the given field name and type."""
+        for row in range(self.rowCount()):
+            if row >= len(self._field_order):
+                break
+            name, ftype = self._field_order[row]
+            if name == field_name and ftype == field_type:
+                self.setCurrentCell(row, 0)
+                return
     
     def _update_table_from_json(self, json_text: str):
         """Parse JSON and populate the table, filtering out RadioButtons."""

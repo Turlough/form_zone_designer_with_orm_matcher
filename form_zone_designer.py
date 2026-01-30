@@ -23,12 +23,14 @@ from util import ORMMatcher, DesignerConfig
 from util import detect_rectangles, load_page_fields, save_page_fields, remove_inner_rectangles
 import logging
 
+from PyQt6.QtCore import QPoint
 from ui import (
     ImageDisplayWidget,
     DesignerThumbnailPanel,
     DesignerButtonLayout,
     DesignerEditPanel,
     GridDesigner,
+    RectangleSelectedDialog,
 )
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import json
@@ -68,10 +70,8 @@ class FormZoneDesigner(QMainWindow):
         
         # Initialize UI
         self.init_ui()
-        # Connect edit panel signals
         if hasattr(self, "edit_panel"):
             self.edit_panel.page_json_changed.connect(self.on_page_json_changed)
-            self.edit_panel.field_config_changed.connect(self.on_field_config_changed)
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -275,14 +275,16 @@ class FormZoneDesigner(QMainWindow):
             # Display with bounding box overlay and field list
             self.image_display.set_image(page_pixmap, bbox, field_list, detected_rects)
             
-            # Set callback to update thumbnail when a rectangle is added
+            # Set callback to update thumbnail when a rectangle is added (e.g. from dialog submit)
             def on_rect_added_handler(field_obj):
                 self.page_field_list[self.current_page_idx].append(field_obj)
                 self.update_thumbnail(self.current_page_idx)
                 self.undo_button.setEnabled(True)
                 logger.info(f"Page {self.current_page_idx + 1}: Added {field_obj.__class__.__name__} '{field_obj.name}' at ({field_obj.x}, {field_obj.y})")
-            
+
             self.image_display.on_rect_added = on_rect_added_handler
+            self.image_display.on_detected_rect_clicked = self._on_detected_rect_clicked
+            self.image_display.on_rect_drawn = self._on_rect_drawn
 
             # Update JSON editor for the current page
             self._update_edit_panel_json(page_idx)
@@ -460,8 +462,8 @@ class FormZoneDesigner(QMainWindow):
 
     def on_field_selected(self, field_obj, global_pos):
         """
-        Called when the user clicks on an existing field / rectangle on the image.
-        Updates the edit panel's preview strip and field controls.
+        Called when the user clicks on an existing field on the image.
+        Updates preview, highlights the field in the list, and opens RectangleSelectedDialog.
         """
         if not self.edit_panel or self.current_page_idx is None:
             return
@@ -469,12 +471,9 @@ class FormZoneDesigner(QMainWindow):
         # Store reference to selected field and find its index
         self.selected_field_obj = field_obj
         self.selected_field_index = None
-        
-        # Find the field index in page_field_list
         if 0 <= self.current_page_idx < len(self.page_field_list):
             field_list = self.page_field_list[self.current_page_idx]
             for idx, field in enumerate(field_list):
-                # Match by identity or by position/size (in case object was recreated)
                 if field is field_obj or (
                     field.x == field_obj.x and
                     field.y == field_obj.y and
@@ -484,43 +483,44 @@ class FormZoneDesigner(QMainWindow):
                     self.selected_field_index = idx
                     break
 
-        # Update the field controls to reflect this field
-        self.edit_panel.set_field_from_object(field_obj)
-
-        # Build a horizontal strip preview for the selected field.
+        # Update preview strip
         page = self.pages[self.current_page_idx]
         page_array = np.array(page)
         height, width, _ = page_array.shape
-
-        # Field coordinates are relative to logo; convert to absolute image coords
         abs_x = field_obj.x
         abs_y = field_obj.y
         if self.fiducials[self.current_page_idx]:
             logo_top_left = self.fiducials[self.current_page_idx][0]
             abs_x += logo_top_left[0]
             abs_y += logo_top_left[1]
-
         top = max(0, abs_y - 50)
         bottom = min(height, abs_y + field_obj.height + 50)
-
-        # Create a strip spanning full width, between top and bottom
         strip = page_array[top:bottom, :, :]
-
         if strip.size == 0:
             self.edit_panel.set_preview_pixmap(QPixmap())
-            return
+        else:
+            strip_height, strip_width, channel = strip.shape
+            bytes_per_line = 3 * strip_width
+            q_image = QImage(
+                strip.data, strip_width, strip_height,
+                bytes_per_line, QImage.Format.Format_RGB888,
+            )
+            self.edit_panel.set_preview_pixmap(QPixmap.fromImage(q_image))
 
-        strip_height, strip_width, channel = strip.shape
-        bytes_per_line = 3 * strip_width
-        q_image = QImage(
-            strip.data,
-            strip_width,
-            strip_height,
-            bytes_per_line,
-            QImage.Format.Format_RGB888,
+        # Highlight field in the field list
+        self.edit_panel.fields_table.highlight_field(field_obj.name, type(field_obj).__name__)
+
+        # Open RectangleSelectedDialog (existing field: pre-fill name/type, RadioGroup disabled)
+        dialog = RectangleSelectedDialog(
+            self,
+            QPoint(int(global_pos.x()), int(global_pos.y())),
+            is_just_drawn=False,
+            existing_field=field_obj,
+            inner_rect_count=0,
         )
-        strip_pixmap = QPixmap.fromImage(q_image)
-        self.edit_panel.set_preview_pixmap(strip_pixmap)
+        dialog.submitted.connect(self.on_field_config_changed)
+        dialog.deleted.connect(self.delete_current_rectangle)
+        dialog.exec()
 
     def on_field_config_changed(self, config: dict):
         """
@@ -640,6 +640,157 @@ class FormZoneDesigner(QMainWindow):
             f"Page {self.current_page_idx + 1}: Updated field to {field_type} '{field_name}' "
             f"at ({new_field.x}, {new_field.y})"
         )
+
+    def _on_detected_rect_clicked(self, rect_index: int, rect_xywh_abs, global_pos):
+        """User left-clicked a detected rectangle: show dialog; on submit convert to field, on delete remove rect."""
+        if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.page_detected_rects)):
+            return
+        rects = self.page_detected_rects[self.current_page_idx]
+        if rect_index < 0 or rect_index >= len(rects):
+            return
+        x_abs, y_abs, w, h = rects[rect_index]
+        logo_top_left = self.fiducials[self.current_page_idx][0] if self.fiducials[self.current_page_idx] else (0, 0)
+        x_rel = x_abs - logo_top_left[0]
+        y_rel = y_abs - logo_top_left[1]
+
+        dialog = RectangleSelectedDialog(
+            self,
+            QPoint(int(global_pos.x()), int(global_pos.y())),
+            is_just_drawn=False,
+            existing_field=None,
+            inner_rect_count=0,
+        )
+
+        def on_submit(config: dict):
+            field_type = config.get("field_type", "Tickbox")
+            field_name = config.get("field_name", "").strip()
+            if not field_name:
+                return
+            type_map = {
+                "Tickbox": Tickbox,
+                "RadioButton": RadioButton,
+                "RadioGroup": RadioGroup,
+                "TextField": TextField,
+            }
+            field_class = type_map.get(field_type, Tickbox)
+            kwargs = {"name": field_name, "x": int(x_rel), "y": int(y_rel), "width": int(w), "height": int(h)}
+            if field_class == RadioGroup:
+                kwargs["radio_buttons"] = []
+            colour_by_type = {Tickbox: (255, 0, 0), RadioButton: (100, 150, 0), RadioGroup: (100, 150, 0), TextField: (0, 150, 150)}
+            kwargs["colour"] = colour_by_type.get(field_class, (255, 0, 0))
+            new_field = field_class(**kwargs)
+            self.page_detected_rects[self.current_page_idx].pop(rect_index)
+            self.page_field_list[self.current_page_idx].append(new_field)
+            self.image_display.detected_rects = self.page_detected_rects[self.current_page_idx]
+            self.image_display.field_list = self.page_field_list[self.current_page_idx]
+            if self.config:
+                save_page_fields(
+                    str(self.config.json_folder),
+                    self.current_page_idx,
+                    self.page_field_list,
+                    self.config.config_folder,
+                )
+            self.image_display.update_display()
+            self.update_thumbnail(self.current_page_idx)
+            self._update_edit_panel_json(self.current_page_idx)
+            self.undo_button.setEnabled(True)
+            logger.info(f"Page {self.current_page_idx + 1}: Converted detected rect to {field_type} '{field_name}'")
+
+        def on_deleted():
+            self.page_detected_rects[self.current_page_idx].pop(rect_index)
+            self.image_display.detected_rects = self.page_detected_rects[self.current_page_idx]
+            self.image_display.update_display()
+            self._update_remove_inner_button_state()
+            logger.info(f"Page {self.current_page_idx + 1}: Deleted detected rectangle")
+
+        dialog.submitted.connect(on_submit)
+        dialog.deleted.connect(on_deleted)
+        dialog.exec()
+
+    def _on_rect_drawn(self, drawn_rect_rel, inner_rects_rel, global_pos):
+        """User finished drawing a rectangle: show dialog (RadioGroup enabled); on submit add field(s), on delete discard."""
+        if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.page_field_list)):
+            return
+        left_rel, top_rel, w, h = drawn_rect_rel
+        inner_count = len(inner_rects_rel)
+
+        dialog = RectangleSelectedDialog(
+            self,
+            QPoint(int(global_pos.x()), int(global_pos.y())),
+            is_just_drawn=True,
+            existing_field=None,
+            inner_rect_count=inner_count,
+        )
+
+        def on_submit(config: dict):
+            field_type = config.get("field_type", "Tickbox")
+            field_name = config.get("field_name", "").strip()
+            if not field_name:
+                return
+            if field_type == "RadioGroup" and inner_count > 0:
+                inner_names = config.get("inner_names", [])
+                while len(inner_names) < inner_count:
+                    inner_names.append(f"Option {len(inner_names) + 1}")
+                radio_buttons = []
+                for i, (rx, ry, rw, rh) in enumerate(inner_rects_rel):
+                    name = inner_names[i] if i < len(inner_names) else f"Option {i + 1}"
+                    rb = RadioButton(name=name, x=rx, y=ry, width=rw, height=rh, colour=(100, 150, 0))
+                    radio_buttons.append(rb)
+                rg = RadioGroup(
+                    name=field_name,
+                    x=left_rel, y=top_rel, width=w, height=h,
+                    radio_buttons=radio_buttons,
+                    colour=(100, 150, 100)
+                )
+                self.page_field_list[self.current_page_idx].append(rg)
+                # Remove inner rects from detected_rects (match by position)
+                logo = self.fiducials[self.current_page_idx][0] if self.fiducials[self.current_page_idx] else (0, 0)
+                det = self.page_detected_rects[self.current_page_idx]
+                to_remove = []
+                for j, rect in enumerate(det):
+                    ra, rb, rw, rh = rect
+                    for (irx, iry, iw, ih) in inner_rects_rel:
+                        if (ra == irx + logo[0] and rb == iry + logo[1] and rw == iw and rh == ih):
+                            to_remove.append(j)
+                            break
+                for j in reversed(to_remove):
+                    det.pop(j)
+                self.image_display.detected_rects = self.page_detected_rects[self.current_page_idx]
+            else:
+                type_map = {
+                    "Tickbox": Tickbox,
+                    "RadioButton": RadioButton,
+                    "RadioGroup": RadioGroup,
+                    "TextField": TextField,
+                }
+                field_class = type_map.get(field_type, Tickbox)
+                kwargs = {"name": field_name, "x": left_rel, "y": top_rel, "width": w, "height": h, "colour": (255, 0, 0)}
+                if field_class == RadioGroup:
+                    kwargs["radio_buttons"] = []
+                new_field = field_class(**kwargs)
+                self.page_field_list[self.current_page_idx].append(new_field)
+            self.image_display.field_list = self.page_field_list[self.current_page_idx]
+            if self.config:
+                save_page_fields(
+                    str(self.config.json_folder),
+                    self.current_page_idx,
+                    self.page_field_list,
+                    self.config.config_folder,
+                )
+            self.image_display.update_display()
+            self.update_thumbnail(self.current_page_idx)
+            self._update_edit_panel_json(self.current_page_idx)
+            self.undo_button.setEnabled(True)
+            logger.info(f"Page {self.current_page_idx + 1}: Added {field_type} '{field_name}' from drawn rect")
+
+        def on_deleted():
+            # Discard drawn rect only; do not delete inner rectangles
+            self.image_display.update_display()
+            logger.info(f"Page {self.current_page_idx + 1}: Discarded drawn rectangle (RadioGroup not added)")
+
+        dialog.submitted.connect(on_submit)
+        dialog.deleted.connect(on_deleted)
+        dialog.exec()
 
     # ---- Zoom / fit button handlers ----
 

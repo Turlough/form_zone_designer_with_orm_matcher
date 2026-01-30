@@ -22,7 +22,7 @@ class Field:
         return f"{self.name} ({self.x}, {self.y}, {self.width}, {self.height})"
 
     def __repr__(self):
-        return f"Field(name={self.name}, x={self.x}, y={self.y}, width={self.width}, height={self.height}, label={self.label})"
+        return f"Field(name={self.name}, x={self.x}, y={self.y}, width={self.width}, height={self.height}, colour={self.colour})"
         
     def to_dict(self):
         """Convert field to dictionary for JSON serialization."""
@@ -79,7 +79,6 @@ class Tickbox(Field):
     def __post_init__(self):
         super().__post_init__()
         
-
 
 @dataclass
 class RadioButton(Tickbox):

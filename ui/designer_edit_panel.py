@@ -2,37 +2,20 @@ from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QLabel,
-    QRadioButton,
-    QButtonGroup,
-    QLineEdit,
-    QPlainTextEdit,
     QGroupBox,
-    QHBoxLayout,
-    QPushButton,
-    )
+)
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QPixmap, QFont
+from PyQt6.QtGui import QPixmap
 from .designer_field_list import DesignerFieldList
 
 
 class DesignerEditPanel(QWidget):
     """
-    Right-side panel used for inspecting and editing Fields / Rectangles and
-    the JSON backing for the current page.
-
-    Layout (top to bottom):
-      1. Preview strip (fixed 500px high) showing a horizontal strip of the
-         currently selected Field / Rectangle.
-      2. Field configuration controls (ported from FieldConfigDialog).
-      3. Editable JSON view for the current page.
+    Right-side panel: preview strip for the selected field and the Page Fields table.
+    Converting rectangles to fields and editing name/type is done via RectangleSelectedDialog.
     """
 
-    # Emitted when the user changes the field controls (type or name).
-    # Payload is a simple dict: {"field_type": str, "field_name": str}
-    field_config_changed = pyqtSignal(dict)
-
     # Emitted whenever the field order changes due to drag/drop in the table.
-    # Payload is a list of (field_name, field_type) tuples in the new order.
     page_json_changed = pyqtSignal(list)
 
     def __init__(self, parent=None):
@@ -43,7 +26,7 @@ class DesignerEditPanel(QWidget):
         main_layout.setSpacing(8)
         self.setLayout(main_layout)
 
-        # ---- 1. Preview strip for selected Field / Rectangle ----
+        # ---- 1. Preview strip for selected Field ----
         self.preview_label = QLabel("No selection")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_label.setMinimumHeight(200)
@@ -53,62 +36,12 @@ class DesignerEditPanel(QWidget):
         )
         main_layout.addWidget(self.preview_label)
 
-        # TODO: Add a button to delete the current rectangle
-        self.delete_button = QPushButton("Delete Rectangle")
-        self.delete_button.clicked.connect(self.parent().delete_current_rectangle)
-        main_layout.addWidget(self.delete_button)
-
-        # ---- 2. Field configuration controls (from FieldConfigDialog) ----
-        field_group = QGroupBox("Field Configuration")
-        field_layout = QVBoxLayout()
-        field_group.setLayout(field_layout)
-
-        type_label = QLabel("Field Type:")
-        field_layout.addWidget(type_label)
-
-        self.button_group = QButtonGroup(self)
-
-        self.tickbox_radio = QRadioButton("Tickbox")
-        self.radiobutton_radio = QRadioButton("RadioButton")
-        self.radiogroup_radio = QRadioButton("RadioGroup")
-        self.textfield_radio = QRadioButton("TextField")
-
-        # default selection
-        self.tickbox_radio.setChecked(True)
-
-        self.button_group.addButton(self.tickbox_radio, 0)
-        self.button_group.addButton(self.radiobutton_radio, 1)
-        self.button_group.addButton(self.radiogroup_radio, 2)
-        self.button_group.addButton(self.textfield_radio, 3)
-
-        field_layout.addWidget(self.tickbox_radio)
-        field_layout.addWidget(self.radiobutton_radio)
-        field_layout.addWidget(self.radiogroup_radio)
-        field_layout.addWidget(self.textfield_radio)
-
-        name_label = QLabel("Field Name:")
-        field_layout.addWidget(name_label)
-
-        self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("Enter field name...")
-        field_layout.addWidget(self.name_input)
-
-        # Simple horizontal layout for future action buttons if needed
-        actions_layout = QHBoxLayout()
-        field_layout.addLayout(actions_layout)
-
-        # Only emit signal when Enter key is pressed in name input (not on every text change)
-        self.name_input.returnPressed.connect(self._emit_field_config_changed)
-
-        main_layout.addWidget(field_group)
-
-        # ---- 3. Fields table for current page ----
+        # ---- 2. Fields table for current page ----
         json_group = QGroupBox("Page Fields")
         json_layout = QVBoxLayout()
         json_group.setLayout(json_layout)
 
         self.fields_table = DesignerFieldList()
-        # Connect table changes to update JSON
         self.fields_table.page_json_changed.connect(self.page_json_changed)
 
         json_layout.addWidget(self.fields_table)
@@ -140,42 +73,10 @@ class DesignerEditPanel(QWidget):
         self.preview_label.setText("")
 
     def set_field_from_object(self, field_obj):
-        """
-        Update the controls based on the given Field-like object.
-        field_obj is expected to be one of: Field, Tickbox, RadioButton,
-        RadioGroup, TextField (or compatible).
-
-        When field_obj is not None (e.g. user clicked a new rectangle), only
-        the name is synced from the object; the field type radio selection
-        is left unchanged so the user's last choice is preserved.
-        """
+        """Clear the preview when selection is cleared (field_obj is None)."""
         if field_obj is None:
-            # Reset to defaults
-            self.tickbox_radio.setChecked(True)
-            self.name_input.clear()
-            return
-
-        # Do not change the field type radio buttons—keep the user's last
-        # selection when a new rectangle is clicked.
-        # Block signal emission while we programmatically update the name
-        old_block = self.name_input.blockSignals(True)
-        self.name_input.setText(getattr(field_obj, "name", "") or "")
-        self.name_input.blockSignals(old_block)
-
-        # After syncing, explicitly emit current config (without relying on events)
-        # self._emit_field_config_changed()
-
-    def get_current_field_config(self) -> dict:
-        """Return a dict with the currently selected field type and name."""
-        button_id = self.button_group.checkedId()
-        field_types = ["Tickbox", "RadioButton", "RadioGroup", "TextField"]
-        if 0 <= button_id < len(field_types):
-            field_type = field_types[button_id]
-            field_name = self.name_input.text().strip() or None
-            if not field_name:
-                return None
-            return {"field_type": field_type, "field_name": field_name}
-        return None
+            self.preview_label.setText("No selection")
+            self.preview_label.setPixmap(QPixmap())
 
     def set_page_json(self, json_text: str):
         """Set the fields table from JSON text without emitting change signals."""
@@ -184,12 +85,3 @@ class DesignerEditPanel(QWidget):
     def get_field_order(self) -> list:
         """Return the field order as a list of (field_name, field_type) tuples."""
         return self.fields_table.get_field_order()
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _emit_field_config_changed(self, *args, **kwargs):
-        config = self.get_current_field_config()
-        if config:
-            self.field_config_changed.emit(config)
