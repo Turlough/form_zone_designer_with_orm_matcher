@@ -252,3 +252,25 @@ class MainImageIndexPanel(QLabel):
                     self.on_field_click(field, None)
                     return
 
+    def get_field_rect_in_widget(self, field) -> QRect | None:
+        """
+        Return the field's bounding rectangle in widget coordinates, or None
+        if the field is not a simple rect (e.g. RadioGroup has multiple rects).
+        Used to position IndexTextDialog under a TextField.
+        """
+        if not self.base_pixmap or not self.field_data:
+            return None
+        logo_offset = self.bbox[0] if self.bbox else (0, 0)
+        if isinstance(field, RadioGroup):
+            # Return the group container rect
+            abs_x = field.x + logo_offset[0]
+            abs_y = field.y + logo_offset[1]
+        else:
+            abs_x = field.x + logo_offset[0]
+            abs_y = field.y + logo_offset[1]
+        x = self.image_offset_x + int(abs_x * self.scale_x)
+        y = self.image_offset_y + int(abs_y * self.scale_y)
+        w = int(field.width * self.scale_x)
+        h = int(field.height * self.scale_y)
+        return QRect(x, y, w, h)
+

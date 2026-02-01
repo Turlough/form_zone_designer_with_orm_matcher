@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from util import ORMMatcher, CSVManager
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import logging
-from ui import MainImageIndexPanel, IndexDetailPanel
+from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -121,6 +121,10 @@ class FieldIndexerWindow(QMainWindow):
         self.detail_panel = IndexDetailPanel()
         self.detail_panel.field_value_changed.connect(self.on_detail_panel_value_changed)
         main_layout.addWidget(self.detail_panel, stretch=1)
+
+        # Text field popup dialog (shown under clicked TextField; synced with detail panel)
+        self._index_text_dialog = IndexTextDialog(self)
+        self._index_text_dialog.text_changed.connect(self.on_index_text_dialog_value_changed)
     
     def load_import_file(self):
         """Load the import CSV/TXT file."""
@@ -418,15 +422,18 @@ class FieldIndexerWindow(QMainWindow):
             logger.info(f"RadioGroup '{field.name}' set to '{sub_field.name}'")
         
         elif isinstance(field, TextField):
-            # Show text entry dialog
-            current_value = self.field_values.get(field.name, "")
-
+            # Update detail panel first so it shows the clicked field
             self.image_label.field_values = self.field_values.copy()
-            
-            # Update display
             self.image_label.update_display()
-            
-            # Update detail panel
+
+            # Show IndexTextDialog directly under the bottom of the TextField
+            rect = self.image_label.get_field_rect_in_widget(field)
+            if rect is not None:
+                global_bottom_left = self.image_label.mapToGlobal(rect.bottomLeft())
+                current_value = self.field_values.get(field.name, "")
+                self._index_text_dialog.set_field(field.name or "TextField", current_value)
+                self._index_text_dialog.show_under_rect(global_bottom_left, rect.width())
+
             if hasattr(self, 'detail_panel') and self.current_tiff_images:
                 current_pil_image = self.current_tiff_images[self.current_page_index]
                 self.detail_panel.set_current_field(
@@ -436,17 +443,21 @@ class FieldIndexerWindow(QMainWindow):
                     page_fields=self.page_fields,
                     field_values=self.field_values
                 )
-            
-            logger.info(f"TextField '{field.name}' set to '{current_value}'")
+
+            logger.info(f"TextField '{field.name}' clicked, value='{self.field_values.get(field.name, '')}'")
     
     def on_detail_panel_value_changed(self, field_name: str, new_value: str):
         """Handle value changes from the detail panel."""
         # Update field_values
         self.field_values[field_name] = new_value
-        
+
+        # Keep IndexTextDialog in sync when user types in the detail panel
+        if self._index_text_dialog.isVisible() and self._index_text_dialog.field_name == field_name:
+            self._index_text_dialog.set_text(new_value)
+
         # Update ImageLabel's field_values
         self.image_label.field_values = self.field_values.copy()
-        
+
         # Save to CSV
         self.csv_manager.set_field_value(
             self.current_tiff_index,
@@ -454,11 +465,31 @@ class FieldIndexerWindow(QMainWindow):
             new_value
         )
         self.csv_manager.save_csv()
-        
+
         # Update display
         self.image_label.update_display()
-        
+
         logger.info(f"Field '{field_name}' value changed to '{new_value}' via detail panel")
+
+    def on_index_text_dialog_value_changed(self, field_name: str, new_value: str):
+        """Handle value changes from the IndexTextDialog (shown under TextField)."""
+        self.field_values[field_name] = new_value
+
+        # Keep detail panel in sync
+        if hasattr(self, 'detail_panel') and self.detail_panel.current_field and self.detail_panel.current_field.name == field_name:
+            self.detail_panel.set_current_field(
+                self.detail_panel.current_field,
+                page_image=self.detail_panel.current_page_image,
+                page_bbox=self.detail_panel.page_bbox,
+                page_fields=self.detail_panel.page_fields,
+                field_values=self.field_values
+            )
+
+        self.image_label.field_values = self.field_values.copy()
+        self.csv_manager.set_field_value(self.current_tiff_index, field_name, new_value)
+        self.csv_manager.save_csv()
+        self.image_label.update_display()
+        logger.info(f"Field '{field_name}' value changed to '{new_value}' via text dialog")
 
 
 def main():
