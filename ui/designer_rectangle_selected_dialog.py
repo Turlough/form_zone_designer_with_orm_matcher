@@ -43,6 +43,7 @@ class RectangleSelectedDialog(QDialog):
         is_just_drawn: bool = False,
         existing_field=None,
         inner_rect_count: int = 0,
+        inner_default_names: list[str] | None = None,
         default_field_type: str = "Tickbox",
     ):
         super().__init__(parent)
@@ -51,6 +52,7 @@ class RectangleSelectedDialog(QDialog):
         self._is_just_drawn = is_just_drawn
         self._existing_field = existing_field
         self._inner_rect_count = max(0, inner_rect_count)
+        self._inner_default_names = inner_default_names or []
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
@@ -84,6 +86,8 @@ class RectangleSelectedDialog(QDialog):
             for i in range(self._inner_rect_count):
                 le = QLineEdit()
                 le.setPlaceholderText(f"Option {i + 1}")
+                if i < len(self._inner_default_names) and self._inner_default_names[i]:
+                    le.setText(self._inner_default_names[i])
                 self._inner_name_edits.append(le)
                 self._inner_layout.addWidget(le)
             layout.addWidget(self._inner_name_widget)

@@ -761,7 +761,30 @@ class FormZoneDesigner(QMainWindow):
         if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.page_field_list)):
             return
         left_rel, top_rel, w, h = drawn_rect_rel
-        inner_count = len(inner_rects_rel)
+        right_rel = left_rel + w
+        bottom_rel = top_rel + h
+
+        # Build combined inner items: detected rects + existing fields fully inside the drawn rect (converted to RadioButtons)
+        combined_inner = []  # list of (x, y, w, h, default_name)
+        field_indices_to_remove = []  # indices in page_field_list to remove when creating RadioGroup
+        for i, (rx, ry, rw, rh) in enumerate(inner_rects_rel):
+            combined_inner.append((rx, ry, rw, rh, f"Option {i + 1}"))
+        page_fields = self.page_field_list[self.current_page_idx]
+        for idx, field in enumerate(page_fields):
+            if isinstance(field, RadioGroup):
+                if (left_rel <= field.x and top_rel <= field.y and
+                    field.x + field.width <= right_rel and field.y + field.height <= bottom_rel):
+                    for rb in field.radio_buttons:
+                        combined_inner.append((rb.x, rb.y, rb.width, rb.height, rb.name))
+                    field_indices_to_remove.append(idx)
+            else:
+                # Tickbox, RadioButton, TextField
+                if (left_rel <= field.x and top_rel <= field.y and
+                    field.x + field.width <= right_rel and field.y + field.height <= bottom_rel):
+                    combined_inner.append((field.x, field.y, field.width, field.height, field.name))
+                    field_indices_to_remove.append(idx)
+        inner_count = len(combined_inner)
+        inner_default_names = [name for (_, _, _, _, name) in combined_inner]
 
         dialog = RectangleSelectedDialog(
             self,
@@ -769,6 +792,7 @@ class FormZoneDesigner(QMainWindow):
             is_just_drawn=True,
             existing_field=None,
             inner_rect_count=inner_count,
+            inner_default_names=inner_default_names,
             default_field_type=self._last_field_type,
         )
 
@@ -783,10 +807,13 @@ class FormZoneDesigner(QMainWindow):
                 while len(inner_names) < inner_count:
                     inner_names.append(f"Option {len(inner_names) + 1}")
                 radio_buttons = []
-                for i, (rx, ry, rw, rh) in enumerate(inner_rects_rel):
+                for i, (rx, ry, rw, rh, _) in enumerate(combined_inner):
                     name = inner_names[i] if i < len(inner_names) else f"Option {i + 1}"
                     rb = RadioButton(name=name, x=rx, y=ry, width=rw, height=rh, colour=(100, 150, 0))
                     radio_buttons.append(rb)
+                # Remove converted fields from page_field_list first (reverse order to preserve indices)
+                for j in reversed(field_indices_to_remove):
+                    page_fields.pop(j)
                 rg = RadioGroup(
                     name=field_name,
                     x=left_rel, y=top_rel, width=w, height=h,
@@ -799,9 +826,9 @@ class FormZoneDesigner(QMainWindow):
                 det = self.page_detected_rects[self.current_page_idx]
                 to_remove = []
                 for j, rect in enumerate(det):
-                    ra, rb, rw, rh = rect
+                    ra, rb_val, rw_val, rh_val = rect
                     for (irx, iry, iw, ih) in inner_rects_rel:
-                        if (ra == irx + logo[0] and rb == iry + logo[1] and rw == iw and rh == ih):
+                        if (ra == irx + logo[0] and rb_val == iry + logo[1] and rw_val == iw and rh_val == ih):
                             to_remove.append(j)
                             break
                 for j in reversed(to_remove):
