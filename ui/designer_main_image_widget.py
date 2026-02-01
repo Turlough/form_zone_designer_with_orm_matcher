@@ -327,19 +327,33 @@ class ImageDisplayWidget(QLabel):
         click_y = (event.pos().y() - self.image_offset_y) / self.scale_y
 
         # 1) Check if the user clicked on an existing field → selection (dialog opened by main window)
+        logo_top_left = self.bbox[0] if self.bbox else (0, 0)
         if self.field_list:
             for field in self.field_list:
                 if isinstance(field, Field):
                     abs_x = field.x
                     abs_y = field.y
                     if self.bbox:
-                        logo_top_left = self.bbox[0]
                         abs_x += logo_top_left[0]
                         abs_y += logo_top_left[1]
                     if (
                         abs_x <= click_x <= abs_x + field.width
                         and abs_y <= click_y <= abs_y + field.height
                     ):
+                        # RadioButton has priority over RadioGroup: if click is inside a RadioGroup,
+                        # first check if it falls inside any of the group's RadioButtons.
+                        if isinstance(field, RadioGroup) and field.radio_buttons:
+                            for rb in field.radio_buttons:
+                                rb_abs_x = rb.x + logo_top_left[0]
+                                rb_abs_y = rb.y + logo_top_left[1]
+                                if (
+                                    rb_abs_x <= click_x <= rb_abs_x + rb.width
+                                    and rb_abs_y <= click_y <= rb_abs_y + rb.height
+                                ):
+                                    logger.info(f"Selected RadioButton '{rb.name}' (inside RadioGroup)")
+                                    if self.on_field_selected:
+                                        self.on_field_selected(rb, event.globalPosition().toPoint())
+                                    return
                         logger.info(f"Selected field '{field.name}'")
                         if self.on_field_selected:
                             self.on_field_selected(field, event.globalPosition().toPoint())

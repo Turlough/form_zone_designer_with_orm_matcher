@@ -520,15 +520,22 @@ class FormZoneDesigner(QMainWindow):
         self.selected_field_index = None
         if 0 <= self.current_page_idx < len(self.page_field_list):
             field_list = self.page_field_list[self.current_page_idx]
-            for idx, field in enumerate(field_list):
-                if field is field_obj or (
-                    field.x == field_obj.x and
-                    field.y == field_obj.y and
-                    field.width == field_obj.width and
-                    field.height == field_obj.height
-                ):
-                    self.selected_field_index = idx
-                    break
+            # If the selected field is a RadioButton, it may belong to a RadioGroup (not in list)
+            if isinstance(field_obj, RadioButton):
+                for idx, field in enumerate(field_list):
+                    if isinstance(field, RadioGroup) and field_obj in field.radio_buttons:
+                        self.selected_field_index = idx
+                        break
+            if self.selected_field_index is None:
+                for idx, field in enumerate(field_list):
+                    if field is field_obj or (
+                        field.x == field_obj.x and
+                        field.y == field_obj.y and
+                        field.width == field_obj.width and
+                        field.height == field_obj.height
+                    ):
+                        self.selected_field_index = idx
+                        break
 
         # Update preview strip
         page = self.pages[self.current_page_idx]
@@ -583,8 +590,32 @@ class FormZoneDesigner(QMainWindow):
         if not (0 <= self.selected_field_index < len(self.page_field_list[self.current_page_idx])):
             return
         
+        # Get the field at the selected index (may be a RadioGroup when we selected a RadioButton)
+        field_at_index = self.page_field_list[self.current_page_idx][self.selected_field_index]
+        
+        # If the user edited a RadioButton inside a RadioGroup, update that button in place
+        if (isinstance(field_at_index, RadioGroup) and
+                isinstance(self.selected_field_obj, RadioButton) and
+                self.selected_field_obj in field_at_index.radio_buttons):
+            rb = self.selected_field_obj
+            rb.name = config.get("field_name", rb.name)
+            if "colour" in config:
+                rb.colour = config["colour"]
+            # Persist and refresh
+            if self.config:
+                save_page_fields(
+                    str(self.config.json_folder),
+                    self.current_page_idx,
+                    self.page_field_list,
+                    self.config.config_folder
+                )
+            if self.image_display:
+                self.image_display.update_display()
+            self._update_edit_panel_json(self.current_page_idx)
+            return
+        
         # Get the old field to preserve position, dimensions, and other properties
-        old_field = self.page_field_list[self.current_page_idx][self.selected_field_index]
+        old_field = field_at_index
         
         # Extract new type and name from config
         field_type = config.get("field_type")
@@ -938,15 +969,21 @@ class FormZoneDesigner(QMainWindow):
         if not (0 <= self.selected_field_index < len(self.page_field_list[self.current_page_idx])):
             return
         
-        # Remove the selected field from data structures
-        removed_data = self.page_field_list[self.current_page_idx].pop(self.selected_field_index)
-        
-        logger.info(f"Removed field on page {self.current_page_idx + 1}: {removed_data}")
-        
-        # Update image display
-        if (self.image_display.field_list and 
-            self.selected_field_index < len(self.image_display.field_list)):
-            self.image_display.field_list.pop(self.selected_field_index)
+        field_at_index = self.page_field_list[self.current_page_idx][self.selected_field_index]
+        # If the selection is a RadioButton inside a RadioGroup, remove only that button from the group
+        if (isinstance(field_at_index, RadioGroup) and
+                isinstance(self.selected_field_obj, RadioButton) and
+                self.selected_field_obj in field_at_index.radio_buttons):
+            field_at_index.remove_radio_button(self.selected_field_obj)
+            logger.info(f"Removed RadioButton '{self.selected_field_obj.name}' from RadioGroup on page {self.current_page_idx + 1}")
+        else:
+            # Remove the selected field from data structures
+            removed_data = self.page_field_list[self.current_page_idx].pop(self.selected_field_index)
+            logger.info(f"Removed field on page {self.current_page_idx + 1}: {removed_data}")
+            # Update image display
+            if (self.image_display.field_list and
+                    self.selected_field_index < len(self.image_display.field_list)):
+                self.image_display.field_list.pop(self.selected_field_index)
         
         # Save updated fields to JSON
         if self.config:
