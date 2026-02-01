@@ -891,6 +891,11 @@ class FormZoneDesigner(QMainWindow):
     def on_zoom_out_clicked(self):
         if self.image_display:
             self.image_display.zoom_out()
+
+    def on_field_names_toggled(self):
+        if self.image_display:
+            self.image_display.show_field_names = self.field_names_toggle.isChecked()
+            self.image_display.update_display()
     
     def undo_last_field(self):
         """Remove the last field rectangle drawn on the current page."""

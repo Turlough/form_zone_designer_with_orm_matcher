@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtCore import Qt, QRect, QPoint
-from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent
+from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QBrush, QFont, QFontMetrics, QMouseEvent
 
 from PyQt6.QtWidgets import QDialog
 from fields import Field, RadioGroup, RadioButton, Tickbox, TextField
@@ -49,6 +49,9 @@ class ImageDisplayWidget(QLabel):
         # Callback when user finishes drawing a rect: on_rect_drawn(drawn_rect_rel, inner_rects_rel, global_pos)
         # drawn_rect_rel / inner_rects_rel are (x,y,w,h) relative to logo
         self.on_rect_drawn = None
+
+        # When True, show first 20 chars of field name to the right of each field (set by main window from toggle)
+        self.show_field_names = False
     
     def set_image(self, pixmap, bbox=None, field_list=None, detected_rects=None):
         """Set the image, bounding box, and field list to display."""
@@ -141,6 +144,32 @@ class ImageDisplayWidget(QLabel):
         for i in reversed(radio_buttons_to_remove):
             self.field_list.pop(i)
     
+    def _draw_field_name_label(self, painter, text, scaled_rect, field_color):
+        """Draw first 20 chars of field name to the right of the field with translucent white background."""
+        if not text:
+            return
+        padding = 4
+        font = QFont()
+        font.setPointSize(12)
+        painter.setFont(font)
+        metrics = QFontMetrics(font)
+        text_rect = metrics.boundingRect(text)
+        # Position slightly to the right of the field
+        label_x = scaled_rect.right() + 4
+        label_y = scaled_rect.y()
+        bg_rect = QRect(
+            label_x,
+            label_y,
+            text_rect.width() + padding * 2,
+            text_rect.height() + padding * 2
+        )
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(255, 255, 255, 150)))
+        painter.drawRoundedRect(bg_rect, 2, 2)
+        painter.setPen(QPen(field_color))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawText(bg_rect.adjusted(padding, padding, -padding, -padding), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text)
+
     def update_display(self):
         """Redraw the image with bounding box overlay, applying current zoom/fit mode."""
         if self.base_pixmap and self.parent_scroll_area:
@@ -231,6 +260,8 @@ class ImageDisplayWidget(QLabel):
                             int(field.height * self.scale_y)
                         )
                         painter.drawRect(scaled_rect)
+                        if self.show_field_names and getattr(field, "name", None):
+                            self._draw_field_name_label(painter, field.name[:20], scaled_rect, color)
                         
                         # If this is a RadioGroup, also draw its RadioButtons
                         if isinstance(field, RadioGroup):
@@ -252,6 +283,8 @@ class ImageDisplayWidget(QLabel):
                                     int(radio_button.height * self.scale_y)
                                 )
                                 painter.drawRect(rb_scaled_rect)
+                                if self.show_field_names and getattr(radio_button, "name", None):
+                                    self._draw_field_name_label(painter, radio_button.name[:20], rb_scaled_rect, rb_color)
             
             # Draw detected rectangles (red)
             if self.detected_rects:

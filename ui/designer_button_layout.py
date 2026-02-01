@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QHBoxLayout, QPushButton, QToolButton
+from PyQt6.QtWidgets import QHBoxLayout, QPushButton, QToolButton, QCheckBox
 
 
 class DesignerButtonLayout(QHBoxLayout):
@@ -76,5 +76,11 @@ class DesignerButtonLayout(QHBoxLayout):
         parent.zoom_out_button.clicked.connect(parent.on_zoom_out_clicked)
         parent.zoom_out_button.setEnabled(False)
         self.addWidget(parent.zoom_out_button)
+
+        # Toggle to show field names on the image
+        parent.field_names_toggle = QCheckBox("Field names")
+        parent.field_names_toggle.setToolTip("Show first 20 characters of each field name next to its rectangle")
+        parent.field_names_toggle.stateChanged.connect(parent.on_field_names_toggled)
+        self.addWidget(parent.field_names_toggle)
 
         self.addStretch()
