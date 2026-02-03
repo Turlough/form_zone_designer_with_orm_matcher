@@ -41,3 +41,4 @@ This allows for an import file to be indexed in several sessions if necessary.
 ## Output
 Each row of the selected text file represents a full multipage form.
 As the user edits (i.e. ticks, unticks, adds text, etc), the corresponding cell in the text file is updated.
+In the case of TextFields, do not update on every keystroke- wait until the user has exited the field, e.g. by using the Enter/Return keys.

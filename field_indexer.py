@@ -15,6 +15,7 @@ from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent, QF
 from PIL import Image
 from dotenv import load_dotenv
 from util import ORMMatcher, CSVManager
+from util.app_state import load_state, save_state
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import logging
 from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog
@@ -58,6 +59,8 @@ class FieldIndexerWindow(QMainWindow):
         
         # Initialize UI
         self.init_ui()
+        # Restore last import file, page, and config folder if available
+        self._try_restore_last_session()
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -130,13 +133,66 @@ class FieldIndexerWindow(QMainWindow):
         # Enter in the floating dialog also completes the current TextField
         self._index_text_dialog.field_edit_completed.connect(self.on_index_text_dialog_edit_completed)
     
+    def _load_import_file_from_path(self, file_path: str, json_folder_override: str | None = None) -> bool:
+        """Load import file from path (no dialog). If json_folder_override is set, use it for this load. Returns True on success."""
+        try:
+            if json_folder_override:
+                self.json_folder = json_folder_override
+            self.csv_manager.load_csv(file_path, self.json_folder)
+            self.tiff_paths = self.csv_manager.get_tiff_paths()
+            self.tiff_list.clear()
+            for tiff_path in self.tiff_paths:
+                filename = os.path.basename(tiff_path)
+                self.tiff_list.addItem(filename)
+            logger.info(f"Loaded {len(self.tiff_paths)} TIFF files")
+            return True
+        except Exception as e:
+            logger.warning("Could not load import file from path %s: %s", file_path, e)
+            return False
+
+    def _try_restore_last_session(self) -> None:
+        """Restore last import file, config folder (json_folder), and page from persisted state if valid."""
+        state = load_state()
+        last_import = (state.get("last_import_file") or "").strip()
+        if not last_import or not Path(last_import).exists():
+            return
+        last_json = (state.get("last_indexer_json_folder") or "").strip()
+        if last_json:
+            self.json_folder = last_json
+        try:
+            if not self._load_import_file_from_path(last_import):
+                return
+            if not self.tiff_paths:
+                return
+            tiff_idx = state.get("last_indexer_tiff_index")
+            if tiff_idx is None or tiff_idx < 0 or tiff_idx >= len(self.tiff_paths):
+                tiff_idx = 0
+            self.tiff_list.setCurrentRow(tiff_idx)
+            self.on_tiff_selected(tiff_idx)
+            page_idx = state.get("last_indexer_page_index")
+            if page_idx is not None and page_idx >= 0 and page_idx < len(self.current_tiff_images):
+                self.current_page_index = page_idx
+                self.display_current_page()
+            save_state(
+                last_import_file=last_import,
+                last_indexer_json_folder=self.json_folder,
+                last_indexer_tiff_index=self.current_tiff_index,
+                last_indexer_page_index=self.current_page_index,
+            )
+        except Exception as e:
+            logger.warning("Could not restore last session: %s", e)
+
     def load_import_file(self):
         """Load the import CSV/TXT file."""
-        import_folder = os.getenv('IMPORT_FOLDER', './default/folder/for/importing/filelist')
+        state = load_state()
+        last_import = (state.get("last_import_file") or "").strip()
+        default_dir = str(Path(last_import).parent) if last_import and Path(last_import).exists() else ""
+        if not default_dir or not Path(default_dir).exists():
+            default_dir = os.getenv('IMPORT_FOLDER', './default/folder/for/importing/filelist')
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Import File",
-            import_folder,
+            default_dir,
             "Text Files (*.txt *.csv);;All Files (*)"
         )
         
@@ -144,25 +200,21 @@ class FieldIndexerWindow(QMainWindow):
             return
         
         try:
-            # Load CSV
             self.csv_manager.load_csv(file_path, self.json_folder)
-            
-            # Get TIFF paths
             self.tiff_paths = self.csv_manager.get_tiff_paths()
-            
-            # Populate TIFF list
             self.tiff_list.clear()
             for tiff_path in self.tiff_paths:
-                # Show just the filename
                 filename = os.path.basename(tiff_path)
                 self.tiff_list.addItem(filename)
-            
             logger.info(f"Loaded {len(self.tiff_paths)} TIFF files")
-            
-            # Select first TIFF if available
+            save_state(
+                last_import_file=file_path,
+                last_indexer_json_folder=self.json_folder,
+                last_indexer_tiff_index=0,
+                last_indexer_page_index=0,
+            )
             if self.tiff_paths:
                 self.tiff_list.setCurrentRow(0)
-        
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error loading import file: {e}")
             logger.error(f"Error loading import file: {e}", exc_info=True)
@@ -182,6 +234,7 @@ class FieldIndexerWindow(QMainWindow):
         try:
             self.load_tiff(absolute_path)
             self.display_current_page()
+            save_state(last_indexer_tiff_index=index, last_indexer_page_index=self.current_page_index)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error loading TIFF: {e}")
             logger.error(f"Error loading TIFF {absolute_path}: {e}", exc_info=True)
@@ -339,12 +392,14 @@ class FieldIndexerWindow(QMainWindow):
         if self.current_page_index > 0:
             self.current_page_index -= 1
             self.display_current_page()
+            save_state(last_indexer_tiff_index=self.current_tiff_index, last_indexer_page_index=self.current_page_index)
     
     def next_page(self):
         """Navigate to next page."""
         if self.current_page_index < len(self.current_tiff_images) - 1:
             self.current_page_index += 1
             self.display_current_page()
+            save_state(last_indexer_tiff_index=self.current_tiff_index, last_indexer_page_index=self.current_page_index)
     
     def on_field_click(self, field, sub_field=None):
         """Handle field click events."""
