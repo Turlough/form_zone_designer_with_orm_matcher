@@ -28,25 +28,26 @@ class CSVManager:
         
         # Get field names from JSON files
         self.field_names = self._get_field_names_from_json(json_folder)
-        
+
+        # Build the expected header row from JSON field names
+        expected_headers = ['tiff_path'] + self.field_names
+
         # Check if headers exist
         if len(self.rows) == 0:
             # Empty file, add headers
-            self.headers = ['tiff_path'] + self.field_names
+            self.headers = expected_headers
             self.rows = [self.headers]
         else:
             # Check if first row looks like headers
             first_row = self.rows[0]
-            if first_row and first_row[0].lower() in ['tiff_path', 'path', 'file']:
-                # Has headers
-                self.headers = first_row
-                # Update headers if field names changed
-                if self.headers != ['tiff_path'] + self.field_names:
-                    self.headers = ['tiff_path'] + self.field_names
-                    self.rows[0] = self.headers
+            if self._first_row_is_header(first_row, expected_headers):
+                # First row is (or looks like) a header row.
+                # Always normalise it to the expected headers generated from JSON.
+                self.headers = expected_headers
+                self.rows[0] = self.headers
             else:
-                # No headers, insert them
-                self.headers = ['tiff_path'] + self.field_names
+                # No headers detected, insert them
+                self.headers = expected_headers
                 self.rows.insert(0, self.headers)
         
         # Ensure all rows have correct number of columns
@@ -61,6 +62,40 @@ class CSVManager:
         
         logger.info(f"Loaded CSV with {len(self.rows)-1} data rows and {len(self.headers)} columns")
         return True
+
+    def _first_row_is_header(self, first_row, expected_headers):
+        """
+        Determine whether the first row of the CSV is a header row.
+
+        Primary test (per requirement):
+        - Compare the first three items in the first row with the expected
+          field names (including 'tiff_path' as the first column).
+
+        Fallback for backward compatibility:
+        - If the first cell is one of 'tiff_path', 'path', or 'file',
+          treat it as a header row as well.
+        """
+        if not first_row:
+            return False
+
+        # Compare up to the first three cells against the expected header cells
+        items_to_check = min(3, len(first_row), len(expected_headers))
+        if items_to_check == 0:
+            return False
+
+        all_match_expected = all(
+            first_row[i].strip().lower() == expected_headers[i].strip().lower()
+            for i in range(items_to_check)
+        )
+        if all_match_expected:
+            return True
+
+        # Backward-compatibility: accept legacy header names in the first column
+        first_cell = first_row[0].strip().lower()
+        if first_cell in ('tiff_path', 'path', 'file'):
+            return True
+
+        return False
     
     def _get_field_names_from_json(self, json_folder):
         """Extract field names from all JSON files in order."""
