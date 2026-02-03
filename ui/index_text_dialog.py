@@ -16,6 +16,9 @@ class IndexTextDialog(QDialog):
 
     # Emitted when the user changes the text. Payload: (field_name: str, new_value: str)
     text_changed = pyqtSignal(str, str)
+    # Emitted when the user presses Enter to complete editing this TextField
+    # Payload is (field_name: str)
+    field_edit_completed = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -26,7 +29,7 @@ class IndexTextDialog(QDialog):
         self._line_edit = QLineEdit()
         self._line_edit.setPlaceholderText("Enter field value...")
         self._line_edit.textChanged.connect(self._on_text_changed)
-        self._line_edit.returnPressed.connect(self.close)
+        self._line_edit.returnPressed.connect(self._on_return_pressed)
         layout.addWidget(self._line_edit)
         self.setFixedHeight(SINGLE_LINE_DIALOG_HEIGHT)
 
@@ -51,6 +54,11 @@ class IndexTextDialog(QDialog):
     def _on_text_changed(self, text: str):
         if self._field_name:
             self.text_changed.emit(self._field_name, text)
+
+    def _on_return_pressed(self):
+        """Handle Enter in the dialog: complete this field and hide the dialog."""
+        if self._field_name:
+            self.field_edit_completed.emit(self._field_name)
 
     def show_under_rect(self, global_bottom_left: QPoint, width: int):
         """

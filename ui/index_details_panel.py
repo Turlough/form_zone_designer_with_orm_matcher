@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
 from PyQt6.QtGui import QPixmap, QImage, QFont
 from PIL import Image
 import numpy as np
@@ -28,6 +28,9 @@ class IndexDetailPanel(QWidget):
     # Emitted when the field value is changed
     # Payload is (field_name: str, new_value: str)
     field_value_changed = pyqtSignal(str, str)
+    # Emitted when the user presses Enter in the value editor to complete a TextField
+    # Payload is (field_name: str)
+    field_edit_completed = pyqtSignal(str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -68,6 +71,8 @@ class IndexDetailPanel(QWidget):
         self.value_text_edit.setPlaceholderText("Enter field value...")
         self.value_text_edit.setMinimumHeight(100)
         self.value_text_edit.textChanged.connect(self._on_value_changed)
+        # Catch Enter presses so we can advance to the next TextField without inserting a newline
+        self.value_text_edit.installEventFilter(self)
         main_layout.addWidget(self.value_text_edit)
         
         # ---- 4. Table showing all fields ----
@@ -295,3 +300,13 @@ class IndexDetailPanel(QWidget):
         super().resizeEvent(event)
         if self.current_field:
             self._update_closeup()
+
+    def eventFilter(self, obj, event):
+        """Catch Enter presses in the value editor to mark a TextField as completed."""
+        if obj is self.value_text_edit and event.type() == QEvent.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if self.current_field and isinstance(self.current_field, TextField) and self.current_field.name:
+                    self.field_edit_completed.emit(self.current_field.name)
+                    # Swallow the event so we don't insert a newline
+                    return True
+        return super().eventFilter(obj, event)

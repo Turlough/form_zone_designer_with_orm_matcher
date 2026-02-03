@@ -120,11 +120,15 @@ class FieldIndexerWindow(QMainWindow):
         # Right panel - Field detail panel
         self.detail_panel = IndexDetailPanel()
         self.detail_panel.field_value_changed.connect(self.on_detail_panel_value_changed)
+        # Enter in the detail panel's value editor completes the current TextField
+        self.detail_panel.field_edit_completed.connect(self.on_detail_panel_edit_completed)
         main_layout.addWidget(self.detail_panel, stretch=1)
 
         # Text field popup dialog (shown under clicked TextField; synced with detail panel)
         self._index_text_dialog = IndexTextDialog(self)
         self._index_text_dialog.text_changed.connect(self.on_index_text_dialog_value_changed)
+        # Enter in the floating dialog also completes the current TextField
+        self._index_text_dialog.field_edit_completed.connect(self.on_index_text_dialog_edit_completed)
     
     def load_import_file(self):
         """Load the import CSV/TXT file."""
@@ -490,6 +494,58 @@ class FieldIndexerWindow(QMainWindow):
         self.csv_manager.save_csv()
         self.image_label.update_display()
         logger.info(f"Field '{field_name}' value changed to '{new_value}' via text dialog")
+
+    def _focus_next_text_field(self, current_field_name: str):
+        """Move focus to the next TextField on the current page and open the dialog there."""
+        if not self.page_fields:
+            return
+
+        # Get all TextFields on this page in their defined order
+        text_fields = [f for f in self.page_fields if isinstance(f, TextField)]
+        if not text_fields:
+            return
+
+        try:
+            idx = next(i for i, f in enumerate(text_fields) if f.name == current_field_name)
+        except StopIteration:
+            return
+
+        # Only advance within this page
+        if idx + 1 >= len(text_fields):
+            return
+
+        next_field = text_fields[idx + 1]
+
+        if not self.current_tiff_images:
+            return
+
+        current_pil_image = self.current_tiff_images[self.current_page_index]
+
+        # Update detail panel selection
+        if hasattr(self, 'detail_panel'):
+            self.detail_panel.set_current_field(
+                next_field,
+                page_image=current_pil_image,
+                page_bbox=self.page_bbox,
+                page_fields=self.page_fields,
+                field_values=self.field_values
+            )
+
+        # Show IndexTextDialog under the next TextField
+        rect = self.image_label.get_field_rect_in_widget(next_field)
+        if rect is not None:
+            global_bottom_left = self.image_label.mapToGlobal(rect.bottomLeft())
+            current_value = self.field_values.get(next_field.name, "")
+            self._index_text_dialog.set_field(next_field.name or "TextField", current_value)
+            self._index_text_dialog.show_under_rect(global_bottom_left, rect.width())
+
+    def on_detail_panel_edit_completed(self, field_name: str):
+        """User pressed Enter in the detail panel for this field."""
+        self._focus_next_text_field(field_name)
+
+    def on_index_text_dialog_edit_completed(self, field_name: str):
+        """User pressed Enter in the floating text dialog for this field."""
+        self._focus_next_text_field(field_name)
 
 
 def main():
