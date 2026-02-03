@@ -18,7 +18,7 @@ from util import ORMMatcher, CSVManager
 from util.app_state import load_state, save_state
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import logging
-from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog
+from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexMenuBar
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,16 +34,13 @@ class FieldIndexerWindow(QMainWindow):
         # Load environment variables
         load_dotenv()
 
-        # TODO: Deprecate these two environment variables
-        self.logo_path = os.getenv('LOGO_PATH')
-        self.json_folder = os.getenv('JSON_FOLDER', './json_data')
-        
-        # Initialize ORM matcher
-        if self.logo_path and os.path.exists(self.logo_path):
-            self.matcher = ORMMatcher(self.logo_path)
-        else:
-            self.matcher = None
-            logger.warning(f"Logo path not found or not set: {self.logo_path}")
+        # Config folder (project folder under DESIGNER_CONFIG_FOLDER). When set, json_folder and logo_path are derived from it.
+        # TODO: Deprecate LOGO_PATH and JSON_FOLDER env vars; use Project menu selection instead.
+        self.config_folder: str | None = None
+        self.json_folder = os.getenv('JSON_FOLDER', './json_data')  # Fallback until project selected
+        self.logo_path = os.getenv('LOGO_PATH')  # Fallback until project selected
+        self.matcher = None
+        self._init_matcher_from_fallbacks()
         
         # CSV manager
         self.csv_manager = CSVManager()
@@ -61,9 +58,52 @@ class FieldIndexerWindow(QMainWindow):
         self.init_ui()
         # Restore last import file, page, and config folder if available
         self._try_restore_last_session()
+
+    def _init_matcher_from_fallbacks(self) -> None:
+        """Initialize ORM matcher from logo_path (env or config_folder)."""
+        if self.logo_path and os.path.exists(self.logo_path):
+            self.matcher = ORMMatcher(self.logo_path)
+        else:
+            self.matcher = None
+            if not self.logo_path:
+                logger.warning("No logo path set. Select a project from Project menu or set LOGO_PATH.")
+
+    def _apply_config_folder(self, config_folder_path: str) -> None:
+        """Set current project config folder, derive json_folder and logo_path, reinit matcher."""
+        config_path = Path(config_folder_path)
+        if not config_path.exists() or not config_path.is_dir():
+            logger.warning("Config folder does not exist: %s", config_folder_path)
+            return
+
+        self.config_folder = config_folder_path
+        self.json_folder = str(config_path / 'json')
+
+        # Find logo in fiducials subfolder (same convention as form_zone_designer)
+        fiducials = config_path / 'fiducials'
+        logo_candidates = ['logo.png', 'logo.tif', 'fiducial.png', 'fiducial.jpg']
+        self.logo_path = None
+        for candidate in logo_candidates:
+            candidate_path = fiducials / candidate
+            if candidate_path.exists():
+                self.logo_path = str(candidate_path)
+                break
+
+        self._init_matcher_from_fallbacks()
+        if hasattr(self, '_index_menu_bar'):
+            self._index_menu_bar.set_current_project_path(self.config_folder)
+        save_state(last_indexer_config_folder=self.config_folder)
+        logger.info("Project selected: %s (json=%s, logo=%s)", self.config_folder, self.json_folder, self.logo_path)
+        # Refresh current page if one is displayed (uses new json_folder and matcher)
+        if self.current_tiff_images:
+            self.display_current_page()
     
     def init_ui(self):
         """Initialize the user interface."""
+        # Menu bar
+        self._index_menu_bar = IndexMenuBar(self)
+        self._index_menu_bar.project_selected.connect(self._apply_config_folder)
+        self.setMenuBar(self._index_menu_bar)
+
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
@@ -151,14 +191,24 @@ class FieldIndexerWindow(QMainWindow):
             return False
 
     def _try_restore_last_session(self) -> None:
-        """Restore last import file, config folder (json_folder), and page from persisted state if valid."""
+        """Restore last import file, config folder (project), and page from persisted state if valid."""
         state = load_state()
         last_import = (state.get("last_import_file") or "").strip()
         if not last_import or not Path(last_import).exists():
             return
-        last_json = (state.get("last_indexer_json_folder") or "").strip()
-        if last_json:
-            self.json_folder = last_json
+        # Prefer config_folder (project); fall back to inferring from last_indexer_json_folder for older sessions
+        last_config = (state.get("last_indexer_config_folder") or "").strip()
+        if last_config and Path(last_config).exists():
+            self._apply_config_folder(last_config)
+        else:
+            last_json = (state.get("last_indexer_json_folder") or "").strip()
+            if last_json:
+                p = Path(last_json)
+                # Infer config folder: if last_json ends with "json", parent is likely the project folder
+                if p.exists() and p.name == "json" and p.parent.exists():
+                    self._apply_config_folder(str(p.parent))
+                else:
+                    self.json_folder = last_json
         try:
             if not self._load_import_file_from_path(last_import):
                 return
@@ -175,6 +225,7 @@ class FieldIndexerWindow(QMainWindow):
                 self.display_current_page()
             save_state(
                 last_import_file=last_import,
+                last_indexer_config_folder=self.config_folder,
                 last_indexer_json_folder=self.json_folder,
                 last_indexer_tiff_index=self.current_tiff_index,
                 last_indexer_page_index=self.current_page_index,
@@ -209,6 +260,7 @@ class FieldIndexerWindow(QMainWindow):
             logger.info(f"Loaded {len(self.tiff_paths)} TIFF files")
             save_state(
                 last_import_file=file_path,
+                last_indexer_config_folder=self.config_folder,
                 last_indexer_json_folder=self.json_folder,
                 last_indexer_tiff_index=0,
                 last_indexer_page_index=0,

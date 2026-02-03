@@ -8,3 +8,4 @@ from .grid_designer import GridDesigner
 from .index_main_image_panel import MainImageIndexPanel
 from .index_details_panel import IndexDetailPanel
 from .index_text_dialog import IndexTextDialog
+from .index_menu_bar import IndexMenuBar

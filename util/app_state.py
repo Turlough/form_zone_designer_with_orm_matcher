@@ -31,6 +31,7 @@ def load_state() -> dict:
         "last_config_folder": "",
         "last_page_index": None,
         "last_import_file": "",
+        "last_indexer_config_folder": "",
         "last_indexer_json_folder": "",
         "last_indexer_tiff_index": None,
         "last_indexer_page_index": None,
@@ -44,6 +45,7 @@ def load_state() -> dict:
             "last_config_folder": data.get("last_config_folder", ""),
             "last_page_index": data.get("last_page_index"),
             "last_import_file": data.get("last_import_file", ""),
+            "last_indexer_config_folder": data.get("last_indexer_config_folder", ""),
             "last_indexer_json_folder": data.get("last_indexer_json_folder", ""),
             "last_indexer_tiff_index": data.get("last_indexer_tiff_index"),
             "last_indexer_page_index": data.get("last_indexer_page_index"),
@@ -58,6 +60,7 @@ def save_state(
     last_config_folder: str | None = None,
     last_page_index: int | None = None,
     last_import_file: str | None = None,
+    last_indexer_config_folder: str | None = None,
     last_indexer_json_folder: str | None = None,
     last_indexer_tiff_index: int | None = None,
     last_indexer_page_index: int | None = None,
@@ -71,6 +74,8 @@ def save_state(
         current["last_page_index"] = last_page_index
     if last_import_file is not None:
         current["last_import_file"] = last_import_file
+    if last_indexer_config_folder is not None:
+        current["last_indexer_config_folder"] = last_indexer_config_folder
     if last_indexer_json_folder is not None:
         current["last_indexer_json_folder"] = last_indexer_json_folder
     if last_indexer_tiff_index is not None:
