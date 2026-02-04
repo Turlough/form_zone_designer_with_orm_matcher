@@ -102,6 +102,7 @@ class FieldIndexerWindow(QMainWindow):
         # Menu bar
         self._index_menu_bar = IndexMenuBar(self)
         self._index_menu_bar.project_selected.connect(self._apply_config_folder)
+        self._index_menu_bar.batch_import_selected.connect(self._on_batch_import_selected)
         self.setMenuBar(self._index_menu_bar)
 
         central_widget = QWidget()
@@ -233,13 +234,43 @@ class FieldIndexerWindow(QMainWindow):
         except Exception as e:
             logger.warning("Could not restore last session: %s", e)
 
+    def _load_project_config(self) -> dict | None:
+        """Load project_config.json for the current project, if available."""
+        if not self.config_folder:
+            return None
+        config_path = Path(self.config_folder) / "json" / "project_config.json"
+        if not config_path.exists():
+            return None
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning("Could not read project_config.json at %s: %s", config_path, e)
+            return None
+
+    def _get_default_import_folder(self) -> str:
+        """
+        Determine the default folder for importing the file list.
+
+        Priority:
+        1) batch_folder from project_config.json for the current project (if valid)
+        2) Current working directory as a final fallback.
+        """
+        config = self._load_project_config()
+        if config:
+            batch_folder = str(config.get("batch_folder", "")).strip()
+            if batch_folder and Path(batch_folder).exists():
+                return batch_folder
+        # Fallback: current working directory
+        return os.getcwd()
+
     def load_import_file(self):
         """Load the import CSV/TXT file."""
         state = load_state()
         last_import = (state.get("last_import_file") or "").strip()
         default_dir = str(Path(last_import).parent) if last_import and Path(last_import).exists() else ""
         if not default_dir or not Path(default_dir).exists():
-            default_dir = os.getenv('IMPORT_FOLDER', './default/folder/for/importing/filelist')
+            default_dir = self._get_default_import_folder()
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Import File",
@@ -270,6 +301,28 @@ class FieldIndexerWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error loading import file: {e}")
             logger.error(f"Error loading import file: {e}", exc_info=True)
+
+    def _on_batch_import_selected(self, import_file_path: str) -> None:
+        """Handle selection of a batch import file from the Batch menu."""
+        if not import_file_path:
+            return
+        # Load the import file directly, using the current json_folder/config_folder
+        if not self._load_import_file_from_path(import_file_path):
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error loading import file:\n{import_file_path}",
+            )
+            return
+        save_state(
+            last_import_file=import_file_path,
+            last_indexer_config_folder=self.config_folder,
+            last_indexer_json_folder=self.json_folder,
+            last_indexer_tiff_index=0,
+            last_indexer_page_index=0,
+        )
+        if self.tiff_paths:
+            self.tiff_list.setCurrentRow(0)
     
     def on_tiff_selected(self, index):
         """Handle TIFF selection from list."""

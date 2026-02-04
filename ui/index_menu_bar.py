@@ -1,6 +1,7 @@
 """Menu bar for the Field Indexer application."""
 
 import os
+import json
 from pathlib import Path
 
 from PyQt6.QtCore import pyqtSignal
@@ -11,6 +12,7 @@ class IndexMenuBar(QMenuBar):
     """Menu bar with Project and Batch menus. Project lists config folders from DESIGNER_CONFIG_FOLDER."""
 
     project_selected = pyqtSignal(str)  # Emits the selected project config folder path
+    batch_import_selected = pyqtSignal(str)  # Emits full path to selected batch import file
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -55,12 +57,73 @@ class IndexMenuBar(QMenuBar):
         self.project_selected.emit(config_folder_path)
 
     def _init_batch_menu(self) -> None:
-        """Build Batch menu (placeholder for later)."""
+        """Build Batch menu from project_config.json (per project)."""
         self._batch_menu = QMenu("Batch", self)
         self.addMenu(self._batch_menu)
-        # Placeholder for future Batch functionality
-        placeholder = self._batch_menu.addAction("(Coming soon)")
-        placeholder.setEnabled(False)
+        # Populate lazily each time the menu is opened
+        self._batch_menu.aboutToShow.connect(self._refresh_batch_menu)
+
+    def _refresh_batch_menu(self) -> None:
+        """Refresh the Batch submenu based on current project_config.json."""
+        self._batch_menu.clear()
+
+        if not self._current_project_path:
+            action = self._batch_menu.addAction("(Select a project first)")
+            action.setEnabled(False)
+            return
+
+        project_path = Path(self._current_project_path)
+        config_path = project_path / "json" / "project_config.json"
+        if not config_path.exists():
+            action = self._batch_menu.addAction("(No project_config.json found)")
+            action.setEnabled(False)
+            return
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+        except Exception:
+            action = self._batch_menu.addAction("(Error reading project_config.json)")
+            action.setEnabled(False)
+            return
+
+        batch_folder = str(config.get("batch_folder", "")).strip()
+        import_filename = str(config.get("import_filename", "")).strip()
+
+        if not batch_folder or not import_filename:
+            action = self._batch_menu.addAction("(batch_folder/import_filename not set)")
+            action.setEnabled(False)
+            return
+
+        base = Path(batch_folder)
+        if not base.exists() or not base.is_dir():
+            action = self._batch_menu.addAction("(batch_folder does not exist)")
+            action.setEnabled(False)
+            return
+
+        # Collect direct subfolders that contain the import file
+        candidates = []
+        for d in sorted(p for p in base.iterdir() if p.is_dir() and not p.name.startswith(".")):
+            candidate_file = d / import_filename
+            if candidate_file.exists():
+                candidates.append((d.name, candidate_file))
+
+        if not candidates:
+            action = self._batch_menu.addAction("(No batch folders found)")
+            action.setEnabled(False)
+            return
+
+        for folder_name, file_path in candidates:
+            action = self._batch_menu.addAction(folder_name)
+            action.triggered.connect(
+                lambda checked=False, p=str(file_path): self._on_batch_selected(p)
+            )
+
+    def _on_batch_selected(self, import_file_path: str) -> None:
+        """Emit the selected batch import file path to the main window."""
+        if not import_file_path:
+            return
+        self.batch_import_selected.emit(import_file_path)
 
     def get_current_project_path(self) -> str | None:
         """Return the currently selected project config folder, or None."""
