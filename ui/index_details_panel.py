@@ -1,15 +1,17 @@
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QLabel,
     QTextEdit,
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
     QPushButton,
+    QStyle,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
-from PyQt6.QtGui import QPixmap, QImage, QFont
+from PyQt6.QtGui import QPixmap, QImage, QFont, QIcon
 from PIL import Image
 import numpy as np
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
@@ -69,15 +71,22 @@ class IndexDetailPanel(QWidget):
         )
         main_layout.addWidget(self.closeup_label)
         
-        # ---- 3. Editable text area for field value ----
+        # ---- 3. Field value label + OCR (Read) button in one row ----
+        value_row = QHBoxLayout()
         value_label = QLabel("Field Value:")
-        main_layout.addWidget(value_label)
-        
-        # ---- 3. OCR button ----
-        self.ocr_button = QPushButton("OCR")
+        value_row.addWidget(value_label)
+        self.ocr_button = QPushButton()
+        self.ocr_button.setIcon(
+            QIcon.fromTheme(
+                "document-open",
+                self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView),
+            )
+        )
+        self.ocr_button.setToolTip("OCR")
         self.ocr_button.clicked.connect(self.ocr_requested.emit)
-        main_layout.addWidget(self.ocr_button)
-        # ---- 3. Editable text area for field value ----
+        value_row.addWidget(self.ocr_button)
+        main_layout.addLayout(value_row)
+        # ---- Editable text area for field value ----
         self.value_text_edit = QTextEdit()
         self.value_text_edit.setPlaceholderText("Enter field value...")
         self.value_text_edit.setMinimumHeight(100)
