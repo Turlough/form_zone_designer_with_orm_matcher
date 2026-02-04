@@ -13,3 +13,4 @@ dist/
 *.pyz
 *.pywz
 *.pyzw
+uv.lock

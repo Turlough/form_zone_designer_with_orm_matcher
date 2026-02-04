@@ -1,0 +1,13 @@
+[project]
+name = "form-zone-designer-with-orm-matcher"
+version = "0.1.0"
+description = "PyQt6 app for registering and indexing scanned survey forms"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "numpy>=1.24.0",
+    "opencv-python>=4.8.0",
+    "pillow>=10.0.0",
+    "pyqt6>=6.6.0",
+    "python-dotenv>=1.0.0",
+]
