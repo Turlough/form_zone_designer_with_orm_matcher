@@ -18,8 +18,7 @@ from util import ORMMatcher, CSVManager
 from util.app_state import load_state, save_state
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import logging
-from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexMenuBar
-from ui.index_ocr_dialog import IndexOcrDialog
+from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexMenuBar, IndexOcrDialog
 from util.gemini_ocr_client import ocr_image_region
 
 logging.basicConfig(level=logging.INFO)
@@ -757,6 +756,7 @@ class FieldIndexerWindow(QMainWindow):
             self.current_field.width,
             self.current_field.height,
         )
+        self._index_text_dialog.hide()
         dialog = IndexOcrDialog(self, pixmap, initial_rect=field_rect_page)
         # Block the main window while dialog is open
         if dialog.exec() != QDialog.DialogCode.Accepted:
