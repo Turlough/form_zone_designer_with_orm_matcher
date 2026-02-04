@@ -22,14 +22,21 @@ class IndexOcrDialog(QDialog):
     The selected rectangle is stored in page image coordinates (x, y, width, height).
     """
 
-    def __init__(self, parent, page_pixmap: QPixmap):
+    def __init__(self, parent, page_pixmap: QPixmap, initial_rect=None):
+        """
+        Args:
+            parent: Parent widget.
+            page_pixmap: Full page image to select from.
+            initial_rect: Optional (x, y, w, h) in page pixels to show as the selected area
+                (e.g. current text field). User can submit this as-is or change it.
+        """
         super().__init__(parent)
         self.setWindowTitle("OCR - Select Area")
         self.setModal(True)
         # Fill the screen
-        self.setGeometry(0, 0, 
-        QApplication.primaryScreen().availableGeometry().width(), 
-        int(QApplication.primaryScreen().availableGeometry().height() * 0.9))
+        # self.setGeometry(0, 0,
+        # QApplication.primaryScreen().availableGeometry().width(),
+        # int(QApplication.primaryScreen().availableGeometry().height() * 0.9))
 
         self._page_pixmap = page_pixmap
 
@@ -79,6 +86,9 @@ class IndexOcrDialog(QDialog):
         # Initialize image
         self.image_widget.set_image(self._page_pixmap, bbox=None, field_list=[], detected_rects=[])
         self.image_widget.set_autofit()
+        # Show current text field as selected so user can submit it or adjust
+        if initial_rect:
+            self.image_widget.set_selection_rect(initial_rect)
 
     # ------------------------------------------------------------------
     # Public API

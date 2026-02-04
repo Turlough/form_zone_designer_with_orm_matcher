@@ -459,7 +459,12 @@ class ImageDisplayWidget(QLabel):
         """Clear the persistent selection rectangle and redraw."""
         self.selection_rect = None
         self.update_display()
-    
+
+    def set_selection_rect(self, rect):
+        """Set the persistent selection rectangle from (x, y, w, h) in image coords and redraw."""
+        self.selection_rect = tuple(rect) if rect else None
+        self.update_display()
+
     def resizeEvent(self, event):
         """Handle resize events to rescale the image."""
         super().resizeEvent(event)

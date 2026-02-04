@@ -33,12 +33,12 @@ class MainImageIndexPanel(QLabel):
     def _draw_tick_to_right(self, painter: QPainter, scaled_rect: QRect, color: QColor) -> None:
         """Draw a tickmark slightly to the right of the right edge of scaled_rect, using color."""
         offset = 4
-        tick_w = max(12, scaled_rect.height())
+        tick_w = 16
         tick_rect = QRect(
             scaled_rect.right() + offset,
             scaled_rect.y(),
             tick_w,
-            scaled_rect.height(),
+            tick_w,
         )
         painter.setPen(color)
         font = QFont()

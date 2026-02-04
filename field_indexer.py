@@ -749,7 +749,15 @@ class FieldIndexerWindow(QMainWindow):
         q_image = QImage(img_array.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(q_image)
 
-        dialog = IndexOcrDialog(self, pixmap)
+        # Field coords in JSON are logo-relative; convert to page pixel coords for dialog and OCR
+        logo_tl = self.page_bbox[0] if self.page_bbox else (0, 0)
+        field_rect_page = (
+            self.current_field.x + logo_tl[0],
+            self.current_field.y + logo_tl[1],
+            self.current_field.width,
+            self.current_field.height,
+        )
+        dialog = IndexOcrDialog(self, pixmap, initial_rect=field_rect_page)
         # Block the main window while dialog is open
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
