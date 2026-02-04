@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
+    QPushButton,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
 from PyQt6.QtGui import QPixmap, QImage, QFont
@@ -31,6 +32,11 @@ class IndexDetailPanel(QWidget):
     # Emitted when the user presses Enter in the value editor to complete a TextField
     # Payload is (field_name: str)
     field_edit_completed = pyqtSignal(str)
+
+    ocr_requested = pyqtSignal()
+    # Emitted when the user presses the OCR button
+    # Payload is (field_name: str)
+    ocr_completed = pyqtSignal(str, str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -67,6 +73,11 @@ class IndexDetailPanel(QWidget):
         value_label = QLabel("Field Value:")
         main_layout.addWidget(value_label)
         
+        # ---- 3. OCR button ----
+        self.ocr_button = QPushButton("OCR")
+        self.ocr_button.clicked.connect(self.ocr_requested.emit)
+        main_layout.addWidget(self.ocr_button)
+        # ---- 3. Editable text area for field value ----
         self.value_text_edit = QTextEdit()
         self.value_text_edit.setPlaceholderText("Enter field value...")
         self.value_text_edit.setMinimumHeight(100)

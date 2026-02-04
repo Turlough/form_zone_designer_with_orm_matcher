@@ -13,6 +13,7 @@ class IndexMenuBar(QMenuBar):
 
     project_selected = pyqtSignal(str)  # Emits the selected project config folder path
     batch_import_selected = pyqtSignal(str)  # Emits full path to selected batch import file
+    ocr_requested = pyqtSignal()  # User chose to OCR the current text field
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -20,6 +21,7 @@ class IndexMenuBar(QMenuBar):
         self._current_project_path: str | None = None
         self._init_project_menu()
         self._init_batch_menu()
+        self._init_cloud_vision_menu()
 
     def _init_project_menu(self) -> None:
         """Build Project menu from top-level folders in DESIGNER_CONFIG_FOLDER."""
@@ -132,3 +134,26 @@ class IndexMenuBar(QMenuBar):
     def set_current_project_path(self, path: str | None) -> None:
         """Set the current project path (e.g. when restoring from session)."""
         self._current_project_path = path
+
+    def _init_cloud_vision_menu(self) -> None:
+        """Build Cloud Vision menu."""
+        self._cloud_vision_menu = QMenu("OCR", self)
+        self.addMenu(self._cloud_vision_menu)
+        self._refresh_cloud_vision_menu()
+
+    def _refresh_cloud_vision_menu(self) -> None:
+        """Refresh the Cloud Vision submenu."""
+        self._cloud_vision_menu.clear()
+        # Single OCR action; enabled/disabled by main window depending on field type
+        self._ocr_action = self._cloud_vision_menu.addAction("OCR current text field")
+        self._ocr_action.setEnabled(False)
+        self._ocr_action.triggered.connect(self._on_ocr_triggered)
+
+    def _on_ocr_triggered(self) -> None:
+        """Emit signal when OCR menu item is chosen."""
+        self.ocr_requested.emit()
+
+    def set_ocr_enabled(self, enabled: bool) -> None:
+        """Enable or disable the OCR menu item."""
+        if hasattr(self, "_ocr_action") and self._ocr_action is not None:
+            self._ocr_action.setEnabled(enabled)

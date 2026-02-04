@@ -36,6 +36,10 @@ class ImageDisplayWidget(QLabel):
         # zoom_mode: 'autofit', 'fit_width', 'fit_height', or 'manual'
         self.zoom_mode = 'autofit'
         self.zoom_factor = 1.0
+
+        # Persistent selection rectangle in absolute image coordinates
+        # (x, y, width, height). Used by tools such as OCR dialogs.
+        self.selection_rect = None
         
         # Callback for when a rectangle is added (used after dialog submit for new field)
         self.on_rect_added = None
@@ -62,6 +66,7 @@ class ImageDisplayWidget(QLabel):
         self.is_drawing = False
         self.start_point = None
         self.current_point = None
+        self.selection_rect = None
         # Reset zoom to autofit whenever a new image is set
         self.zoom_mode = 'autofit'
         self.zoom_factor = 1.0
@@ -314,6 +319,19 @@ class ImageDisplayWidget(QLabel):
                 x2 = self.current_point.x() - self.image_offset_x
                 y2 = self.current_point.y() - self.image_offset_y
                 painter.drawRect(QRect(QPoint(x1, y1), QPoint(x2, y2)))
+
+            # Draw persistent selection rectangle (also blue) if present
+            if self.selection_rect:
+                sx, sy, sw, sh = self.selection_rect
+                pen = QPen(QColor(0, 150, 255), 3)
+                painter.setPen(pen)
+                scaled_rect = QRect(
+                    int(sx * self.scale_x),
+                    int(sy * self.scale_y),
+                    int(sw * self.scale_x),
+                    int(sh * self.scale_y),
+                )
+                painter.drawRect(scaled_rect)
             
             painter.end()
             self.setPixmap(display_pixmap)
@@ -403,6 +421,12 @@ class ImageDisplayWidget(QLabel):
 
         self.start_point = None
         self.current_point = None
+        # Store persistent selection in absolute image coordinates
+        if width > 5 and height > 5:
+            self.selection_rect = (int(left_abs), int(top_abs), int(width), int(height))
+        else:
+            self.selection_rect = None
+
         self.update_display()
 
         if width <= 5 or height <= 5:
@@ -422,6 +446,19 @@ class ImageDisplayWidget(QLabel):
 
         if self.on_rect_drawn:
             self.on_rect_drawn(drawn_rect_rel, inner_rects_rel, event.globalPosition().toPoint())
+
+    # ------------------------------------------------------------------
+    # Public helpers for tools (e.g. OCR dialog)
+    # ------------------------------------------------------------------
+
+    def get_selection_rect(self):
+        """Return the current persistent selection rectangle, or None."""
+        return self.selection_rect
+
+    def clear_selection(self):
+        """Clear the persistent selection rectangle and redraw."""
+        self.selection_rect = None
+        self.update_display()
     
     def resizeEvent(self, event):
         """Handle resize events to rescale the image."""

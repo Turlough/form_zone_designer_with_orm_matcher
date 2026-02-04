@@ -19,6 +19,8 @@ from util.app_state import load_state, save_state
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import logging
 from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexMenuBar
+from ui.index_ocr_dialog import IndexOcrDialog
+from util.gemini_ocr_client import ocr_image_region
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -53,6 +55,7 @@ class FieldIndexerWindow(QMainWindow):
         self.page_fields = []  # Fields for current page
         self.page_bbox = None  # Logo bbox for current page
         self.field_values = {}  # Dictionary mapping field names to values for current page
+        self.current_field: Field | None = None  # Currently selected field on this page
         
         # Initialize UI
         self.init_ui()
@@ -103,6 +106,8 @@ class FieldIndexerWindow(QMainWindow):
         self._index_menu_bar = IndexMenuBar(self)
         self._index_menu_bar.project_selected.connect(self._apply_config_folder)
         self._index_menu_bar.batch_import_selected.connect(self._on_batch_import_selected)
+        self._index_menu_bar.ocr_requested.connect(self._on_ocr_requested)
+        
         self.setMenuBar(self._index_menu_bar)
 
         central_widget = QWidget()
@@ -166,6 +171,7 @@ class FieldIndexerWindow(QMainWindow):
         self.detail_panel.field_value_changed.connect(self.on_detail_panel_value_changed)
         # Enter in the detail panel's value editor completes the current TextField
         self.detail_panel.field_edit_completed.connect(self.on_detail_panel_edit_completed)
+        self.detail_panel.ocr_requested.connect(self._on_ocr_requested)
         main_layout.addWidget(self.detail_panel, stretch=1)
 
         # Text field popup dialog (shown under clicked TextField; synced with detail panel)
@@ -417,6 +423,8 @@ class FieldIndexerWindow(QMainWindow):
                 page_fields=self.page_fields,
                 field_values=self.field_values
             )
+        # No current field selected on new page
+        self._set_current_field(None)
     
     def detect_logo(self, pil_image):
         """Detect logo in the image, return bounding box or None."""
@@ -520,6 +528,7 @@ class FieldIndexerWindow(QMainWindow):
                 page_fields=self.page_fields,
                 field_values=self.field_values
             )
+            self._set_current_field(field_to_show)
         
         if isinstance(field, Tickbox):
             # Toggle tickbox
@@ -551,6 +560,7 @@ class FieldIndexerWindow(QMainWindow):
                     page_fields=self.page_fields,
                     field_values=self.field_values
                 )
+                self._set_current_field(field)
             
             logger.info(f"Tickbox '{field.name}' set to {new_value}")
         
@@ -582,6 +592,7 @@ class FieldIndexerWindow(QMainWindow):
                     page_fields=self.page_fields,
                     field_values=self.field_values
                 )
+                self._set_current_field(field)
             
             logger.info(f"RadioGroup '{field.name}' set to '{sub_field.name}'")
         
@@ -690,6 +701,7 @@ class FieldIndexerWindow(QMainWindow):
                 page_fields=self.page_fields,
                 field_values=self.field_values
             )
+        self._set_current_field(next_field)
 
         # Show IndexTextDialog under the next TextField
         rect = self.image_label.get_field_rect_in_widget(next_field)
@@ -706,6 +718,68 @@ class FieldIndexerWindow(QMainWindow):
     def on_index_text_dialog_edit_completed(self, field_name: str):
         """User pressed Enter in the floating text dialog for this field."""
         self._focus_next_text_field(field_name)
+
+    # ------------------------------------------------------------------
+    # Helpers for current field / OCR
+    # ------------------------------------------------------------------
+
+    def _set_current_field(self, field: Field | None) -> None:
+        """Track the currently selected field and update OCR menu state."""
+        self.current_field = field
+        can_ocr = isinstance(field, TextField) and bool(self.current_tiff_images)
+        if hasattr(self, "_index_menu_bar"):
+            self._index_menu_bar.set_ocr_enabled(can_ocr)
+
+    def _on_ocr_requested(self) -> None:
+        """Handle OCR menu action: open selection dialog and run Cloud Vision."""
+        if not isinstance(self.current_field, TextField):
+            QMessageBox.warning(self, "OCR", "OCR is only available for text fields.")
+            return
+        if not self.current_tiff_images:
+            QMessageBox.warning(self, "OCR", "No page is currently loaded.")
+            return
+
+        # Use the current page image at original resolution
+        pil_image = self.current_tiff_images[self.current_page_index]
+
+        # Convert to QPixmap (same as display_current_page)
+        img_array = np.array(pil_image)
+        height, width, channel = img_array.shape
+        bytes_per_line = 3 * width
+        q_image = QImage(img_array.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
+        pixmap = QPixmap.fromImage(q_image)
+
+        dialog = IndexOcrDialog(self, pixmap)
+        # Block the main window while dialog is open
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        rect = dialog.selected_rect()
+        if not rect:
+            return
+
+        # Run OCR with a wait cursor
+        try:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            text = ocr_image_region(pil_image, rect)
+        except Exception as e:  # noqa: BLE001 - show any OCR failure to the user
+            QMessageBox.information(
+                self,
+                "OCR failed",
+                f"OCR (Gemini) failed or is not available.\n\n{e}",
+            )
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        if text is None:
+            text = ""
+
+        # Apply OCR result to the current TextField value, reusing existing plumbing
+        field_name = self.current_field.name or ""
+        if not field_name:
+            return
+        self.on_index_text_dialog_value_changed(field_name, text)
 
 
 def main():
