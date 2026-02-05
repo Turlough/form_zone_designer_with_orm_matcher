@@ -397,11 +397,13 @@ class FieldIndexerWindow(QMainWindow):
             f"Page {page_num + 1} of {len(self.current_tiff_images)} - {os.path.basename(self.tiff_paths[self.current_tiff_index])}"
         )
 
-        # Enable/disable navigation buttons based on pages that actually have fields
+        # Enable/disable navigation buttons based on pages that actually have fields.
+        # The "Next" button stays enabled even when there are no more pages with fields
+        # so that we can show completion dialogs (form/batch completed) when clicked.
         has_prev_with_fields = self._find_previous_page_with_fields(page_num) is not None
-        has_next_with_fields = self._find_next_page_with_fields(page_num) is not None
         self.prev_button.setEnabled(has_prev_with_fields)
-        self.next_button.setEnabled(has_next_with_fields)
+        if self.next_button is not None:
+            self.next_button.setEnabled(True)
         
         # Get PIL image
         pil_image = self.current_tiff_images[page_num]
@@ -541,13 +543,53 @@ class FieldIndexerWindow(QMainWindow):
         save_state(last_indexer_tiff_index=self.current_tiff_index, last_indexer_page_index=self.current_page_index)
 
     def next_page(self):
-        """Navigate to next page that has fields (skipping blank pages)."""
+        """Navigate to next page that has fields (skipping blank pages).
+
+        If there are no more pages with fields in the current form:
+        - If there is another file in the batch, prompt with "Form completed" (Yes/No).
+          If the user clicks Yes, advance to the next file.
+        - If the current form is the last file in the batch, show "Batch completed"
+          dialog with Yes/No buttons (Yes action will be defined later).
+        """
         next_idx = self._find_next_page_with_fields(self.current_page_index)
-        if next_idx is None:
+
+        # Case 1: there *is* another page with fields in this TIFF – go there.
+        if next_idx is not None:
+            self.current_page_index = next_idx
+            self.display_current_page()
+            save_state(
+                last_indexer_tiff_index=self.current_tiff_index,
+                last_indexer_page_index=self.current_page_index,
+            )
             return
-        self.current_page_index = next_idx
-        self.display_current_page()
-        save_state(last_indexer_tiff_index=self.current_tiff_index, last_indexer_page_index=self.current_page_index)
+
+        # Case 2: no more pages with fields in this TIFF.
+        if not self.tiff_paths or self.current_tiff_index < 0:
+            return
+
+        is_last_file_in_batch = self.current_tiff_index >= len(self.tiff_paths) - 1
+
+        if not is_last_file_in_batch:
+            # There is another file in the batch – ask whether to advance to it.
+            reply = QMessageBox.question(
+                self,
+                "Form completed",
+                "Form completed.\n\nGo to the next form in the batch?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.tiff_list.setCurrentRow(self.current_tiff_index + 1)
+            return
+
+        # Case 3: current form is the last file in the batch – batch completed.
+        QMessageBox.question(
+            self,
+            "Batch completed",
+            "Batch completed.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
     
     def on_field_click(self, field, sub_field=None):
         """Handle field click events."""
