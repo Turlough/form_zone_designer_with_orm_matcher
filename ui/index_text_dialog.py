@@ -59,8 +59,7 @@ class IndexTextDialog(QDialog):
     def _on_return_pressed(self):
         """Handle Enter in the dialog: complete this field and hide the dialog."""
         if self._field_name:
-            text = text.upper()
-            self.field_edit_completed.emit(self._field_name, text)
+            self.field_edit_completed.emit(self._field_name)
 
     def show_under_rect(self, global_bottom_left: QPoint, width: int):
         """
