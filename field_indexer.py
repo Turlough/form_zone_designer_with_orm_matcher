@@ -678,15 +678,18 @@ class FieldIndexerWindow(QMainWindow):
         try:
             idx = next(i for i, f in enumerate(text_fields) if f.name == current_field_name)
         except StopIteration:
+            self._index_text_dialog.hide()
             return
 
         # Only advance within this page
         if idx + 1 >= len(text_fields):
+            self._index_text_dialog.hide()
             return
 
         next_field = text_fields[idx + 1]
 
         if not self.current_tiff_images:
+            self._index_text_dialog.hide()
             return
 
         current_pil_image = self.current_tiff_images[self.current_page_index]
