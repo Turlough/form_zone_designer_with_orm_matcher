@@ -90,6 +90,7 @@ class IndexDetailPanel(QWidget):
         self.value_text_edit = QTextEdit()
         self.value_text_edit.setPlaceholderText("Enter field value...")
         self.value_text_edit.setMinimumHeight(100)
+        self.value_text_edit.setFont(QFont("Arial", 12))
         self.value_text_edit.textChanged.connect(self._on_value_changed)
         # Catch Enter presses so we can advance to the next TextField without inserting a newline
         self.value_text_edit.installEventFilter(self)
