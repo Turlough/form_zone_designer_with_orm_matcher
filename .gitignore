@@ -4,13 +4,5 @@
 __pycache__/
 build/
 dist/
-*.spec
-*.egg-info/
-*.pyc
-*.pyo
-*.pyd
-*.pyw
-*.pyz
-*.pywz
-*.pyzw
+.python-version
 uv.lock
