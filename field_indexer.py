@@ -396,10 +396,12 @@ class FieldIndexerWindow(QMainWindow):
         self.page_info_label.setText(
             f"Page {page_num + 1} of {len(self.current_tiff_images)} - {os.path.basename(self.tiff_paths[self.current_tiff_index])}"
         )
-        
-        # Enable/disable navigation buttons
-        self.prev_button.setEnabled(page_num > 0)
-        self.next_button.setEnabled(page_num < len(self.current_tiff_images) - 1)
+
+        # Enable/disable navigation buttons based on pages that actually have fields
+        has_prev_with_fields = self._find_previous_page_with_fields(page_num) is not None
+        has_next_with_fields = self._find_next_page_with_fields(page_num) is not None
+        self.prev_button.setEnabled(has_prev_with_fields)
+        self.next_button.setEnabled(has_next_with_fields)
         
         # Get PIL image
         pil_image = self.current_tiff_images[page_num]
@@ -508,20 +510,44 @@ class FieldIndexerWindow(QMainWindow):
                 value = self.csv_manager.get_field_value(self.current_tiff_index, field.name)
                 if value:
                     self.field_values[field.name] = value
-    
+
+    def _find_next_page_with_fields(self, start_index: int) -> int | None:
+        """Return index of next page that has any fields, or None if none exist."""
+        if not self.current_tiff_images:
+            return None
+        for idx in range(start_index + 1, len(self.current_tiff_images)):
+            fields = self.load_page_fields(idx + 1)  # JSON is 1-indexed
+            if fields:
+                return idx
+        return None
+
+    def _find_previous_page_with_fields(self, start_index: int) -> int | None:
+        """Return index of previous page that has any fields, or None if none exist."""
+        if not self.current_tiff_images:
+            return None
+        for idx in range(start_index - 1, -1, -1):
+            fields = self.load_page_fields(idx + 1)
+            if fields:
+                return idx
+        return None
+
     def previous_page(self):
-        """Navigate to previous page."""
-        if self.current_page_index > 0:
-            self.current_page_index -= 1
-            self.display_current_page()
-            save_state(last_indexer_tiff_index=self.current_tiff_index, last_indexer_page_index=self.current_page_index)
-    
+        """Navigate to previous page that has fields (skipping blank pages)."""
+        prev_idx = self._find_previous_page_with_fields(self.current_page_index)
+        if prev_idx is None:
+            return
+        self.current_page_index = prev_idx
+        self.display_current_page()
+        save_state(last_indexer_tiff_index=self.current_tiff_index, last_indexer_page_index=self.current_page_index)
+
     def next_page(self):
-        """Navigate to next page."""
-        if self.current_page_index < len(self.current_tiff_images) - 1:
-            self.current_page_index += 1
-            self.display_current_page()
-            save_state(last_indexer_tiff_index=self.current_tiff_index, last_indexer_page_index=self.current_page_index)
+        """Navigate to next page that has fields (skipping blank pages)."""
+        next_idx = self._find_next_page_with_fields(self.current_page_index)
+        if next_idx is None:
+            return
+        self.current_page_index = next_idx
+        self.display_current_page()
+        save_state(last_indexer_tiff_index=self.current_tiff_index, last_indexer_page_index=self.current_page_index)
     
     def on_field_click(self, field, sub_field=None):
         """Handle field click events."""
