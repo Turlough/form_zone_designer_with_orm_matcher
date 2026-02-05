@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QMenuBar, QMenu
+from PyQt6.QtWidgets import QMenuBar, QMenu, QMessageBox
 
 
 class IndexMenuBar(QMenuBar):
@@ -103,9 +103,12 @@ class IndexMenuBar(QMenuBar):
             action.setEnabled(False)
             return
 
-        # Collect direct subfolders that contain the import file
+        # Collect direct subfolders that contain the import file.
+        # Skip special folders used for coordination between indexers.
         candidates = []
         for d in sorted(p for p in base.iterdir() if p.is_dir() and not p.name.startswith(".")):
+            if d.name in {"_in_progress", "_complete"}:
+                continue
             candidate_file = d / import_filename
             if candidate_file.exists():
                 candidates.append((d.name, candidate_file))
@@ -122,10 +125,68 @@ class IndexMenuBar(QMenuBar):
             )
 
     def _on_batch_selected(self, import_file_path: str) -> None:
-        """Emit the selected batch import file path to the main window."""
+        """
+        Claim the selected batch by moving its folder into _in_progress, then
+        emit the updated import file path to the main window.
+        """
         if not import_file_path:
             return
-        self.batch_import_selected.emit(import_file_path)
+
+        path = Path(import_file_path)
+        batch_dir = path.parent
+
+        if not batch_dir.exists():
+            # The batch was likely moved or deleted by another user.
+            QMessageBox.information(
+                self.parent() or self,
+                "Batch unavailable",
+                "The selected batch is no longer available.",
+            )
+            return
+
+        batch_root = batch_dir.parent
+
+        # If the batch is already under _in_progress (e.g. resumed path), just emit it.
+        if batch_root.name == "_in_progress":
+            self.batch_import_selected.emit(str(path))
+            return
+
+        in_progress_root = batch_root / "_in_progress"
+        try:
+            in_progress_root.mkdir(exist_ok=True)
+        except Exception:
+            # If we can't ensure the coordination folder exists, treat as unavailable.
+            QMessageBox.information(
+                self.parent() or self,
+                "Batch unavailable",
+                "The selected batch could not be reserved.",
+            )
+            return
+
+        dest_dir = in_progress_root / batch_dir.name
+
+        # If another user has already moved this batch into _in_progress, refuse selection.
+        if dest_dir.exists():
+            QMessageBox.information(
+                self.parent() or self,
+                "Batch in use",
+                "This batch is already being indexed by another user.",
+            )
+            return
+
+        try:
+            batch_dir.rename(dest_dir)
+        except Exception:
+            # Most likely a race where another user moved or completed the batch.
+            QMessageBox.information(
+                self.parent() or self,
+                "Batch unavailable",
+                "The selected batch is no longer available.",
+            )
+            return
+
+        new_import_file_path = dest_dir / path.name
+        self.batch_import_selected.emit(str(new_import_file_path))
 
     def get_current_project_path(self) -> str | None:
         """Return the currently selected project config folder, or None."""

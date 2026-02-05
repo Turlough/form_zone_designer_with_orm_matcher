@@ -583,13 +583,15 @@ class FieldIndexerWindow(QMainWindow):
             return
 
         # Case 3: current form is the last file in the batch – batch completed.
-        QMessageBox.question(
+        reply = QMessageBox.question(
             self,
             "Batch completed",
-            "Batch completed.",
+            "Click 'Yes' to complete the batch (or No if you want review it first)",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes,
         )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._complete_current_batch()
     
     def on_field_click(self, field, sub_field=None):
         """Handle field click events."""
@@ -869,6 +871,82 @@ class FieldIndexerWindow(QMainWindow):
         if not field_name:
             return
         self.on_index_text_dialog_value_changed(field_name, text)
+
+    def _complete_current_batch(self) -> None:
+        """
+        Mark the current batch as completed by moving its folder into the
+        '_complete' subfolder of the configured batch_folder, when possible.
+
+        This relies on the current CSV path being located somewhere under the
+        configured batch_folder (typically under '_in_progress/<batch_name>').
+        """
+        csv_path = getattr(self.csv_manager, "csv_path", None)
+        if not csv_path:
+            return
+
+        config = self._load_project_config()
+        if not config:
+            return
+
+        batch_folder = str(config.get("batch_folder", "")).strip()
+        if not batch_folder:
+            return
+
+        batch_root = Path(batch_folder)
+        if not batch_root.exists():
+            return
+
+        csv_dir = Path(os.path.dirname(os.path.abspath(csv_path)))
+
+        # Ensure the CSV directory is somewhere under the batch_root.
+        try:
+            rel = csv_dir.relative_to(batch_root)
+        except ValueError:
+            # CSV is not part of this batch coordination tree.
+            return
+
+        parts = rel.parts
+        if not parts:
+            return
+
+        # Possible layouts:
+        # - <batch_root>/<batch_name>
+        # - <batch_root>/_in_progress/<batch_name>
+        # - <batch_root>/_complete/<batch_name> (already completed)
+        if len(parts) == 1:
+            # Direct child of batch_root.
+            source_dir = batch_root / parts[0]
+        elif len(parts) == 2 and parts[0] == "_in_progress":
+            source_dir = batch_root / "_in_progress" / parts[1]
+        elif len(parts) == 2 and parts[0] == "_complete":
+            # Already marked complete.
+            return
+        else:
+            # Unexpected nesting; don't attempt to move.
+            return
+
+        if not source_dir.exists():
+            return
+
+        complete_root = batch_root / "_complete"
+        try:
+            complete_root.mkdir(exist_ok=True)
+        except Exception:
+            logger.warning("Could not ensure _complete folder exists under %s", batch_root)
+            return
+
+        dest_dir = complete_root / source_dir.name
+
+        # If destination already exists, do not overwrite – just log it.
+        if dest_dir.exists():
+            logger.warning("Destination batch folder already exists in _complete: %s", dest_dir)
+            return
+
+        try:
+            source_dir.rename(dest_dir)
+            logger.info("Moved batch folder from %s to %s", source_dir, dest_dir)
+        except Exception as e:
+            logger.warning("Could not move batch folder %s to %s: %s", source_dir, dest_dir, e)
 
 
 def main():
