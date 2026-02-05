@@ -24,6 +24,8 @@ from util.gemini_ocr_client import ocr_image_region
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+nav_widget_height = 100 # pixels
+
 class FieldIndexerWindow(QMainWindow):
     """Main window for the Field Indexer application."""
     
@@ -136,21 +138,6 @@ class FieldIndexerWindow(QMainWindow):
         self.page_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         center_panel.addWidget(self.page_info_label)
         
-        # Navigation buttons
-        nav_layout = QHBoxLayout()
-        
-        self.prev_button = QPushButton("◀ Previous")
-        self.prev_button.clicked.connect(self.previous_page)
-        self.prev_button.setEnabled(False)
-        nav_layout.addWidget(self.prev_button)
-        
-        self.next_button = QPushButton("Next ▶")
-        self.next_button.clicked.connect(self.next_page)
-        self.next_button.setEnabled(False)
-        nav_layout.addWidget(self.next_button)
-        
-        center_panel.addLayout(nav_layout)
-        
         # Image display
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
@@ -172,6 +159,29 @@ class FieldIndexerWindow(QMainWindow):
         self.detail_panel.field_edit_completed.connect(self.on_detail_panel_edit_completed)
         self.detail_panel.ocr_requested.connect(self._on_ocr_requested)
         main_layout.addWidget(self.detail_panel, stretch=1)
+
+                
+        # Navigation buttons
+        nav_widget = QWidget()
+        nav_widget.setFixedHeight(nav_widget_height)
+        nav_layout = QHBoxLayout(nav_widget)
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.prev_button = QPushButton("◀ Previous")
+        self.prev_button.setFixedHeight(nav_widget_height)
+        self.prev_button.setStyleSheet("background-color: #555555; color: white;")
+        self.prev_button.clicked.connect(self.previous_page)
+        self.prev_button.setEnabled(False)
+        nav_layout.addWidget(self.prev_button, 1)
+        
+        self.next_button = QPushButton("Next ▶")
+        self.next_button.setFixedHeight(nav_widget_height)
+        self.next_button.setStyleSheet("background-color: #555555; color: white;")
+        self.next_button.clicked.connect(self.next_page)
+        self.next_button.setEnabled(False)
+        nav_layout.addWidget(self.next_button, 3)
+        
+        center_panel.addWidget(nav_widget)
 
         # Text field popup dialog (shown under clicked TextField; synced with detail panel)
         self._index_text_dialog = IndexTextDialog(self)
