@@ -81,6 +81,6 @@ def ocr_image_region(pil_image: Image.Image, rect: Rect) -> str:
     finally:
         client.close()
 
-    text = (getattr(response, "text", "") or "").strip()
+    text = (getattr(response, "text", "") or "").strip().upper()
     return _normalize_ocr_text(text)
 

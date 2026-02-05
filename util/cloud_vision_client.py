@@ -93,7 +93,7 @@ def _normalize_ocr_text(raw_text: str) -> str:
     text = re.sub(r"\s+", " ", text)
 
     # Trim leading / trailing spaces and stray periods
-    text = text.strip()
+    text = text.strip().upper()
 
     return text
 

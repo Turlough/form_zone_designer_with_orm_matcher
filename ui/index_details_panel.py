@@ -304,7 +304,7 @@ class IndexDetailPanel(QWidget):
         if not self.current_field:
             return
         
-        new_value = self.value_text_edit.toPlainText()
+        new_value = self.value_text_edit.toPlainText().upper()
         field_name = self.current_field.name
         
         # Update local field_values
