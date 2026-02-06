@@ -40,8 +40,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class FormZoneDesigner(QMainWindow):
-    """Main application window for Form Zone Designer."""
+class Designer(QMainWindow):
+    """Main application window for Designer."""
     
     def __init__(self):
         super().__init__()
@@ -1095,7 +1095,7 @@ class FormZoneDesigner(QMainWindow):
 def main():
     """Main entry point for the application."""
     app = QApplication(sys.argv)
-    window = FormZoneDesigner()
+    window = Designer()
     window.showMaximized()
     sys.exit(app.exec())
 

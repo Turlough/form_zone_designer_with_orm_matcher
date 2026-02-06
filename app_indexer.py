@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 nav_widget_height = 100 # pixels
 
-class FieldIndexerWindow(QMainWindow):
+class Indexer(QMainWindow):
     """Main window for the Field Indexer application."""
     
     def __init__(self):
@@ -951,7 +951,7 @@ class FieldIndexerWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    window = FieldIndexerWindow()
+    window = Indexer()
     window.showMaximized()
     sys.exit(app.exec())
 
