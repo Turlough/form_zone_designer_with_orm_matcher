@@ -15,6 +15,7 @@ from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent, QF
 from PIL import Image
 from dotenv import load_dotenv
 from util import ORMMatcher, CSVManager
+from util.index_comments import Comment, Comments
 from util.app_state import load_state, save_state
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import logging
@@ -542,98 +543,38 @@ class Indexer(QMainWindow):
                     self.field_values[field.name] = value
 
     # ------------------------------------------------------------------
-    # QC comments: parsing, loading, and saving
+    # QC comments: managed via Comments (page+field keyed) to avoid duplicates
     # ------------------------------------------------------------------
 
-    def _parse_comments_cell(self, comments_str: str) -> list[dict]:
-        """
-        Parse the Comments column string into a list of entries:
-        [{'page': int, 'field': str, 'comment': str}, ...].
-
-        Expected format for each entry (pipe-separated):
-        P1: Fieldname: comment
-        """
-        entries: list[dict] = []
-        if not comments_str:
-            return entries
-        for part in comments_str.split("|"):
-            token = part.strip()
-            if not token:
-                continue
-            if ":" not in token:
-                continue
-            prefix, rest = token.split(":", 1)
-            prefix = prefix.strip()
-            if not prefix.startswith("P") or not prefix[1:].isdigit():
-                continue
-            page_num = int(prefix[1:])
-            rest = rest.strip()
-            if not rest:
-                continue
-            if ":" in rest:
-                field_name, comment = rest.split(":", 1)
-                field_name = field_name.strip()
-                comment = comment.strip()
-            else:
-                field_name = rest.strip()
-                comment = ""
-            if not field_name:
-                continue
-            entries.append({"page": page_num, "field": field_name, "comment": comment})
-        return entries
-
-    def _build_comments_cell(self, entries: list[dict]) -> str:
-        """Serialise comment entries back into the Comments column string."""
-        parts: list[str] = []
-        for entry in entries:
-            page = entry.get("page")
-            field = (entry.get("field") or "").strip()
-            comment = (entry.get("comment") or "").strip()
-            if not isinstance(page, int) or not field or not comment:
-                continue
-            parts.append(f"P{page}: {field}: {comment}")
-        return " | ".join(parts)
-
     def _load_comments_for_current_page(self) -> None:
-        """Populate page_comments from the Comments column for the current page."""
+        """Populate page_comments from the Comments column for the current page (deduplicated)."""
         self.page_comments = {}
         if self.current_tiff_index < 0:
             return
         comments_str = self.csv_manager.get_field_value(self.current_tiff_index, "Comments") or ""
-        if not comments_str:
-            return
-        entries = self._parse_comments_cell(comments_str)
-        page_num = self.current_page_index + 1  # pages are 1-indexed in Comments column
-        for entry in entries:
-            if entry.get("page") != page_num:
-                continue
-            field_name = (entry.get("field") or "").strip()
-            comment = (entry.get("comment") or "").strip()
-            if field_name and comment:
-                self.page_comments[field_name] = comment
+        row_comments = Comments.from_string(comments_str)
+        page_num = self.current_page_index + 1  # 1-indexed in Comments column
+        self.page_comments = row_comments.get_for_page(page_num)
 
     def _set_comment_for_field(self, field_name: str, comment: str) -> None:
         """
         Update the Comments column for the current form row, setting or clearing
-        the comment for (current_page, field_name).
+        the comment for (current_page, field_name). Uses Comments so (page, field)
+        is unique and duplicates are never written.
         """
         if self.current_tiff_index < 0:
             return
         existing = self.csv_manager.get_field_value(self.current_tiff_index, "Comments") or ""
-        entries = self._parse_comments_cell(existing)
+        row_comments = Comments.from_string(existing)
         page_num = self.current_page_index + 1
-        # Remove any existing entry for this (page, field)
-        entries = [
-            e for e in entries
-            if not (e.get("page") == page_num and (e.get("field") or "").strip() == field_name)
-        ]
         comment = comment.strip()
         if comment:
-            entries.append({"page": page_num, "field": field_name, "comment": comment})
-        new_str = self._build_comments_cell(entries)
+            row_comments.add_comment(Comment(page_num, field_name, comment))
+        else:
+            row_comments.remove_comment(Comment(page_num, field_name, "").identity)
+        new_str = row_comments.to_csv_string()
         self.csv_manager.set_field_value(self.current_tiff_index, "Comments", new_str)
         self.csv_manager.save_csv()
-        # Refresh page_comments from the updated cell
         self._load_comments_for_current_page()
 
     def _find_next_page_with_fields(self, start_index: int) -> int | None:
@@ -941,6 +882,22 @@ class Indexer(QMainWindow):
         if hasattr(self, "_index_menu_bar"):
             self._index_menu_bar.set_ocr_enabled(can_ocr)
 
+    def _normalize_comment_field_name(self, field_name: str) -> str:
+        """
+        For QC comments, ensure radio-button selections map back to their
+        RadioGroup name so comments are stored on the group, not the option.
+        """
+        if not field_name:
+            return field_name
+        for field in self.page_fields or []:
+            if isinstance(field, RadioGroup):
+                if field.name == field_name:
+                    return field_name
+                for rb in field.radio_buttons:
+                    if rb.name == field_name:
+                        return field.name
+        return field_name
+
     # ------------------------------------------------------------------
     # QC comments dialog handlers
     # ------------------------------------------------------------------
@@ -949,6 +906,9 @@ class Indexer(QMainWindow):
         """Handle a request from the detail panel to edit QC comments for a field."""
         if not hasattr(self, "detail_panel") or not self.page_fields:
             return
+
+        # Always resolve radio-button names back to their RadioGroup
+        field_name = self._normalize_comment_field_name(field_name)
 
         table = self.detail_panel.fields_table
         # Find the row corresponding to this field name
@@ -977,6 +937,8 @@ class Indexer(QMainWindow):
 
     def _on_comment_submitted(self, field_name: str, comment: str) -> None:
         """Persist a submitted QC comment and refresh highlights/X markers."""
+        # Ensure comments for radio selections are stored on the RadioGroup
+        field_name = self._normalize_comment_field_name(field_name)
         self._set_comment_for_field(field_name, comment)
 
         # Keep image overlay in sync
