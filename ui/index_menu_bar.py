@@ -107,7 +107,7 @@ class IndexMenuBar(QMenuBar):
         # Skip special folders used for coordination between indexers.
         candidates = []
         for d in sorted(p for p in base.iterdir() if p.is_dir() and not p.name.startswith(".")):
-            if d.name in {"_in_progress", "_complete"}:
+            if d.name in {"_in_progress", "_complete", "_qc"}:
                 continue
             candidate_file = d / import_filename
             if candidate_file.exists():

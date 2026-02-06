@@ -11,9 +11,11 @@ The project also contains a form design app that defines fields and locations th
 ## Terms
 - Indexing: the process of capturing data from a document.
 - Indexer: the application that staff will use for indexing.
-- Staff/Indexing staff: personnel who view and capture data from each page of a scanned image file. The file may have multiple pages.
+- Staff/Indexing staff: personnel who view and capture data from each page of a scanned image file. The file may have multiple pages. Indexing staff use the Indexer app for this.
 - Designer: The app used for defining fields on a form. Before indexing can begin, the layout and fields of a form must be defined. A template is scanned, and design staff define the layouts and positions that will be used later in indexing. 
 - Design staff: Design staff identify and locate the fields on the scanned template. In practice, that's me.
+- QC/Quality Control: Final step before release of a batch. When a batch has been indexed, it is reviewed by QC staff. In any form, indexing staff may have flagged one or more fields for review- QC staff will resolve or escalate the issue. QC staff use the Indexer app for this.
+- QC staff: staff assigned to perform Quality Control.
 - Template: An unfilled form with no data, used when designing the form.
 - Fiducial: A CV-recognisable region on a page. This is used to compensate for minor variations in scanning to provide consistent positioning for fields. Often a logo or heading is used.
 - Zone/Location: A rectangular area on the scanned image on which data is to be found. This is measured from one corner of a fiducial, not from the corner of the page.

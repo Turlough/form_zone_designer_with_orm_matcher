@@ -875,7 +875,7 @@ class Indexer(QMainWindow):
     def _complete_current_batch(self) -> None:
         """
         Mark the current batch as completed by moving its folder into the
-        '_complete' subfolder of the configured batch_folder, when possible.
+        '_qc' subfolder of the configured batch_folder, when possible.
 
         This relies on the current CSV path being located somewhere under the
         configured batch_folder (typically under '_in_progress/<batch_name>').
@@ -928,6 +928,13 @@ class Indexer(QMainWindow):
         if not source_dir.exists():
             return
 
+        qc_root = batch_root / "_qc"
+        try:
+            qc_root.mkdir(exist_ok=True)
+        except Exception:
+            logger.warning("Could not ensure _qc folder exists under %s", batch_root)
+            return
+
         complete_root = batch_root / "_complete"
         try:
             complete_root.mkdir(exist_ok=True)
@@ -935,11 +942,11 @@ class Indexer(QMainWindow):
             logger.warning("Could not ensure _complete folder exists under %s", batch_root)
             return
 
-        dest_dir = complete_root / source_dir.name
+        dest_dir = qc_root / source_dir.name
 
         # If destination already exists, do not overwrite – just log it.
         if dest_dir.exists():
-            logger.warning("Destination batch folder already exists in _complete: %s", dest_dir)
+            logger.warning("Destination batch folder already exists in _qc: %s", dest_dir)
             return
 
         try:
