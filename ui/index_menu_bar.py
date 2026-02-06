@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from PyQt6.QtCore import pyqtSignal
+from util.path_utils import resolve_path_case_insensitive, find_file_case_insensitive
 from PyQt6.QtWidgets import QMenuBar, QMenu, QMessageBox
 
 
@@ -33,12 +34,13 @@ class IndexMenuBar(QMenuBar):
         """Refresh the Project submenu with current folder list."""
         self._project_menu.clear()
 
-        if not self._designer_config_folder or not Path(self._designer_config_folder).exists():
+        base_resolved = resolve_path_case_insensitive(self._designer_config_folder) if self._designer_config_folder else None
+        if not self._designer_config_folder or base_resolved is None:
             no_folder = self._project_menu.addAction("(No DESIGNER_CONFIG_FOLDER set)")
             no_folder.setEnabled(False)
             return
 
-        base = Path(self._designer_config_folder)
+        base = base_resolved
         subdirs = sorted(
             d for d in base.iterdir()
             if d.is_dir() and not d.name.startswith(".")
@@ -74,9 +76,13 @@ class IndexMenuBar(QMenuBar):
             action.setEnabled(False)
             return
 
-        project_path = Path(self._current_project_path)
-        config_path = project_path / "json" / "project_config.json"
-        if not config_path.exists():
+        project_resolved = resolve_path_case_insensitive(self._current_project_path)
+        if project_resolved is None:
+            action = self._batch_menu.addAction("(Project path not found)")
+            action.setEnabled(False)
+            return
+        config_path = find_file_case_insensitive(project_resolved / "json", "project_config.json")
+        if config_path is None:
             action = self._batch_menu.addAction("(No project_config.json found)")
             action.setEnabled(False)
             return
@@ -97,8 +103,8 @@ class IndexMenuBar(QMenuBar):
             action.setEnabled(False)
             return
 
-        base = Path(batch_folder)
-        if not base.exists() or not base.is_dir():
+        base = resolve_path_case_insensitive(batch_folder)
+        if base is None or not base.is_dir():
             action = self._batch_menu.addAction("(batch_folder does not exist)")
             action.setEnabled(False)
             return
@@ -109,8 +115,8 @@ class IndexMenuBar(QMenuBar):
         for d in sorted(p for p in base.iterdir() if p.is_dir() and not p.name.startswith(".")):
             if d.name in {"_in_progress", "_complete", "_qc"}:
                 continue
-            candidate_file = d / import_filename
-            if candidate_file.exists():
+            candidate_file = find_file_case_insensitive(d, import_filename)
+            if candidate_file is not None:
                 candidates.append((d.name, candidate_file))
 
         if not candidates:

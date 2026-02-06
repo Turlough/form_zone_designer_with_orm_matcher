@@ -4,6 +4,8 @@ from pathlib import Path
 from fields import Field
 import logging
 
+from util.path_utils import find_file_case_insensitive, resolve_path_or_original
+
 logger = logging.getLogger(__name__)
 
 def load_page_fields(json_folder, page_idx, config_folder=None):
@@ -14,9 +16,10 @@ def load_page_fields(json_folder, page_idx, config_folder=None):
         page_idx: Zero-based page index
         config_folder: Optional Path to config folder for converting relative fiducial_paths
     """
-    json_path = os.path.join(json_folder, f"{page_idx + 1}.json")
+    json_folder = Path(resolve_path_or_original(json_folder))
+    json_path = find_file_case_insensitive(json_folder, f"{page_idx + 1}.json")
     
-    if not os.path.exists(json_path):
+    if json_path is None:
         logger.error(f"No JSON file found for page {page_idx + 1}")
         return []
     
@@ -54,7 +57,8 @@ def save_page_fields(json_folder, page_idx, page_field_list, config_folder=None)
         logger.error(f"Invalid page index: {page_idx}")
         return
 
-    json_path = os.path.join(json_folder, f"{page_idx + 1}.json")
+    json_folder = Path(resolve_path_or_original(json_folder))
+    json_path = json_folder / f"{page_idx + 1}.json"
     
     # Convert config_folder to Path if it's a string
     if config_folder and not isinstance(config_folder, Path):

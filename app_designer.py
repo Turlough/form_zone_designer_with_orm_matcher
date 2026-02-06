@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 from util import ORMMatcher, DesignerConfig
 from util import detect_rectangles, load_page_fields, save_page_fields, remove_inner_rectangles
 from util.app_state import load_state, save_state
+from util.path_utils import resolve_path_case_insensitive, find_file_case_insensitive
 import logging
 
 from PyQt6.QtCore import QPoint
@@ -136,7 +137,10 @@ class Designer(QMainWindow):
         self.page_detected_rects.clear()
         self.current_page_idx = None
 
-        config_folder = Path(folder_path)
+        config_resolved = resolve_path_case_insensitive(folder_path)
+        if config_resolved is None or not config_resolved.is_dir():
+            return False
+        config_folder = config_resolved
         self.config = DesignerConfig(config_folder)
 
         logger.info(f"Loaded config folder: {config_folder}")
@@ -144,9 +148,9 @@ class Designer(QMainWindow):
         logo_candidates = ['logo.png', 'logo.tif', 'fiducial.png', 'fiducial.jpg']
         logo_path = None
         for candidate in logo_candidates:
-            candidate_path = self.config.fiducials_folder / candidate
-            if candidate_path.exists():
-                logo_path = str(candidate_path)
+            found = find_file_case_insensitive(self.config.fiducials_folder, candidate)
+            if found is not None:
+                logo_path = str(found)
                 break
 
         if logo_path:
@@ -165,9 +169,10 @@ class Designer(QMainWindow):
         """Restore last config folder and page from AppData if valid."""
         state = load_state()
         folder = (state.get("last_config_folder") or "").strip()
-        if not folder or not Path(folder).exists():
+        if not folder or resolve_path_case_insensitive(folder) is None:
             return
-        if not (Path(folder) / "template.tif").exists():
+        folder_resolved = resolve_path_case_insensitive(folder)
+        if find_file_case_insensitive(folder_resolved, "template.tif") is None:
             return
         try:
             if not self._load_config_from_path(folder):

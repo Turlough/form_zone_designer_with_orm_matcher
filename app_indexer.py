@@ -17,6 +17,11 @@ from dotenv import load_dotenv
 from util import ORMMatcher, CSVManager
 from util.index_comments import Comment, Comments
 from util.app_state import load_state, save_state
+from util.path_utils import (
+    resolve_path_case_insensitive,
+    resolve_path_or_original,
+    find_file_case_insensitive,
+)
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import logging
 from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog
@@ -68,7 +73,7 @@ class Indexer(QMainWindow):
 
     def _init_matcher_from_fallbacks(self) -> None:
         """Initialize ORM matcher from logo_path (env or config_folder)."""
-        if self.logo_path and os.path.exists(self.logo_path):
+        if self.logo_path and resolve_path_case_insensitive(self.logo_path) is not None:
             self.matcher = ORMMatcher(self.logo_path)
         else:
             self.matcher = None
@@ -77,12 +82,13 @@ class Indexer(QMainWindow):
 
     def _apply_config_folder(self, config_folder_path: str) -> None:
         """Set current project config folder, derive json_folder and logo_path, reinit matcher."""
-        config_path = Path(config_folder_path)
-        if not config_path.exists() or not config_path.is_dir():
+        config_resolved = resolve_path_case_insensitive(config_folder_path)
+        if config_resolved is None or not config_resolved.is_dir():
             logger.warning("Config folder does not exist: %s", config_folder_path)
             return
 
-        self.config_folder = config_folder_path
+        config_path = config_resolved
+        self.config_folder = str(config_path)
         self.json_folder = str(config_path / 'json')
 
         # Find logo in fiducials subfolder (same convention as form_zone_designer)
@@ -90,9 +96,9 @@ class Indexer(QMainWindow):
         logo_candidates = ['logo.png', 'logo.tif', 'fiducial.png', 'fiducial.jpg']
         self.logo_path = None
         for candidate in logo_candidates:
-            candidate_path = fiducials / candidate
-            if candidate_path.exists():
-                self.logo_path = str(candidate_path)
+            found = find_file_case_insensitive(fiducials, candidate)
+            if found is not None:
+                self.logo_path = str(found)
                 break
 
         self._init_matcher_from_fallbacks()
@@ -109,17 +115,17 @@ class Indexer(QMainWindow):
     def _load_qc_comment_presets(self, config_path: Path) -> None:
         """Load preset QC comments from qc_comments.txt for the current project, if present."""
         self._qc_comment_presets: list[str] = []
-        qc_path = config_path / "qc_comments.txt"
-        if not qc_path.exists():
+        qc_found = find_file_case_insensitive(config_path, "qc_comments.txt")
+        if qc_found is None:
             return
         try:
-            with qc_path.open("r", encoding="utf-8") as f:
+            with qc_found.open("r", encoding="utf-8") as f:
                 for line in f:
                     text = line.strip()
                     if text:
                         self._qc_comment_presets.append(text)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Could not read qc_comments.txt at %s: %s", qc_path, exc)
+            logger.warning("Could not read qc_comments.txt at %s: %s", qc_found, exc)
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -236,19 +242,19 @@ class Indexer(QMainWindow):
         """Restore last import file, config folder (project), and page from persisted state if valid."""
         state = load_state()
         last_import = (state.get("last_import_file") or "").strip()
-        if not last_import or not Path(last_import).exists():
+        if not last_import or resolve_path_case_insensitive(last_import) is None:
             return
         # Prefer config_folder (project); fall back to inferring from last_indexer_json_folder for older sessions
         last_config = (state.get("last_indexer_config_folder") or "").strip()
-        if last_config and Path(last_config).exists():
+        if last_config and resolve_path_case_insensitive(last_config) is not None:
             self._apply_config_folder(last_config)
         else:
             last_json = (state.get("last_indexer_json_folder") or "").strip()
             if last_json:
-                p = Path(last_json)
+                p_resolved = resolve_path_case_insensitive(last_json)
                 # Infer config folder: if last_json ends with "json", parent is likely the project folder
-                if p.exists() and p.name == "json" and p.parent.exists():
-                    self._apply_config_folder(str(p.parent))
+                if p_resolved is not None and p_resolved.name.lower() == "json" and p_resolved.parent.exists():
+                    self._apply_config_folder(str(p_resolved.parent))
                 else:
                     self.json_folder = last_json
         try:
@@ -279,8 +285,9 @@ class Indexer(QMainWindow):
         """Load project_config.json for the current project, if available."""
         if not self.config_folder:
             return None
-        config_path = Path(self.config_folder) / "json" / "project_config.json"
-        if not config_path.exists():
+        json_folder = Path(resolve_path_or_original(self.config_folder)) / "json"
+        config_path = find_file_case_insensitive(json_folder, "project_config.json")
+        if config_path is None:
             return None
         try:
             with open(config_path, "r", encoding="utf-8") as f:
@@ -300,7 +307,7 @@ class Indexer(QMainWindow):
         config = self._load_project_config()
         if config:
             batch_folder = str(config.get("batch_folder", "")).strip()
-            if batch_folder and Path(batch_folder).exists():
+            if batch_folder and resolve_path_case_insensitive(batch_folder) is not None:
                 return batch_folder
         # Fallback: current working directory
         return os.getcwd()
@@ -309,8 +316,9 @@ class Indexer(QMainWindow):
         """Load the import CSV/TXT file."""
         state = load_state()
         last_import = (state.get("last_import_file") or "").strip()
-        default_dir = str(Path(last_import).parent) if last_import and Path(last_import).exists() else ""
-        if not default_dir or not Path(default_dir).exists():
+        last_resolved = resolve_path_case_insensitive(last_import) if last_import else None
+        default_dir = str(last_resolved.parent) if last_resolved and last_resolved.is_file() else ""
+        if not default_dir or resolve_path_case_insensitive(default_dir) is None:
             default_dir = self._get_default_import_folder()
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -494,10 +502,11 @@ class Indexer(QMainWindow):
     
     def load_page_fields(self, page_num):
         """Load field definitions from JSON file for a given page number."""
-        json_path = os.path.join(self.json_folder, f"{page_num}.json")
+        json_folder = Path(resolve_path_or_original(self.json_folder))
+        json_path = find_file_case_insensitive(json_folder, f"{page_num}.json")
         
-        if not os.path.exists(json_path):
-            logger.warning(f"JSON file not found: {json_path}")
+        if json_path is None:
+            logger.warning(f"JSON file not found for page {page_num}")
             return []
         
         try:
@@ -1037,11 +1046,13 @@ class Indexer(QMainWindow):
         if not batch_folder:
             return
 
-        batch_root = Path(batch_folder)
-        if not batch_root.exists():
+        batch_resolved = resolve_path_case_insensitive(batch_folder)
+        if batch_resolved is None or not batch_resolved.is_dir():
             return
 
-        csv_dir = Path(os.path.dirname(os.path.abspath(csv_path)))
+        batch_root = batch_resolved
+
+        csv_dir = Path(resolve_path_or_original(os.path.dirname(os.path.abspath(csv_path))))
 
         # Ensure the CSV directory is somewhere under the batch_root.
         try:

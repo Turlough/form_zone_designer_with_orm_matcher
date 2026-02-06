@@ -4,6 +4,12 @@ import logging
 from fields import Field, RadioGroup
 import json
 
+from util.path_utils import (
+    resolve_path_or_original,
+    paths_equal_case_insensitive,
+    find_file_case_insensitive,
+)
+
 logger = logging.getLogger(__name__)
 
 class CSVManager:
@@ -99,13 +105,14 @@ class CSVManager:
         return False
     
     def _get_field_names_from_json(self, json_folder):
-        """Extract field names from all JSON files in order."""
+        """Extract field names from all JSON files in order.
+        Uses case-insensitive path resolution for JSON files."""
         field_names = []
         page_num = 1
         
         while True:
-            json_path = os.path.join(json_folder, f"{page_num}.json")
-            if not os.path.exists(json_path):
+            json_path = find_file_case_insensitive(json_folder, f"{page_num}.json")
+            if json_path is None:
                 break
             
             try:
@@ -125,7 +132,7 @@ class CSVManager:
                             field_names.append(field.name)
                 
             except Exception as e:
-                logger.warning(f"Error reading {json_path}: {e}")
+                logger.warning(f"Error reading {json_path!s}: {e}")
             
             page_num += 1
         
@@ -138,9 +145,10 @@ class CSVManager:
         return [row[0] for row in self.rows[1:] if row[0]]
     
     def get_row_index_for_tiff(self, tiff_path):
-        """Get the row index (0-based, excluding header) for a given TIFF path."""
+        """Get the row index (0-based, excluding header) for a given TIFF path.
+        Uses case-insensitive path comparison."""
         for i, row in enumerate(self.rows[1:]):
-            if row[0] == tiff_path:
+            if paths_equal_case_insensitive(row[0], tiff_path):
                 return i
         return -1
     
@@ -188,7 +196,11 @@ class CSVManager:
             return False
     
     def get_absolute_tiff_path(self, relative_path):
-        """Convert relative TIFF path to absolute path."""
+        """Convert relative TIFF path to absolute path.
+        Resolves case-insensitively so paths work across different filesystems."""
         if os.path.isabs(relative_path):
-            return relative_path
-        return os.path.join(self.csv_dir, relative_path)
+            full_path = relative_path
+        else:
+            full_path = os.path.join(self.csv_dir, relative_path)
+        resolved = resolve_path_or_original(full_path)
+        return str(resolved)
