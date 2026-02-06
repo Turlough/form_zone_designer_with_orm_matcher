@@ -125,4 +125,37 @@ class TextField(Field):
     def __post_init__(self):
         super().__post_init__()
         self.colour = (0, 150, 150)
-        
+
+@dataclass
+class IngerField(TextField):
+    def __post_init__(self):    
+        super().__post_init__()
+        self.colour = (0, 150, 150)
+
+@dataclass
+class DecimalField(TextField):
+    def __post_init__(self):
+        super().__post_init__()
+        self.colour = (0, 150, 150)
+
+@dataclass
+class NumericRadioGroup(RadioGroup):
+    def __post_init__(self):
+        super().__post_init__()
+        self.colour = (0, 150, 150)
+    def add_radio_button(self, radio_button: RadioButton):
+        self.radio_buttons.append(radio_button)
+    
+    def remove_radio_button(self, radio_button: RadioButton):
+        self.radio_buttons.remove(radio_button)
+
+
+FIELD_TYPE_MAP = {
+    "Tickbox": Tickbox,
+    "RadioButton": RadioButton,
+    "RadioGroup": RadioGroup,
+    "TextField": TextField,
+    "IngerField": IngerField,
+    "DecimalField": DecimalField,
+    "NumericRadioGroup": NumericRadioGroup,
+}
