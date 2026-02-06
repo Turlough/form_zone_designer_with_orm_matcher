@@ -39,6 +39,9 @@ class IndexDetailPanel(QWidget):
     # Emitted when the user presses the OCR button
     # Payload is (field_name: str)
     ocr_completed = pyqtSignal(str, str)
+    # Emitted when the user requests editing QC comments for a field
+    # Payload is (field_name: str)
+    field_comment_requested = pyqtSignal(str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -107,6 +110,8 @@ class IndexDetailPanel(QWidget):
         self.fields_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.fields_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Read-only
         self.fields_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        # Double-clicking a row opens the QC comments editor for that field.
+        self.fields_table.cellDoubleClicked.connect(self._on_field_row_double_clicked)
         main_layout.addWidget(self.fields_table, stretch=1)
         
         # Internal state
@@ -115,9 +120,11 @@ class IndexDetailPanel(QWidget):
         self.page_bbox = None
         self.page_fields = []
         self.field_values = {}
+        # Mapping of field_name -> comment string for the current page
+        self.field_comments = {}
     
-    def set_current_field(self, field: Field | None, page_image: Image.Image | None = None, 
-                          page_bbox=None, page_fields=None, field_values=None):
+    def set_current_field(self, field: Field | None, page_image: Image.Image | None = None,
+                          page_bbox=None, page_fields=None, field_values=None, field_comments=None):
         """
         Update the panel to show details for the current field.
         
@@ -137,6 +144,8 @@ class IndexDetailPanel(QWidget):
             self.page_fields = page_fields
         if field_values is not None:
             self.field_values = field_values
+        if field_comments is not None:
+            self.field_comments = field_comments
         
         self._update_display()
         
@@ -177,6 +186,15 @@ class IndexDetailPanel(QWidget):
         
         # Update fields table
         self._update_fields_table()
+
+    def _on_field_row_double_clicked(self, row: int, column: int):
+        """Handle double-clicks on the fields table to request QC comments editing."""
+        if row < 0 or row >= len(self.page_fields):
+            return
+        field = self.page_fields[row]
+        if not field or not getattr(field, "name", None):
+            return
+        self.field_comment_requested.emit(field.name)
     
     def _update_closeup(self):
         """Update the close-up image of the current rectangle."""
@@ -286,7 +304,9 @@ class IndexDetailPanel(QWidget):
             
             value_item = QTableWidgetItem(value_str)
             self.fields_table.setItem(row, 1, value_item)
-            
+
+            has_comment = bool(self.field_comments.get(field.name or "", "").strip())
+
             # Emphasize current field
             if field.name == current_field_name:
                 name_item.setBackground(Qt.GlobalColor.darkBlue)
@@ -298,6 +318,12 @@ class IndexDetailPanel(QWidget):
                 font.setBold(True)
                 name_item.setFont(font)
                 value_item.setFont(font)
+            elif has_comment:
+                # Red background for commented fields (non-selected)
+                name_item.setBackground(Qt.GlobalColor.red)
+                name_item.setForeground(Qt.GlobalColor.white)
+                value_item.setBackground(Qt.GlobalColor.red)
+                value_item.setForeground(Qt.GlobalColor.white)
     
     def _on_value_changed(self):
         """Handle changes to the value text area."""

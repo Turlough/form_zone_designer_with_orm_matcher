@@ -30,7 +30,8 @@ class CSVManager:
         self.field_names = self._get_field_names_from_json(json_folder)
 
         # Build the expected header row from JSON field names
-        expected_headers = ['tiff_path'] + self.field_names
+        # Always ensure a trailing "Comments" column exists for QC flags.
+        expected_headers = ['tiff_path'] + self.field_names + ['Comments']
 
         # Check if headers exist
         if len(self.rows) == 0:

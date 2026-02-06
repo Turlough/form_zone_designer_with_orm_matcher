@@ -12,6 +12,7 @@ class DesignerConfig:
         self.template_path = config_folder / 'template.tif'
         self.json_folder = config_folder / 'json'
         self.fiducials_folder = config_folder / 'fiducials'
+        self.qc_comments= config_folder / 'qc_comments.txt'
 
         self.json_folder.mkdir(parents=True, exist_ok=True)
         self.fiducials_folder.mkdir(parents=True, exist_ok=True)

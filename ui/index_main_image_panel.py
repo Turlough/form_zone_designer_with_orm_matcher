@@ -5,6 +5,7 @@ from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QFont
 from fields import Field, RadioGroup, RadioButton, Tickbox, TextField
 
 TICK_CHAR = "\u2713"  # ✓
+CROSS_CHAR = "\u2717"  # ✗
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,8 @@ class MainImageIndexPanel(QLabel):
         self.bbox = None  # Logo bounding box
         self.field_data = []  # List of Field objects
         self.field_values = {}  # Dictionary mapping field name to field value
+        # Dictionary mapping field name to QC comment (if any) for the current page
+        self.field_comments = {}
         self.scale_x = 1.0
         self.scale_y = 1.0
         self.image_offset_x = 0
@@ -30,7 +33,7 @@ class MainImageIndexPanel(QLabel):
         # Callback for field clicks
         self.on_field_click = None
 
-    def _draw_tick_to_right(self, painter: QPainter, scaled_rect: QRect, color: QColor) -> None:
+    def _draw_tick_to_right(self, painter: QPainter, scaled_rect: QRect, color: QColor, character: str) -> None:
         """Draw a tickmark slightly to the right of the right edge of scaled_rect, using color."""
         offset = 4
         tick_w = 16
@@ -42,16 +45,17 @@ class MainImageIndexPanel(QLabel):
         )
         painter.setPen(color)
         font = QFont()
-        font.setPointSize(max(8, scaled_rect.height() - 2))
+        font.setPointSize(16)
         painter.setFont(font)
-        painter.drawText(tick_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, TICK_CHAR)
+        painter.drawText(tick_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, character)
 
-    def set_image(self, pixmap, bbox=None, field_data=None, field_values=None):
-        """Set the image, bounding box, fields, and field values to display."""
+    def set_image(self, pixmap, bbox=None, field_data=None, field_values=None, field_comments=None):
+        """Set the image, bounding box, fields, and field values/comments to display."""
         self.base_pixmap = pixmap
         self.bbox = bbox
         self.field_data = field_data or []
         self.field_values = field_values or {}
+        self.field_comments = field_comments or {}
         self.update_display()
     
     def update_display(self):
@@ -126,9 +130,17 @@ class MainImageIndexPanel(QLabel):
                     int(field.height * self.scale_y)
                 )
                 painter.drawRect(scaled_rect)
-                
+
+                has_comment = bool(self.field_comments.get(field.name, "").strip())
+                # Draw either tick or red cross depending on QC comment
+                if has_comment:
+                    self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
+                else:
+                    self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
+
                 # Draw individual radio buttons
                 selected_rb_name = self.field_values.get(field.name, None)
+                
                 for rb in field.radio_buttons:
                     rb_abs_x = rb.x + logo_offset[0]
                     rb_abs_y = rb.y + logo_offset[1]
@@ -151,11 +163,12 @@ class MainImageIndexPanel(QLabel):
                         fill_color = QColor(*rb.colour) if rb.colour else QColor(150, 255, 0)
                         fill_color.setAlpha(100)
                         painter.fillRect(rb_scaled_rect, fill_color)
-                        rb_tick_color = QColor(*rb.colour) if rb.colour else QColor(150, 255, 0)
-                        self._draw_tick_to_right(painter, rb_scaled_rect, rb_tick_color)
+
+                        self._draw_tick_to_right(painter, rb_scaled_rect, QColor(0, 255, 0), TICK_CHAR)
             
             elif isinstance(field, (Tickbox, TextField)):
                 color = QColor(*field.colour) if field.colour else QColor(0, 255, 0)
+                has_comment = bool(self.field_comments.get(field.name, "").strip())
                 
                 # Get field value from dictionary
                 field_value = self.field_values.get(field.name, False if isinstance(field, Tickbox) else "")
@@ -186,7 +199,11 @@ class MainImageIndexPanel(QLabel):
                     fill_color = QColor(*field.colour) if field.colour else QColor(0, 255, 0)
                     fill_color.setAlpha(100)
                     painter.fillRect(scaled_rect, fill_color)
-                    self._draw_tick_to_right(painter, scaled_rect, color)
+                    # Draw either tick or red cross depending on QC comment
+                    if has_comment:
+                        self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
+                    else:
+                        self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
                 
                 # Fill and show text for TextField
                 if isinstance(field, TextField) and field_value:
@@ -194,7 +211,7 @@ class MainImageIndexPanel(QLabel):
                     fill_color = QColor(*field.colour) if field.colour else QColor(0, 255, 0)
                     fill_color.setAlpha(100)
                     painter.fillRect(scaled_rect, fill_color)
-                    
+
                     # Draw text below the field
                     painter.setPen(QColor(*field.colour))
                     font = QFont()
@@ -204,10 +221,14 @@ class MainImageIndexPanel(QLabel):
                         scaled_rect.x(),
                         scaled_rect.y() + scaled_rect.height(),
                         scaled_rect.width() * 3,  # Allow text to extend
-                        20
+                        20,
                     )
                     painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft, field_value)
-                    self._draw_tick_to_right(painter, scaled_rect, color)
+                    # Draw either tick or red cross depending on QC comment
+                    if has_comment:
+                        self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
+                    else:
+                        self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
         
         painter.end()
         self.setPixmap(display_pixmap)

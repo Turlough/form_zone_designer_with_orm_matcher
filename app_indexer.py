@@ -18,7 +18,7 @@ from util import ORMMatcher, CSVManager
 from util.app_state import load_state, save_state
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import logging
-from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexMenuBar, IndexOcrDialog
+from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog
 from util.gemini_ocr_client import ocr_image_region
 
 logging.basicConfig(level=logging.INFO)
@@ -56,6 +56,8 @@ class Indexer(QMainWindow):
         self.page_fields = []  # Fields for current page
         self.page_bbox = None  # Logo bbox for current page
         self.field_values = {}  # Dictionary mapping field names to values for current page
+        # Mapping of field name -> QC comment string for the current page
+        self.page_comments: dict[str, str] = {}
         self.current_field: Field | None = None  # Currently selected field on this page
         
         # Initialize UI
@@ -93,6 +95,8 @@ class Indexer(QMainWindow):
                 break
 
         self._init_matcher_from_fallbacks()
+        # Load QC comment presets for this project (if available)
+        self._load_qc_comment_presets(config_path)
         if hasattr(self, '_index_menu_bar'):
             self._index_menu_bar.set_current_project_path(self.config_folder)
         save_state(last_indexer_config_folder=self.config_folder)
@@ -100,6 +104,21 @@ class Indexer(QMainWindow):
         # Refresh current page if one is displayed (uses new json_folder and matcher)
         if self.current_tiff_images:
             self.display_current_page()
+
+    def _load_qc_comment_presets(self, config_path: Path) -> None:
+        """Load preset QC comments from qc_comments.txt for the current project, if present."""
+        self._qc_comment_presets: list[str] = []
+        qc_path = config_path / "qc_comments.txt"
+        if not qc_path.exists():
+            return
+        try:
+            with qc_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    text = line.strip()
+                    if text:
+                        self._qc_comment_presets.append(text)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not read qc_comments.txt at %s: %s", qc_path, exc)
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -158,6 +177,8 @@ class Indexer(QMainWindow):
         # Enter in the detail panel's value editor completes the current TextField
         self.detail_panel.field_edit_completed.connect(self.on_detail_panel_edit_completed)
         self.detail_panel.ocr_requested.connect(self._on_ocr_requested)
+        # Double-clicking a row in the detail panel's fields table opens the QC comment dialog
+        self.detail_panel.field_comment_requested.connect(self._on_field_comment_requested)
         main_layout.addWidget(self.detail_panel, stretch=1)
 
                 
@@ -188,6 +209,10 @@ class Indexer(QMainWindow):
         self._index_text_dialog.text_changed.connect(self.on_index_text_dialog_value_changed)
         # Enter in the floating dialog also completes the current TextField
         self._index_text_dialog.field_edit_completed.connect(self.on_index_text_dialog_edit_completed)
+
+        # QC comments dialog (shown to the left of the selected field)
+        self._comment_dialog = IndexCommentDialog(self)
+        self._comment_dialog.comment_submitted.connect(self._on_comment_submitted)
     
     def _load_import_file_from_path(self, file_path: str, json_folder_override: str | None = None) -> bool:
         """Load import file from path (no dialog). If json_folder_override is set, use it for this load. Returns True on success."""
@@ -423,9 +448,11 @@ class Indexer(QMainWindow):
         
         # Pre-populate field values from CSV
         self.populate_field_values()
+        # Load QC comments for this page from the Comments column
+        self._load_comments_for_current_page()
         
         # Display
-        self.image_label.set_image(pixmap, self.page_bbox, self.page_fields, self.field_values)
+        self.image_label.set_image(pixmap, self.page_bbox, self.page_fields, self.field_values, self.page_comments)
         
         # Update detail panel (clear selection when page changes)
         if hasattr(self, 'detail_panel'):
@@ -434,7 +461,8 @@ class Indexer(QMainWindow):
                 page_image=pil_image,
                 page_bbox=self.page_bbox,
                 page_fields=self.page_fields,
-                field_values=self.field_values
+                field_values=self.field_values,
+                field_comments=self.page_comments,
             )
         # No current field selected on new page
         self._set_current_field(None)
@@ -512,6 +540,101 @@ class Indexer(QMainWindow):
                 value = self.csv_manager.get_field_value(self.current_tiff_index, field.name)
                 if value:
                     self.field_values[field.name] = value
+
+    # ------------------------------------------------------------------
+    # QC comments: parsing, loading, and saving
+    # ------------------------------------------------------------------
+
+    def _parse_comments_cell(self, comments_str: str) -> list[dict]:
+        """
+        Parse the Comments column string into a list of entries:
+        [{'page': int, 'field': str, 'comment': str}, ...].
+
+        Expected format for each entry (pipe-separated):
+        P1: Fieldname: comment
+        """
+        entries: list[dict] = []
+        if not comments_str:
+            return entries
+        for part in comments_str.split("|"):
+            token = part.strip()
+            if not token:
+                continue
+            if ":" not in token:
+                continue
+            prefix, rest = token.split(":", 1)
+            prefix = prefix.strip()
+            if not prefix.startswith("P") or not prefix[1:].isdigit():
+                continue
+            page_num = int(prefix[1:])
+            rest = rest.strip()
+            if not rest:
+                continue
+            if ":" in rest:
+                field_name, comment = rest.split(":", 1)
+                field_name = field_name.strip()
+                comment = comment.strip()
+            else:
+                field_name = rest.strip()
+                comment = ""
+            if not field_name:
+                continue
+            entries.append({"page": page_num, "field": field_name, "comment": comment})
+        return entries
+
+    def _build_comments_cell(self, entries: list[dict]) -> str:
+        """Serialise comment entries back into the Comments column string."""
+        parts: list[str] = []
+        for entry in entries:
+            page = entry.get("page")
+            field = (entry.get("field") or "").strip()
+            comment = (entry.get("comment") or "").strip()
+            if not isinstance(page, int) or not field or not comment:
+                continue
+            parts.append(f"P{page}: {field}: {comment}")
+        return " | ".join(parts)
+
+    def _load_comments_for_current_page(self) -> None:
+        """Populate page_comments from the Comments column for the current page."""
+        self.page_comments = {}
+        if self.current_tiff_index < 0:
+            return
+        comments_str = self.csv_manager.get_field_value(self.current_tiff_index, "Comments") or ""
+        if not comments_str:
+            return
+        entries = self._parse_comments_cell(comments_str)
+        page_num = self.current_page_index + 1  # pages are 1-indexed in Comments column
+        for entry in entries:
+            if entry.get("page") != page_num:
+                continue
+            field_name = (entry.get("field") or "").strip()
+            comment = (entry.get("comment") or "").strip()
+            if field_name and comment:
+                self.page_comments[field_name] = comment
+
+    def _set_comment_for_field(self, field_name: str, comment: str) -> None:
+        """
+        Update the Comments column for the current form row, setting or clearing
+        the comment for (current_page, field_name).
+        """
+        if self.current_tiff_index < 0:
+            return
+        existing = self.csv_manager.get_field_value(self.current_tiff_index, "Comments") or ""
+        entries = self._parse_comments_cell(existing)
+        page_num = self.current_page_index + 1
+        # Remove any existing entry for this (page, field)
+        entries = [
+            e for e in entries
+            if not (e.get("page") == page_num and (e.get("field") or "").strip() == field_name)
+        ]
+        comment = comment.strip()
+        if comment:
+            entries.append({"page": page_num, "field": field_name, "comment": comment})
+        new_str = self._build_comments_cell(entries)
+        self.csv_manager.set_field_value(self.current_tiff_index, "Comments", new_str)
+        self.csv_manager.save_csv()
+        # Refresh page_comments from the updated cell
+        self._load_comments_for_current_page()
 
     def _find_next_page_with_fields(self, start_index: int) -> int | None:
         """Return index of next page that has any fields, or None if none exist."""
@@ -605,7 +728,8 @@ class Indexer(QMainWindow):
                 page_image=current_pil_image,
                 page_bbox=self.page_bbox,
                 page_fields=self.page_fields,
-                field_values=self.field_values
+                field_values=self.field_values,
+                field_comments=self.page_comments,
             )
             self._set_current_field(field_to_show)
         
@@ -637,7 +761,8 @@ class Indexer(QMainWindow):
                     page_image=current_pil_image,
                     page_bbox=self.page_bbox,
                     page_fields=self.page_fields,
-                    field_values=self.field_values
+                    field_values=self.field_values,
+                    field_comments=self.page_comments,
                 )
                 self._set_current_field(field)
             
@@ -669,7 +794,8 @@ class Indexer(QMainWindow):
                     page_image=current_pil_image,
                     page_bbox=self.page_bbox,
                     page_fields=self.page_fields,
-                    field_values=self.field_values
+                    field_values=self.field_values,
+                    field_comments=self.page_comments,
                 )
                 self._set_current_field(field)
             
@@ -695,7 +821,8 @@ class Indexer(QMainWindow):
                     page_image=current_pil_image,
                     page_bbox=self.page_bbox,
                     page_fields=self.page_fields,
-                    field_values=self.field_values
+                    field_values=self.field_values,
+                    field_comments=self.page_comments,
                 )
 
             logger.info(f"TextField '{field.name}' clicked, value='{self.field_values.get(field.name, '')}'")
@@ -736,7 +863,8 @@ class Indexer(QMainWindow):
                 page_image=self.detail_panel.current_page_image,
                 page_bbox=self.detail_panel.page_bbox,
                 page_fields=self.detail_panel.page_fields,
-                field_values=self.field_values
+                field_values=self.field_values,
+                field_comments=self.page_comments,
             )
 
         self.image_label.field_values = self.field_values.copy()
@@ -781,7 +909,8 @@ class Indexer(QMainWindow):
                 page_image=current_pil_image,
                 page_bbox=self.page_bbox,
                 page_fields=self.page_fields,
-                field_values=self.field_values
+                field_values=self.field_values,
+                field_comments=self.page_comments,
             )
         self._set_current_field(next_field)
 
@@ -811,6 +940,60 @@ class Indexer(QMainWindow):
         can_ocr = isinstance(field, TextField) and bool(self.current_tiff_images)
         if hasattr(self, "_index_menu_bar"):
             self._index_menu_bar.set_ocr_enabled(can_ocr)
+
+    # ------------------------------------------------------------------
+    # QC comments dialog handlers
+    # ------------------------------------------------------------------
+
+    def _on_field_comment_requested(self, field_name: str) -> None:
+        """Handle a request from the detail panel to edit QC comments for a field."""
+        if not hasattr(self, "detail_panel") or not self.page_fields:
+            return
+
+        table = self.detail_panel.fields_table
+        # Find the row corresponding to this field name
+        row_index = next(
+            (i for i, f in enumerate(self.page_fields) if f.name == field_name),
+            None,
+        )
+        if row_index is None or row_index < 0 or row_index >= table.rowCount():
+            logger.warning("QC comment requested for unknown field '%s'", field_name)
+            return
+
+        # Use the table row rect to position the dialog to the left of the fields table
+        model_index = table.model().index(row_index, 0)
+        row_rect = table.visualRect(model_index)
+        if not row_rect.isValid():
+            return
+
+        # visualRect is in viewport coordinates; convert to global
+        top_left_global = table.viewport().mapToGlobal(row_rect.topLeft())
+        global_rect = QRect(top_left_global, row_rect.size())
+
+        existing_comment = self.page_comments.get(field_name, "")
+        presets = getattr(self, "_qc_comment_presets", [])
+        self._comment_dialog.set_field(field_name, existing_comment, presets)
+        self._comment_dialog.show_left_of_rect(global_rect)
+
+    def _on_comment_submitted(self, field_name: str, comment: str) -> None:
+        """Persist a submitted QC comment and refresh highlights/X markers."""
+        self._set_comment_for_field(field_name, comment)
+
+        # Keep image overlay in sync
+        self.image_label.field_comments = self.page_comments.copy()
+        self.image_label.update_display()
+
+        # Refresh detail panel table to update red backgrounds
+        if hasattr(self, "detail_panel") and self.current_tiff_images:
+            current_pil_image = self.current_tiff_images[self.current_page_index]
+            self.detail_panel.set_current_field(
+                self.current_field,
+                page_image=current_pil_image,
+                page_bbox=self.page_bbox,
+                page_fields=self.page_fields,
+                field_values=self.field_values,
+                field_comments=self.page_comments,
+            )
 
     def _on_ocr_requested(self) -> None:
         """Handle OCR menu action: open selection dialog and run Cloud Vision."""
