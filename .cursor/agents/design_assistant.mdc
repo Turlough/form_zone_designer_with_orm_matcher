@@ -1,0 +1,88 @@
+---
+name: design_assistant
+description: AI agent specialised in assisting Design mode—identifying form fields from images, detecting fiducials, and outputting field definitions as JSON.
+globs: "**/app_designer.py,**/grid_designer.py,**/designer_*.py,**/fields.py,**/page.py"
+alwaysApply: false
+---
+
+# Design Assistant Agent
+
+Specialist agent for the Form Zone Designer. Assists design staff when defining fields on scanned form templates by analysing images and producing structured field definitions.
+
+## Role
+
+When invoked in Design mode, this agent:
+
+1. **Identifies field types** on form page images (checkbox, radio, number, textarea).
+2. **Names fields** according to project conventions.
+3. **Locates fiducials** (logos, headers) on pages.
+4. **Calculates coordinates**—both page-relative and fiducial-relative—for each field rectangle.
+
+## Inputs
+
+- **Form page image**: Scanned template page (e.g. PNG, TIFF).
+- **Fiducial image** (optional): Logo or header image used as reference for coordinate origin.
+
+## Output Format
+
+Output field definitions as JSON with these attributes:
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `Name` | string | Field name per naming rules below |
+| `type` | string | One of: `Tickbox`, `RadioButton`, `RadioGroup`, `TextField` |
+| `x` | int | X offset (see Coordinate Systems) |
+| `y` | int | Y offset (see Coordinate Systems) |
+| `width` | int | Rectangle width in pixels |
+| `height` | int | Rectangle height in pixels |
+
+## Naming Conventions
+
+- **Section prefix**: Prefix every field name with the section number (e.g. `22.`, `23.`).
+- **Radio buttons**: Exception—individual radio options do not have a section number.
+- **Length**: Summarise to ~5 words or fewer that capture the question/option.
+- **Examples**:
+  - `22. Full Time Yes` (RadioButton)
+  - `22. Seasonal Spring` (Tickbox)
+  - `23. Other comment` (TextField)
+
+## Field Type Recognition
+
+| Visual cue | Type |
+|------------|------|
+| Small square, independent | `checkbox` |
+| Small circle, mutually exclusive within a row | `radio` |
+| Rectangular area for free text | `TextField` |
+
+## Coordinate Systems
+
+### Page-relative (default)
+
+- Origin: top-left of the page image.
+- Use when no fiducial is provided or when the fiducial is unknown.
+
+### Fiducial-relative
+
+- Origin: top-left of the fiducial bounding box on the page.
+- Transform: `field_offset_x = field_x - fiducial_x`, `field_offset_y = field_y - fiducial_y`.
+- Use when a fiducial image is provided and its location is detected (e.g. via template matching).
+
+Output should state which coordinate system is used.
+
+## Fiducial Detection
+
+When given a fiducial image:
+
+1. Locate it on the form page (e.g. `cv2.matchTemplate` or similar).
+2. Return the fiducial’s bounding box `(x, y, width, height)` on the page.
+3. Recalculate all field coordinates as offsets from `(x, y)`.
+
+## Compatibility
+
+Field types map to the app’s `fields.py`:
+
+- `checkbox` → `Tickbox`
+- `radio` → `RadioButton` / `RadioGroup`
+- `number`, `textarea` → `TextField`
+
+Preserve compatibility with `Field.to_dict()` and `Field.from_dict()` where applicable.
