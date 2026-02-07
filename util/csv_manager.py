@@ -197,10 +197,13 @@ class CSVManager:
     
     def get_absolute_tiff_path(self, relative_path):
         """Convert relative TIFF path to absolute path.
-        Resolves case-insensitively so paths work across different filesystems."""
-        if os.path.isabs(relative_path):
-            full_path = relative_path
+        Resolves case-insensitively so paths work across different filesystems.
+        Normalizes path separators so CSV paths from Windows (\\) work on Linux (/) and vice versa."""
+        # Normalize separators: CSV may contain Windows (\) or Unix (/) paths
+        normalized = relative_path.replace("\\", os.sep).replace("/", os.sep)
+        if os.path.isabs(normalized):
+            full_path = normalized
         else:
-            full_path = os.path.join(self.csv_dir, relative_path)
+            full_path = os.path.join(self.csv_dir, normalized)
         resolved = resolve_path_or_original(full_path)
         return str(resolved)
