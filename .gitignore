@@ -3,6 +3,8 @@
 .vscode/
 __pycache__/
 build/
+dist/
 .idea/
+
 .cursor/agents/workspace/*
 uv.lock

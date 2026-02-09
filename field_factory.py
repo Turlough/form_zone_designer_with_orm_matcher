@@ -23,3 +23,12 @@ def create_field(field_type: str, name: str, x: int, y: int, width: int, height:
     if not field_class:
         raise ValueError(f"Invalid field type: {field_type}")
     return field_class(name=name, x=x, y=y, width=width, height=height, colour=colour)
+
+def create_field_from_dict(field_dict: dict) -> Field:
+    field_type = field_dict.get("type")
+    name = field_dict.get("name")
+    x = field_dict.get("x")
+    y = field_dict.get("y")
+    width = field_dict.get("width")
+    height = field_dict.get("height")
+    return create_field(field_type, name, x, y, width, height)
