@@ -146,10 +146,6 @@ class Indexer(QMainWindow):
         # Left panel - TIFF list
         left_panel = QVBoxLayout()
         
-        load_button = QPushButton("Load Import File")
-        load_button.clicked.connect(self.load_import_file)
-        left_panel.addWidget(load_button)
-        
         self.tiff_list = QListWidget()
         self.tiff_list.currentRowChanged.connect(self.on_tiff_selected)
         left_panel.addWidget(self.tiff_list)
@@ -311,45 +307,6 @@ class Indexer(QMainWindow):
                 return batch_folder
         # Fallback: current working directory
         return os.getcwd()
-
-    def load_import_file(self):
-        """Load the import CSV/TXT file."""
-        state = load_state()
-        last_import = (state.get("last_import_file") or "").strip()
-        last_resolved = resolve_path_case_insensitive(last_import) if last_import else None
-        default_dir = str(last_resolved.parent) if last_resolved and last_resolved.is_file() else ""
-        if not default_dir or resolve_path_case_insensitive(default_dir) is None:
-            default_dir = self._get_default_import_folder()
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Import File",
-            default_dir,
-            "Text Files (*.txt *.csv);;All Files (*)"
-        )
-        
-        if not file_path:
-            return
-        
-        try:
-            self.csv_manager.load_csv(file_path, self.json_folder)
-            self.tiff_paths = self.csv_manager.get_tiff_paths()
-            self.tiff_list.clear()
-            for tiff_path in self.tiff_paths:
-                filename = os.path.basename(tiff_path)
-                self.tiff_list.addItem(filename)
-            logger.info(f"Loaded {len(self.tiff_paths)} TIFF files")
-            save_state(
-                last_import_file=file_path,
-                last_indexer_config_folder=self.config_folder,
-                last_indexer_json_folder=self.json_folder,
-                last_indexer_tiff_index=0,
-                last_indexer_page_index=0,
-            )
-            if self.tiff_paths:
-                self.tiff_list.setCurrentRow(0)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error loading import file: {e}")
-            logger.error(f"Error loading import file: {e}", exc_info=True)
 
     def _on_batch_import_selected(self, import_file_path: str) -> None:
         """Handle selection of a batch import file from the Batch menu."""
