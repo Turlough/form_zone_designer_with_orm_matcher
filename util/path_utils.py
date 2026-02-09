@@ -22,8 +22,13 @@ def resolve_path_case_insensitive(path: str | Path) -> Path | None:
 
     # Handle absolute vs relative
     if path.is_absolute():
-        resolved = Path(path.root)
-        parts = path.parts[1:]  # Skip root
+        # On Windows, Path.root is just "\" and Path.drive holds "C:" or
+        # "\\server\share". Path.anchor combines them ("C:\" or
+        # "\\server\share\"). Using only root breaks drive-letter and UNC
+        # paths. On POSIX, anchor and root are both "/".
+        anchor = path.anchor or path.root
+        resolved = Path(anchor)
+        parts = path.parts[1:]  # Skip anchor/root
     else:
         resolved = Path.cwd()
         parts = path.parts
