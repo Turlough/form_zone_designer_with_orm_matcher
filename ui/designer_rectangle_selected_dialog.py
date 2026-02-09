@@ -15,9 +15,9 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint
 from PyQt6.QtGui import QGuiApplication
+from fields import FIELD_TYPE_MAP
 
-FIELD_TYPES = ["Tickbox", "RadioButton", "RadioGroup", "TextField"]
-
+FIELD_TYPES = list(FIELD_TYPE_MAP.keys())
 
 class RectangleSelectedDialog(QDialog):
     """

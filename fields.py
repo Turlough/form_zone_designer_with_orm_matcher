@@ -48,15 +48,8 @@ class Field:
         """
         field_type = data.pop('_type')
         
-        # Map type name to class
-        type_map = {
-            'Tickbox': Tickbox,
-            'RadioButton': RadioButton,
-            'RadioGroup': RadioGroup,
-            'TextField': TextField
-        }
-        
-        field_class = type_map.get(field_type, Field)
+        # Resolve concrete field class from global FIELD_TYPE_MAP
+        field_class = FIELD_TYPE_MAP.get(field_type, Field)
         
         # Handle RadioGroup special case
         if field_type == 'RadioGroup' and 'radio_buttons' in data:
@@ -117,7 +110,22 @@ class RadioGroup(Field):
             'radio_buttons': [rb.to_dict() for rb in self.radio_buttons]
         }
         return data
-
+@dataclass
+class NumericRadioGroup(RadioGroup):
+    def __post_init__(self):
+        super().__post_init__()
+        self.colour = (0, 150, 150)
+        self.radio_buttons = self.radio_buttons or []
+    def add_radio_button(self, radio_button: RadioButton):
+        self.radio_buttons.append(radio_button)
+    
+    def remove_radio_button(self, radio_button: RadioButton):
+        self.radio_buttons.remove(radio_button)
+    
+    def to_dict(self):
+        """Convert NumericRadioGroup to dictionary with properly serialized radio buttons."""
+        data = super().to_dict()
+        return data
 
 @dataclass
 class TextField(Field):
@@ -127,7 +135,7 @@ class TextField(Field):
         self.colour = (0, 150, 150)
 
 @dataclass
-class IngerField(TextField):
+class IntegerField(TextField):
     def __post_init__(self):    
         super().__post_init__()
         self.colour = (0, 150, 150)
@@ -138,16 +146,6 @@ class DecimalField(TextField):
         super().__post_init__()
         self.colour = (0, 150, 150)
 
-@dataclass
-class NumericRadioGroup(RadioGroup):
-    def __post_init__(self):
-        super().__post_init__()
-        self.colour = (0, 150, 150)
-    def add_radio_button(self, radio_button: RadioButton):
-        self.radio_buttons.append(radio_button)
-    
-    def remove_radio_button(self, radio_button: RadioButton):
-        self.radio_buttons.remove(radio_button)
 
 
 FIELD_TYPE_MAP = {
@@ -155,7 +153,7 @@ FIELD_TYPE_MAP = {
     "RadioButton": RadioButton,
     "RadioGroup": RadioGroup,
     "TextField": TextField,
-    "IngerField": IngerField,
+    "IntegerField": IntegerField,
     "DecimalField": DecimalField,
     "NumericRadioGroup": NumericRadioGroup,
 }

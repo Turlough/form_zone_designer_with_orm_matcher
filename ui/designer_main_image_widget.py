@@ -3,7 +3,7 @@ from PyQt6.QtCore import Qt, QRect, QPoint
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QBrush, QFont, QFontMetrics, QMouseEvent
 
 from PyQt6.QtWidgets import QDialog
-from fields import Field, RadioGroup, RadioButton, Tickbox, TextField
+from fields import Field, RadioGroup, RadioButton, Tickbox, TextField, NumericRadioGroup
 import logging
 
 logger = logging.getLogger(__name__)
@@ -269,7 +269,7 @@ class ImageDisplayWidget(QLabel):
                             self._draw_field_name_label(painter, field.name[:20], scaled_rect, color)
                         
                         # If this is a RadioGroup, also draw its RadioButtons
-                        if isinstance(field, RadioGroup):
+                        if isinstance(field, RadioGroup) or isinstance(field, NumericRadioGroup):
                             for radio_button in field.radio_buttons:
                                 rb_color = QColor(*radio_button.colour)
                                 rb_pen = QPen(rb_color, 1)

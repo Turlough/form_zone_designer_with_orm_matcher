@@ -34,7 +34,7 @@ from ui import (
     GridDesigner,
     RectangleSelectedDialog,
 )
-from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
+from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, FIELD_TYPE_MAP
 import json
 
 logging.basicConfig(level=logging.INFO)
@@ -637,14 +637,7 @@ class Designer(QMainWindow):
         }
         
         # Create appropriate field type based on selection
-        type_map = {
-            "Tickbox": Tickbox,
-            "RadioButton": RadioButton,
-            "RadioGroup": RadioGroup,
-            "TextField": TextField,
-        }
-        
-        field_class = type_map.get(field_type)
+        field_class = FIELD_TYPE_MAP.get(field_type)
 
         if not field_class:
             logger.error(f"Invalid field type: {field_type}")
@@ -751,13 +744,7 @@ class Designer(QMainWindow):
             if not field_name:
                 return
             self._last_field_type = field_type
-            type_map = {
-                "Tickbox": Tickbox,
-                "RadioButton": RadioButton,
-                "RadioGroup": RadioGroup,
-                "TextField": TextField,
-            }
-            field_class = type_map.get(field_type, Tickbox)
+            field_class = FIELD_TYPE_MAP.get(field_type, Tickbox)
             kwargs = {"name": field_name, "x": int(x_rel), "y": int(y_rel), "width": int(w), "height": int(h)}
             if field_class == RadioGroup:
                 kwargs["radio_buttons"] = []
@@ -871,13 +858,7 @@ class Designer(QMainWindow):
                     det.pop(j)
                 self.image_display.detected_rects = self.page_detected_rects[self.current_page_idx]
             else:
-                type_map = {
-                    "Tickbox": Tickbox,
-                    "RadioButton": RadioButton,
-                    "RadioGroup": RadioGroup,
-                    "TextField": TextField,
-                }
-                field_class = type_map.get(field_type, Tickbox)
+                field_class = FIELD_TYPE_MAP.get(field_type, Tickbox)
                 kwargs = {"name": field_name, "x": left_rel, "y": top_rel, "width": w, "height": h, "colour": (255, 0, 0)}
                 if field_class == RadioGroup:
                     kwargs["radio_buttons"] = []
