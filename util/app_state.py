@@ -7,7 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-APP_NAME = "FormZoneDesigner"
+APP_NAME = "Designer"
 STATE_FILENAME = "app_state.json"
 
 
