@@ -51,8 +51,8 @@ class Field:
         # Resolve concrete field class from global FIELD_TYPE_MAP
         field_class = FIELD_TYPE_MAP.get(field_type, Field)
         
-        # Handle RadioGroup special case
-        if field_type == 'RadioGroup' and 'radio_buttons' in data:
+        # Handle RadioGroup (and subclasses) special case
+        if issubclass(field_class, RadioGroup) and 'radio_buttons' in data:
             radio_buttons_data = data.pop('radio_buttons', [])
             radio_buttons = []
             for rb_data in radio_buttons_data:
@@ -116,6 +116,7 @@ class NumericRadioGroup(RadioGroup):
         super().__post_init__()
         self.colour = (0, 150, 150)
         self.radio_buttons = self.radio_buttons or []
+        
     def add_radio_button(self, radio_button: RadioButton):
         self.radio_buttons.append(radio_button)
     
