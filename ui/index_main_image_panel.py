@@ -43,9 +43,12 @@ class MainImageIndexPanel(QLabel):
         This deliberately ignores any colour stored in the JSON and instead
         maps by concrete field class so that Indexer colours follow Designer.
         """
-        # Prefer the shared FIELD_TYPE_MAP definition from field_factory
+        # Prefer the shared FIELD_TYPE_MAP definition from field_factory.
+        # Match on the *exact* concrete class, not subclasses, so that
+        # specialised types (e.g. NumericRadioGroup) don't get treated
+        # as their parent type by accident.
         for field_class, color, _validator in FACTORY_FIELD_TYPE_MAP.values():
-            if isinstance(field, field_class):
+            if type(field) is field_class:
                 return color
 
         # Fallbacks: honour an existing colour attribute if present
@@ -67,7 +70,7 @@ class MainImageIndexPanel(QLabel):
         FIELD_TYPE_MAP from field_factory.
         """
         for field_class, _color, validator in FACTORY_FIELD_TYPE_MAP.values():
-            if isinstance(field, field_class):
+            if type(field) is field_class:
                 # Map may store either a Validator class or an instance
                 try:
                     if isinstance(validator, type):
@@ -111,9 +114,9 @@ class MainImageIndexPanel(QLabel):
 
         value = self._get_value_for_validation(field)
         try:
-            return not validator.is_valid(getattr(field, "name", ""), value)
+            return not validator.is_valid(value)
         except Exception:
-            logger.debug("Validation error for field %s", getattr(field, "name", ""))
+            logger.error("Validation error for field %s", getattr(field, "name", ""))
             return False
 
     def _draw_tick_to_right(self, painter: QPainter, scaled_rect: QRect, color: QColor, character: str) -> None:

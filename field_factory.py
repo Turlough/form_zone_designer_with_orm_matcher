@@ -12,10 +12,10 @@ from util.indexer_validations import TextValidator, IntegerValidator, DecimalVal
 
 # Class, Display colour, Validation class
 FIELD_TYPE_MAP = {
-    "Tickbox": (Tickbox, QColor(200, 150, 20), TextValidator),
+    "Tickbox": (Tickbox, QColor(50, 255, 0), TextValidator),
     "RadioButton": (RadioButton, QColor(100, 150, 0), TextValidator),
     "RadioGroup": (RadioGroup, QColor(100, 150, 0), TextValidator),
-    "TextField": (TextField, QColor(0, 150, 150), TextValidator),
+    "TextField": (TextField, QColor(0, 150, 50), TextValidator),
     "IntegerField": (IntegerField, QColor(0, 150, 150), IntegerValidator),
     "DecimalField": (DecimalField, QColor(0, 150, 150), DecimalValidator),
     "NumericRadioGroup": (NumericRadioGroup, QColor(0, 150, 150), TextValidator()),

@@ -1,12 +1,19 @@
+from typing import Any
 
-def is_empty(value: str) -> bool:
-    return value is None or value.strip() == ""
+def contains_text(value: str) -> bool:
+    return value is not None and value.strip() != ""
 
-def is_not_integer(value: str) -> bool:
-    return value is not None and value.strip() != "" and not value.isdigit()
+def is_integer(value: str) -> bool:
+    if value is None or value.strip() == "":
+        return False # is empty has already been tested
+    else:
+        return value.isdigit()
 
-def is_not_decimal(value: str) -> bool:
-    return value is not None and value.strip() != "" and not value.replace(".", "", 1).isdigit()
+def is_decimal(value: str) -> bool:
+    if value is  None or value.strip() == "":
+        return False # is empty has already been tested
+    else:
+        return value.replace(".", "", 1).isdigit()
 
 
 class Validator:
@@ -14,24 +21,25 @@ class Validator:
     def __init__(self, field_type: type):
         self.field_type = field_type
 
-    def is_valid(self, field_name: str, value: any) -> bool:
+    def is_valid(self, value: any) -> bool:
+        responses = []
         for test in self.tests:
-            if test(value):
+            if not test(value):
                 return False
         return True
 
 class TextValidator(Validator):
     def __init__(self):
         super().__init__(str)
-        self.tests = [is_empty]
+        self.tests = [contains_text]
 
 class IntegerValidator(Validator):
     def __init__(self):
         super().__init__(int)
-        self.tests = [is_empty, is_not_integer]
+        self.tests = [contains_text, is_integer]
 
 class DecimalValidator(Validator):
     def __init__(self):
         super().__init__(float)
-        self.tests = [is_empty, is_not_decimal]
+        self.tests = [contains_text, is_decimal]
 
