@@ -61,6 +61,61 @@ class MainImageIndexPanel(QLabel):
         # Ultimate fallback – a generic green
         return QColor(0, 255, 0)
 
+    def _get_validator_for_field(self, field: Field):
+        """
+        Look up the appropriate Validator instance for a given field, based on
+        FIELD_TYPE_MAP from field_factory.
+        """
+        for field_class, _color, validator in FACTORY_FIELD_TYPE_MAP.values():
+            if isinstance(field, field_class):
+                # Map may store either a Validator class or an instance
+                try:
+                    if isinstance(validator, type):
+                        return validator()
+                    return validator
+                except Exception:
+                    logger.exception("Error creating validator for field %s", getattr(field, "name", ""))
+                    return None
+        return None
+
+    def _get_value_for_validation(self, field: Field):
+        """
+        Normalise the current value for validation, per field type.
+        """
+        # Tickbox: treat checked/unchecked as a non-empty/empty string so that
+        # TextValidator (is_empty) semantics work as expected.
+        if isinstance(field, Tickbox):
+            checked = bool(self.field_values.get(field.name, False))
+            return "Ticked" if checked else ""
+
+        # RadioGroup (and subclasses): value is the selected radio button name.
+        if isinstance(field, RadioGroup):
+            value = self.field_values.get(field.name, "")
+            return value or ""
+
+        # Text-like fields (TextField, IntegerField, DecimalField, etc.)
+        value = self.field_values.get(field.name, "")
+        if value is None:
+            return ""
+        return str(value)
+
+    def _is_field_invalid(self, field: Field) -> bool:
+        """
+        Determine whether the current value for this field fails validation.
+
+        If no validator is configured for a field type, it is treated as valid.
+        """
+        validator = self._get_validator_for_field(field)
+        if validator is None:
+            return False
+
+        value = self._get_value_for_validation(field)
+        try:
+            return not validator.is_valid(getattr(field, "name", ""), value)
+        except Exception:
+            logger.debug("Validation error for field %s", getattr(field, "name", ""))
+            return False
+
     def _draw_tick_to_right(self, painter: QPainter, scaled_rect: QRect, color: QColor, character: str) -> None:
         """Draw a tickmark slightly to the right of the right edge of scaled_rect, using color."""
         offset = 4
@@ -143,8 +198,11 @@ class MainImageIndexPanel(QLabel):
         
         for field in self.field_data:
             if isinstance(field, RadioGroup):
-                # Draw radio group container
-                color = self._get_field_color(field)
+                # RadioGroup: invalid selection (no option chosen) shows INVALID_COLOUR
+                is_invalid = self._is_field_invalid(field)
+                base_color = self._get_field_color(field)
+                color = INVALID_COLOUR if is_invalid else base_color
+
                 pen = QPen(color, 1)
                 painter.setPen(pen)
                 
@@ -160,9 +218,9 @@ class MainImageIndexPanel(QLabel):
                 painter.drawRect(scaled_rect)
 
                 has_comment = bool(self.field_comments.get(field.name, "").strip())
-                # Draw either tick or red cross depending on QC comment
+                # QC tick/cross independent of data validation
                 if has_comment:
-                    self._draw_tick_to_right(painter, scaled_rect, INVALID_COLOUR, CROSS_CHAR)
+                    self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
                 # else:
                 #     self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
 
@@ -188,14 +246,17 @@ class MainImageIndexPanel(QLabel):
                     
                     # Fill if selected
                     if is_selected:
-                        fill_color = self._get_field_color(rb)
+                        fill_color = INVALID_COLOUR if is_invalid else self._get_field_color(rb)
                         fill_color.setAlpha(100)
                         painter.fillRect(rb_scaled_rect, fill_color)
 
                         self._draw_tick_to_right(painter, rb_scaled_rect, QColor(0, 255, 0), TICK_CHAR)
             
             elif isinstance(field, (Tickbox, TextField)):
-                color = self._get_field_color(field)
+                # Tickbox/TextField (and subclasses): colour reflects validation
+                is_invalid = self._is_field_invalid(field)
+                base_color = self._get_field_color(field)
+                color = INVALID_COLOUR if is_invalid else base_color
                 has_comment = bool(self.field_comments.get(field.name, "").strip())
                 
                 # Get field value from dictionary
@@ -224,10 +285,10 @@ class MainImageIndexPanel(QLabel):
                 
                 # Fill tickbox if checked
                 if isinstance(field, Tickbox) and field_value:
-                    fill_color = self._get_field_color(field)
+                    fill_color = INVALID_COLOUR if is_invalid else base_color
                     fill_color.setAlpha(100)
                     painter.fillRect(scaled_rect, fill_color)
-                    # Draw either tick or red cross depending on QC comment
+                    # QC tick/cross beside tickbox
                     if has_comment:
                         self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
                     # else:
@@ -236,12 +297,13 @@ class MainImageIndexPanel(QLabel):
                 # Fill and show text for TextField
                 if isinstance(field, TextField) and field_value:
                     # Fill with semitransparent color
-                    fill_color = self._get_field_color(field)
+                    fill_color = INVALID_COLOUR if is_invalid else base_color
                     fill_color.setAlpha(100)
                     painter.fillRect(scaled_rect, fill_color)
 
                     # Draw text below the field
-                    painter.setPen(self._get_field_color(field))
+                    text_color = INVALID_COLOUR if is_invalid else base_color
+                    painter.setPen(text_color)
                     font = QFont()
                     font.setPointSize(8)
                     painter.setFont(font)
@@ -252,7 +314,7 @@ class MainImageIndexPanel(QLabel):
                         20,
                     )
                     painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft, field_value)
-                    # Draw either tick or red cross depending on QC comment
+                    # QC tick/cross beside text field
                     if has_comment:
                         self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
                     # else:
