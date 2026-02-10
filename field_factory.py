@@ -8,21 +8,25 @@ from fields import DecimalField
 from fields import NumericRadioGroup
 from PyQt6.QtGui import QColor
 
+from util.indexer_validations import TextValidator, IntegerValidator, DecimalValidator
+
+# Class, Display colour, Validation class
 FIELD_TYPE_MAP = {
-    "Tickbox": (Tickbox, QColor(150, 150, 100)),
-    "RadioButton": (RadioButton, QColor(100, 150, 0)),
-    "RadioGroup": (RadioGroup, QColor(100, 150, 0)),
-    "TextField": (TextField, QColor(0, 150, 150)),
-    "IntegerField": (IntegerField, QColor(0, 150, 150)),
-    "DecimalField": (DecimalField, QColor(0, 150, 150)),
-    "NumericRadioGroup": (NumericRadioGroup, QColor(0, 150, 150)),
+    "Tickbox": (Tickbox, QColor(200, 150, 20), TextValidator),
+    "RadioButton": (RadioButton, QColor(100, 150, 0), TextValidator),
+    "RadioGroup": (RadioGroup, QColor(100, 150, 0), TextValidator),
+    "TextField": (TextField, QColor(0, 150, 150), TextValidator),
+    "IntegerField": (IntegerField, QColor(0, 150, 150), IntegerValidator),
+    "DecimalField": (DecimalField, QColor(0, 150, 150), DecimalValidator),
+    "NumericRadioGroup": (NumericRadioGroup, QColor(0, 150, 150), TextValidator()),
 }
+INVALID_COLOUR = QColor(255, 0, 0)
 
 def create_field(field_type: str, name: str, x: int, y: int, width: int, height: int) -> Field:
-    field_class, colour = FIELD_TYPE_MAP.get(field_type)
+    field_class, colour, validator = FIELD_TYPE_MAP.get(field_type)
     if not field_class:
         raise ValueError(f"Invalid field type: {field_type}")
-    return field_class(name=name, x=x, y=y, width=width, height=height, colour=colour)
+    return field_class(name=name, x=x, y=y, width=width, height=height, colour=colour, validator=validator)
 
 def create_field_from_dict(field_dict: dict) -> Field:
     field_type = field_dict.get("type")

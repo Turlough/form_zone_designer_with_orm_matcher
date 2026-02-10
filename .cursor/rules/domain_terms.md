@@ -27,5 +27,5 @@ The project also contains a form design app that defines fields and locations th
 - Batch: A group of similar documents, all with the same fields of interest. Each batch lives in a directory that contains images, a file representing the captured data, and a link to the source document.
 - Project: Defines a form type and the data to be captured from it.
 - Job: A collection of batches from the same project, typically gathered in a "job folder" on the file system. A project may have several jobs, and each job may have multiple batches.
-
+- Validation: These are automatic boolean tests on Field values, such as "is_empty", "is_not_decimal" etc. Validations help indexers by providing visual cues to staff while indexing. For QC staff, validations can additionally form a list of values to check.
 

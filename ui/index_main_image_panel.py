@@ -3,12 +3,14 @@ from PyQt6.QtCore import Qt, QRect
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QFont
 
 from fields import Field, RadioGroup, RadioButton, Tickbox, TextField
+from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP
 
 TICK_CHAR = "\u2713"  # ✓
 CROSS_CHAR = "\u2717"  # ✗
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 class MainImageIndexPanel(QLabel):
     """Custom QLabel for displaying form pages with field overlays."""
@@ -32,6 +34,31 @@ class MainImageIndexPanel(QLabel):
         
         # Callback for field clicks
         self.on_field_click = None
+
+    def _get_field_color(self, field: Field) -> QColor:
+        """
+        Resolve the display colour for a field using FIELD_TYPE_MAP from field_factory.
+
+        This deliberately ignores any colour stored in the JSON and instead
+        maps by concrete field class so that Indexer colours follow Designer.
+        """
+        # Prefer the shared FIELD_TYPE_MAP definition from field_factory
+        for field_class, color, _validator in FACTORY_FIELD_TYPE_MAP.values():
+            if isinstance(field, field_class):
+                return color
+
+        # Fallbacks: honour an existing colour attribute if present
+        colour_attr = getattr(field, "colour", None)
+        if isinstance(colour_attr, QColor):
+            return colour_attr
+        if isinstance(colour_attr, tuple) and len(colour_attr) == 3:
+            try:
+                return QColor(*colour_attr)
+            except TypeError:
+                pass
+
+        # Ultimate fallback – a generic green
+        return QColor(0, 255, 0)
 
     def _draw_tick_to_right(self, painter: QPainter, scaled_rect: QRect, color: QColor, character: str) -> None:
         """Draw a tickmark slightly to the right of the right edge of scaled_rect, using color."""
@@ -116,7 +143,7 @@ class MainImageIndexPanel(QLabel):
         for field in self.field_data:
             if isinstance(field, RadioGroup):
                 # Draw radio group container
-                color = QColor(*field.colour) if field.colour else QColor(150, 255, 0)
+                color = self._get_field_color(field)
                 pen = QPen(color, 1)
                 painter.setPen(pen)
                 
@@ -160,14 +187,14 @@ class MainImageIndexPanel(QLabel):
                     
                     # Fill if selected
                     if is_selected:
-                        fill_color = QColor(*rb.colour) if rb.colour else QColor(150, 255, 0)
+                        fill_color = self._get_field_color(rb)
                         fill_color.setAlpha(100)
                         painter.fillRect(rb_scaled_rect, fill_color)
 
                         self._draw_tick_to_right(painter, rb_scaled_rect, QColor(0, 255, 0), TICK_CHAR)
             
             elif isinstance(field, (Tickbox, TextField)):
-                color = QColor(*field.colour) if field.colour else QColor(0, 255, 0)
+                color = self._get_field_color(field)
                 has_comment = bool(self.field_comments.get(field.name, "").strip())
                 
                 # Get field value from dictionary
@@ -196,7 +223,7 @@ class MainImageIndexPanel(QLabel):
                 
                 # Fill tickbox if checked
                 if isinstance(field, Tickbox) and field_value:
-                    fill_color = QColor(*field.colour) if field.colour else QColor(0, 255, 0)
+                    fill_color = self._get_field_color(field)
                     fill_color.setAlpha(100)
                     painter.fillRect(scaled_rect, fill_color)
                     # Draw either tick or red cross depending on QC comment
@@ -208,12 +235,12 @@ class MainImageIndexPanel(QLabel):
                 # Fill and show text for TextField
                 if isinstance(field, TextField) and field_value:
                     # Fill with semitransparent color
-                    fill_color = QColor(*field.colour) if field.colour else QColor(0, 255, 0)
+                    fill_color = self._get_field_color(field)
                     fill_color.setAlpha(100)
                     painter.fillRect(scaled_rect, fill_color)
 
                     # Draw text below the field
-                    painter.setPen(QColor(*field.colour))
+                    painter.setPen(self._get_field_color(field))
                     font = QFont()
                     font.setPointSize(8)
                     painter.setFont(font)
