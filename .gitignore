@@ -6,5 +6,5 @@ build/
 dist/
 .idea/
 
-.cursor/agents/workspace/*
+.cursor/workspace/*
 uv.lock
