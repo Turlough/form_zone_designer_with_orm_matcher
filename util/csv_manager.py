@@ -35,9 +35,12 @@ class CSVManager:
         # Get field names from JSON files
         self.field_names = self._get_field_names_from_json(json_folder)
 
-        # Build the expected header row from JSON field names
+        # Build the expected header row from JSON field names.
+        # NOTE: The first column name is historically "tiff_path" but is used for
+        # arbitrary document paths (TIFF, PDF, etc.). Keep the header for
+        # backward compatibility while the code treats it generically.
         # Always ensure a trailing "Comments" column exists for QC flags.
-        expected_headers = ['tiff_path'] + self.field_names + ['Comments']
+        expected_headers = ["File"] + self.field_names + ["Comments"]
 
         # Check if headers exist
         if len(self.rows) == 0:
@@ -79,8 +82,8 @@ class CSVManager:
           field names (including 'tiff_path' as the first column).
 
         Fallback for backward compatibility:
-        - If the first cell is one of 'tiff_path', 'path', or 'file',
-          treat it as a header row as well.
+        - If the first cell is one of 'tiff_path', '', 'path', or
+          'file', treat it as a header row as well.
         """
         if not first_row:
             return False
@@ -99,7 +102,7 @@ class CSVManager:
 
         # Backward-compatibility: accept legacy header names in the first column
         first_cell = first_row[0].strip().lower()
-        if first_cell in ('tiff_path', 'path', 'file'):
+        if first_cell.lower() in ("tiff_path", "document_path", "path", "file"):
             return True
 
         return False
@@ -138,17 +141,17 @@ class CSVManager:
         
         return field_names
     
-    def get_tiff_paths(self):
-        """Return list of TIFF paths from CSV (excluding header)."""
+    def get_document_paths(self) -> list[str]:
+        """Return list of document paths from CSV (excluding header)."""
         if len(self.rows) <= 1:
             return []
         return [row[0] for row in self.rows[1:] if row[0]]
-    
-    def get_row_index_for_tiff(self, tiff_path):
-        """Get the row index (0-based, excluding header) for a given TIFF path.
+
+    def get_row_index_for_document(self, document_path: str) -> int:
+        """Get the row index (0-based, excluding header) for a given document path.
         Uses case-insensitive path comparison."""
         for i, row in enumerate(self.rows[1:]):
-            if paths_equal_case_insensitive(row[0], tiff_path):
+            if paths_equal_case_insensitive(row[0], document_path):
                 return i
         return -1
     
@@ -195,10 +198,12 @@ class CSVManager:
             logger.error(f"Error saving CSV: {e}")
             return False
     
-    def get_absolute_tiff_path(self, relative_path):
-        """Convert relative TIFF path to absolute path.
+    def get_absolute_document_path(self, relative_path: str) -> str:
+        """Convert a relative document path to an absolute path.
+
         Resolves case-insensitively so paths work across different filesystems.
-        Normalizes path separators so CSV paths from Windows (\\) work on Linux (/) and vice versa."""
+        Normalizes path separators so CSV paths from Windows (\\) work on Linux (/) and vice versa.
+        """
         # Normalize separators: CSV may contain Windows (\) or Unix (/) paths
         normalized = relative_path.replace("\\", os.sep).replace("/", os.sep)
         if os.path.isabs(normalized):
@@ -207,3 +212,7 @@ class CSVManager:
             full_path = os.path.join(self.csv_dir, normalized)
         resolved = resolve_path_or_original(full_path)
         return str(resolved)
+
+    def get_absolute_tiff_path(self, relative_path: str) -> str:
+        """Backward-compatible wrapper for get_absolute_document_path."""
+        return self.get_absolute_document_path(relative_path)

@@ -22,6 +22,7 @@ from util.path_utils import (
     resolve_path_or_original,
     find_file_case_insensitive,
 )
+from util.document_loader import get_document_loader_for_path
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import logging
 from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog
@@ -55,10 +56,12 @@ class Indexer(QMainWindow):
         self.csv_manager = CSVManager()
         
         # Current state
-        self.tiff_paths = []  # List of relative TIFF paths
-        self.current_tiff_index = -1
-        self.current_page_index = 0
-        self.current_tiff_images = []  # List of PIL Images for current TIFF
+        # NOTE: Historically this indexer worked only with TIFFs. These fields
+        # are now document-agnostic and can point at TIFF, PDF, etc.
+        self.document_paths: list[str] = []  # List of relative document paths
+        self.current_document_index: int = -1
+        self.current_page_index: int = 0
+        self.current_page_images: list[Image.Image] = []  # PIL Images for current document
         self.page_fields = []  # Fields for current page
         self.page_bbox = None  # Logo bbox for current page
         self.field_values = {}  # Dictionary mapping field names to values for current page
@@ -109,7 +112,7 @@ class Indexer(QMainWindow):
         save_state(last_indexer_config_folder=self.config_folder)
         logger.info("Project selected: %s (json=%s, logo=%s)", self.config_folder, self.json_folder, self.logo_path)
         # Refresh current page if one is displayed (uses new json_folder and matcher)
-        if self.current_tiff_images:
+        if self.current_page_images:
             self.display_current_page()
 
     def _load_qc_comment_presets(self, config_path: Path) -> None:
@@ -143,11 +146,11 @@ class Indexer(QMainWindow):
         main_layout = QHBoxLayout()
         central_widget.setLayout(main_layout)
         
-        # Left panel - TIFF list
+        # Left panel - document list
         left_panel = QVBoxLayout()
         
         self.tiff_list = QListWidget()
-        self.tiff_list.currentRowChanged.connect(self.on_tiff_selected)
+        self.tiff_list.currentRowChanged.connect(self.on_document_selected)
         left_panel.addWidget(self.tiff_list)
         
         main_layout.addLayout(left_panel, 1)
@@ -223,12 +226,12 @@ class Indexer(QMainWindow):
             if json_folder_override:
                 self.json_folder = json_folder_override
             self.csv_manager.load_csv(file_path, self.json_folder)
-            self.tiff_paths = self.csv_manager.get_tiff_paths()
+            self.document_paths = self.csv_manager.get_document_paths()
             self.tiff_list.clear()
-            for tiff_path in self.tiff_paths:
-                filename = os.path.basename(tiff_path)
+            for document_path in self.document_paths:
+                filename = os.path.basename(document_path)
                 self.tiff_list.addItem(filename)
-            logger.info(f"Loaded {len(self.tiff_paths)} TIFF files")
+            logger.info("Loaded %d documents", len(self.document_paths))
             return True
         except Exception as e:
             logger.warning("Could not load import file from path %s: %s", file_path, e)
@@ -256,22 +259,22 @@ class Indexer(QMainWindow):
         try:
             if not self._load_import_file_from_path(last_import):
                 return
-            if not self.tiff_paths:
+            if not self.document_paths:
                 return
-            tiff_idx = state.get("last_indexer_tiff_index")
-            if tiff_idx is None or tiff_idx < 0 or tiff_idx >= len(self.tiff_paths):
-                tiff_idx = 0
-            self.tiff_list.setCurrentRow(tiff_idx)
-            self.on_tiff_selected(tiff_idx)
+            doc_idx = state.get("last_indexer_tiff_index")
+            if doc_idx is None or doc_idx < 0 or doc_idx >= len(self.document_paths):
+                doc_idx = 0
+            self.tiff_list.setCurrentRow(doc_idx)
+            self.on_document_selected(doc_idx)
             page_idx = state.get("last_indexer_page_index")
-            if page_idx is not None and page_idx >= 0 and page_idx < len(self.current_tiff_images):
+            if page_idx is not None and page_idx >= 0 and page_idx < len(self.current_page_images):
                 self.current_page_index = page_idx
                 self.display_current_page()
             save_state(
                 last_import_file=last_import,
                 last_indexer_config_folder=self.config_folder,
                 last_indexer_json_folder=self.json_folder,
-                last_indexer_tiff_index=self.current_tiff_index,
+                last_indexer_tiff_index=self.current_document_index,
                 last_indexer_page_index=self.current_page_index,
             )
         except Exception as e:
@@ -327,65 +330,51 @@ class Indexer(QMainWindow):
             last_indexer_tiff_index=0,
             last_indexer_page_index=0,
         )
-        if self.tiff_paths:
+        if self.document_paths:
             self.tiff_list.setCurrentRow(0)
-    
-    def on_tiff_selected(self, index):
-        """Handle TIFF selection from list."""
-        if index < 0 or index >= len(self.tiff_paths):
+
+    def on_document_selected(self, index: int) -> None:
+        """Handle document selection from the list widget."""
+        if index < 0 or index >= len(self.document_paths):
             return
         
-        self.current_tiff_index = index
+        self.current_document_index = index
         self.current_page_index = 0
         
-        # Load TIFF
-        relative_path = self.tiff_paths[index]
-        absolute_path = self.csv_manager.get_absolute_tiff_path(relative_path)
+        # Load document
+        relative_path = self.document_paths[index]
+        absolute_path = self.csv_manager.get_absolute_document_path(relative_path)
         
         try:
-            self.load_tiff(absolute_path)
+            self.load_document(absolute_path)
             self.display_current_page()
             save_state(last_indexer_tiff_index=index, last_indexer_page_index=self.current_page_index)
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error loading TIFF: {e}")
-            logger.error(f"Error loading TIFF {absolute_path}: {e}", exc_info=True)
-    
-    def load_tiff(self, tiff_path):
-        """Load a multipage TIFF file."""
-        self.current_tiff_images = []
-        
-        try:
-            img = Image.open(tiff_path)
-            page_num = 0
-            
-            while True:
-                try:
-                    img.seek(page_num)
-                    # Convert to RGB
-                    page_img = img.convert('RGB')
-                    self.current_tiff_images.append(page_img)
-                    page_num += 1
-                except EOFError:
-                    break
-            
-            logger.info(f"Loaded {len(self.current_tiff_images)} pages from {tiff_path}")
-            
-        except Exception as e:
-            raise Exception(f"Failed to load TIFF: {e}")
+            QMessageBox.critical(self, "Error", f"Error loading document: {e}")
+            logger.error("Error loading document %s: %s", absolute_path, e, exc_info=True)
+
+    def on_tiff_selected(self, index: int) -> None:
+        """Backward-compatible wrapper; prefer on_document_selected."""
+        self.on_document_selected(index)
+
+    def load_document(self, document_path: str) -> None:
+        """Load a multipage document (TIFF, PDF, etc.) into memory."""
+        loader = get_document_loader_for_path(document_path)
+        self.current_page_images = loader.load_pages(document_path)
     
     def display_current_page(self):
         """Display the current page with fields."""
-        if not self.current_tiff_images:
+        if not self.current_page_images:
             return
         
         page_num = self.current_page_index
         
-        if page_num >= len(self.current_tiff_images):
+        if page_num >= len(self.current_page_images):
             return
         
         # Update page info
         self.page_info_label.setText(
-            f"Page {page_num + 1} of {len(self.current_tiff_images)} - {os.path.basename(self.tiff_paths[self.current_tiff_index])}"
+            f"Page {page_num + 1} of {len(self.current_page_images)} - {os.path.basename(self.document_paths[self.current_document_index])}"
         )
 
         # Enable/disable navigation buttons based on pages that actually have fields.
@@ -397,7 +386,7 @@ class Indexer(QMainWindow):
             self.next_button.setEnabled(True)
         
         # Get PIL image
-        pil_image = self.current_tiff_images[page_num]
+        pil_image = self.current_page_images[page_num]
         
         # Convert to QPixmap
         img_array = np.array(pil_image)
@@ -484,7 +473,7 @@ class Indexer(QMainWindow):
     
     def populate_field_values(self):
         """Pre-populate field values from CSV data."""
-        if self.current_tiff_index < 0:
+        if self.current_document_index < 0:
             return
         
         # Clear existing values for this page
@@ -493,18 +482,18 @@ class Indexer(QMainWindow):
         for field in self.page_fields:
             if isinstance(field, RadioGroup):
                 # Get value for radio group
-                value = self.csv_manager.get_field_value(self.current_tiff_index, field.name)
+                value = self.csv_manager.get_field_value(self.current_document_index, field.name)
                 if value:
                     self.field_values[field.name] = value
             
             elif isinstance(field, Tickbox):
-                value = self.csv_manager.get_field_value(self.current_tiff_index, field.name)
+                value = self.csv_manager.get_field_value(self.current_document_index, field.name)
                 if value:
                     is_checked = value.lower() in ['ticked','true', '1', 'yes', 'checked', 'tick']
                     self.field_values[field.name] = is_checked
             
             elif isinstance(field, TextField):
-                value = self.csv_manager.get_field_value(self.current_tiff_index, field.name)
+                value = self.csv_manager.get_field_value(self.current_document_index, field.name)
                 if value:
                     self.field_values[field.name] = value
 
@@ -515,9 +504,9 @@ class Indexer(QMainWindow):
     def _load_comments_for_current_page(self) -> None:
         """Populate page_comments from the Comments column for the current page (deduplicated)."""
         self.page_comments = {}
-        if self.current_tiff_index < 0:
+        if self.current_document_index < 0:
             return
-        comments_str = self.csv_manager.get_field_value(self.current_tiff_index, "Comments") or ""
+        comments_str = self.csv_manager.get_field_value(self.current_document_index, "Comments") or ""
         row_comments = Comments.from_string(comments_str)
         page_num = self.current_page_index + 1  # 1-indexed in Comments column
         self.page_comments = row_comments.get_for_page(page_num)
@@ -528,9 +517,9 @@ class Indexer(QMainWindow):
         the comment for (current_page, field_name). Uses Comments so (page, field)
         is unique and duplicates are never written.
         """
-        if self.current_tiff_index < 0:
+        if self.current_document_index < 0:
             return
-        existing = self.csv_manager.get_field_value(self.current_tiff_index, "Comments") or ""
+        existing = self.csv_manager.get_field_value(self.current_document_index, "Comments") or ""
         row_comments = Comments.from_string(existing)
         page_num = self.current_page_index + 1
         comment = comment.strip()
@@ -539,15 +528,15 @@ class Indexer(QMainWindow):
         else:
             row_comments.remove_comment(Comment(page_num, field_name, "").identity)
         new_str = row_comments.to_csv_string()
-        self.csv_manager.set_field_value(self.current_tiff_index, "Comments", new_str)
+        self.csv_manager.set_field_value(self.current_document_index, "Comments", new_str)
         self.csv_manager.save_csv()
         self._load_comments_for_current_page()
 
     def _find_next_page_with_fields(self, start_index: int) -> int | None:
         """Return index of next page that has any fields, or None if none exist."""
-        if not self.current_tiff_images:
+        if not self.current_page_images:
             return None
-        for idx in range(start_index + 1, len(self.current_tiff_images)):
+        for idx in range(start_index + 1, len(self.current_page_images)):
             fields = self.load_page_fields(idx + 1)  # JSON is 1-indexed
             if fields:
                 return idx
@@ -555,7 +544,7 @@ class Indexer(QMainWindow):
 
     def _find_previous_page_with_fields(self, start_index: int) -> int | None:
         """Return index of previous page that has any fields, or None if none exist."""
-        if not self.current_tiff_images:
+        if not self.current_page_images:
             return None
         for idx in range(start_index - 1, -1, -1):
             fields = self.load_page_fields(idx + 1)
@@ -570,7 +559,7 @@ class Indexer(QMainWindow):
             return
         self.current_page_index = prev_idx
         self.display_current_page()
-        save_state(last_indexer_tiff_index=self.current_tiff_index, last_indexer_page_index=self.current_page_index)
+        save_state(last_indexer_tiff_index=self.current_document_index, last_indexer_page_index=self.current_page_index)
 
     def next_page(self):
         """Navigate to next page that has fields (skipping blank pages).
@@ -583,33 +572,33 @@ class Indexer(QMainWindow):
         """
         next_idx = self._find_next_page_with_fields(self.current_page_index)
 
-        # Case 1: there *is* another page with fields in this TIFF – go there.
+        # Case 1: there *is* another page with fields in this document – go there.
         if next_idx is not None:
             self.current_page_index = next_idx
             self.display_current_page()
             save_state(
-                last_indexer_tiff_index=self.current_tiff_index,
+                last_indexer_tiff_index=self.current_document_index,
                 last_indexer_page_index=self.current_page_index,
             )
             return
 
-        # Case 2: no more pages with fields in this TIFF.
-        if not self.tiff_paths or self.current_tiff_index < 0:
+        # Case 2: no more pages with fields in this document.
+        if not self.document_paths or self.current_document_index < 0:
             return
 
-        is_last_file_in_batch = self.current_tiff_index >= len(self.tiff_paths) - 1
+        is_last_file_in_batch = self.current_document_index >= len(self.document_paths) - 1
 
         if not is_last_file_in_batch:
             # There is another file in the batch – ask whether to advance to it.
             reply = QMessageBox.question(
                 self,
                 "Form completed",
-                "Form completed.\n\nGo to the next form in the batch?",
+                "Form completed.\n\nGo to the next document in the batch?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes,
             )
             if reply == QMessageBox.StandardButton.Yes:
-                self.tiff_list.setCurrentRow(self.current_tiff_index + 1)
+                self.tiff_list.setCurrentRow(self.current_document_index + 1)
             return
 
         # Case 3: current form is the last file in the batch – batch completed.
@@ -626,8 +615,8 @@ class Indexer(QMainWindow):
     def on_field_click(self, field, sub_field=None):
         """Handle field click events."""
         # Update detail panel to show the clicked field
-        if hasattr(self, 'detail_panel') and self.current_tiff_images:
-            current_pil_image = self.current_tiff_images[self.current_page_index]
+        if hasattr(self, 'detail_panel') and self.current_page_images:
+            current_pil_image = self.current_page_images[self.current_page_index]
             # For RadioGroups, show the group itself, not the individual button
             field_to_show = field
             self.detail_panel.set_current_field(
@@ -651,7 +640,7 @@ class Indexer(QMainWindow):
             
             # Save to CSV
             self.csv_manager.set_field_value(
-                self.current_tiff_index,
+                self.current_document_index,
                 field.name,
                 'Ticked' if new_value else ''
             )
@@ -661,8 +650,8 @@ class Indexer(QMainWindow):
             self.image_label.update_display()
             
             # Update detail panel
-            if hasattr(self, 'detail_panel') and self.current_tiff_images:
-                current_pil_image = self.current_tiff_images[self.current_page_index]
+            if hasattr(self, 'detail_panel') and self.current_page_images:
+                current_pil_image = self.current_page_images[self.current_page_index]
                 self.detail_panel.set_current_field(
                     field,
                     page_image=current_pil_image,
@@ -684,7 +673,7 @@ class Indexer(QMainWindow):
             
             # Save to CSV
             self.csv_manager.set_field_value(
-                self.current_tiff_index,
+                self.current_document_index,
                 field.name,
                 sub_field.name
             )
@@ -694,8 +683,8 @@ class Indexer(QMainWindow):
             self.image_label.update_display()
             
             # Update detail panel
-            if hasattr(self, 'detail_panel') and self.current_tiff_images:
-                current_pil_image = self.current_tiff_images[self.current_page_index]
+            if hasattr(self, 'detail_panel') and self.current_page_images:
+                current_pil_image = self.current_page_images[self.current_page_index]
                 self.detail_panel.set_current_field(
                     field,
                     page_image=current_pil_image,
@@ -721,8 +710,8 @@ class Indexer(QMainWindow):
                 self._index_text_dialog.set_field(field.name or "TextField", current_value)
                 self._index_text_dialog.show_under_rect(global_bottom_left, rect.width())
 
-            if hasattr(self, 'detail_panel') and self.current_tiff_images:
-                current_pil_image = self.current_tiff_images[self.current_page_index]
+            if hasattr(self, 'detail_panel') and self.current_page_images:
+                current_pil_image = self.current_page_images[self.current_page_index]
                 self.detail_panel.set_current_field(
                     field,
                     page_image=current_pil_image,
@@ -748,7 +737,7 @@ class Indexer(QMainWindow):
 
         # Save to CSV
         self.csv_manager.set_field_value(
-            self.current_tiff_index,
+            self.current_document_index,
             field_name,
             new_value
         )
@@ -775,7 +764,7 @@ class Indexer(QMainWindow):
             )
 
         self.image_label.field_values = self.field_values.copy()
-        self.csv_manager.set_field_value(self.current_tiff_index, field_name, new_value)
+        self.csv_manager.set_field_value(self.current_document_index, field_name, new_value)
         self.csv_manager.save_csv()
         self.image_label.update_display()
         logger.info(f"Field '{field_name}' value changed to '{new_value}' via text dialog")
@@ -803,11 +792,11 @@ class Indexer(QMainWindow):
 
         next_field = text_fields[idx + 1]
 
-        if not self.current_tiff_images:
+        if not self.current_page_images:
             self._index_text_dialog.hide()
             return
 
-        current_pil_image = self.current_tiff_images[self.current_page_index]
+        current_pil_image = self.current_page_images[self.current_page_index]
 
         # Update detail panel selection
         if hasattr(self, 'detail_panel'):
@@ -844,7 +833,7 @@ class Indexer(QMainWindow):
     def _set_current_field(self, field: Field | None) -> None:
         """Track the currently selected field and update OCR menu state."""
         self.current_field = field
-        can_ocr = isinstance(field, TextField) and bool(self.current_tiff_images)
+        can_ocr = isinstance(field, TextField) and bool(self.current_page_images)
         if hasattr(self, "_index_menu_bar"):
             self._index_menu_bar.set_ocr_enabled(can_ocr)
 
@@ -912,8 +901,8 @@ class Indexer(QMainWindow):
         self.image_label.update_display()
 
         # Refresh detail panel table to update red backgrounds
-        if hasattr(self, "detail_panel") and self.current_tiff_images:
-            current_pil_image = self.current_tiff_images[self.current_page_index]
+        if hasattr(self, "detail_panel") and self.current_page_images:
+            current_pil_image = self.current_page_images[self.current_page_index]
             self.detail_panel.set_current_field(
                 self.current_field,
                 page_image=current_pil_image,
@@ -928,12 +917,12 @@ class Indexer(QMainWindow):
         if not isinstance(self.current_field, TextField):
             QMessageBox.warning(self, "OCR", "OCR is only available for text fields.")
             return
-        if not self.current_tiff_images:
+        if not self.current_page_images:
             QMessageBox.warning(self, "OCR", "No page is currently loaded.")
             return
 
         # Use the current page image at original resolution
-        pil_image = self.current_tiff_images[self.current_page_index]
+        pil_image = self.current_page_images[self.current_page_index]
 
         # Convert to QPixmap (same as display_current_page)
         img_array = np.array(pil_image)

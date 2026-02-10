@@ -10,3 +10,6 @@ google-cloud-vision>=3.7.0
 # For Gemini vision OCR integration (recommended for handwriting / free text)
 google-genai>=1.0.0
 
+# For PDF document rendering in the Field Indexer
+PyMuPDF>=1.24.9
+
