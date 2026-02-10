@@ -3,7 +3,8 @@ from PyQt6.QtCore import Qt, QRect
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QFont
 
 from fields import Field, RadioGroup, RadioButton, Tickbox, TextField
-from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP
+from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP, INVALID_COLOUR
+
 
 TICK_CHAR = "\u2713"  # ✓
 CROSS_CHAR = "\u2717"  # ✗
@@ -161,9 +162,9 @@ class MainImageIndexPanel(QLabel):
                 has_comment = bool(self.field_comments.get(field.name, "").strip())
                 # Draw either tick or red cross depending on QC comment
                 if has_comment:
-                    self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
-                else:
-                    self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
+                    self._draw_tick_to_right(painter, scaled_rect, INVALID_COLOUR, CROSS_CHAR)
+                # else:
+                #     self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
 
                 # Draw individual radio buttons
                 selected_rb_name = self.field_values.get(field.name, None)
@@ -229,8 +230,8 @@ class MainImageIndexPanel(QLabel):
                     # Draw either tick or red cross depending on QC comment
                     if has_comment:
                         self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
-                    else:
-                        self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
+                    # else:
+                    #     self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
                 
                 # Fill and show text for TextField
                 if isinstance(field, TextField) and field_value:
@@ -254,8 +255,8 @@ class MainImageIndexPanel(QLabel):
                     # Draw either tick or red cross depending on QC comment
                     if has_comment:
                         self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
-                    else:
-                        self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
+                    # else:
+                    #     self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
         
         painter.end()
         self.setPixmap(display_pixmap)
