@@ -5,9 +5,11 @@ description = "PyQt6 app for registering and indexing scanned survey forms"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "fitz>=0.0.1.dev2",
     "numpy>=1.24.0",
     "opencv-python>=4.8.0",
     "pillow>=10.0.0",
+    "pymupdf>=1.27.1",
     "pyqt6>=6.6.0",
     "python-dotenv>=1.0.0",
 ]
