@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (
     QButtonGroup,
 )
 from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal, QSize
-from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent
+from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QShowEvent
 
 from fields import RadioGroup, RadioButton
 
@@ -70,7 +70,7 @@ class GridDesignerPageWidget(QLabel):
         self.drag_index: int = -1
         self.last_pos: Optional[QPoint] = None
 
-        self.zoom_mode = "autofit"  # 'autofit', 'fit_width', 'fit_height', 'manual'
+        self.zoom_mode = "fit_width"  # 'autofit', 'fit_width', 'fit_height', 'manual'
         self.zoom_factor = 1.0
 
     def set_fit_width(self):
@@ -209,6 +209,7 @@ class GridDesignerPageWidget(QLabel):
 
         p.end()
         self.setPixmap(disp)
+        self.setFixedSize(disp.size())
 
     def _to_image(self, px: int, py: int) -> tuple[float, float]:
         ix = (px - self.image_offset_x) / self.scale_x
@@ -460,7 +461,7 @@ class GridDesigner(QMainWindow):
         zoom_row.addStretch()
         right_layout.addLayout(zoom_row)
         scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
+        scroll.setWidgetResizable(False)
         scroll.setStyleSheet("QScrollArea { background-color: #2b2b2b; }")
         scroll.setWidget(self.page_widget)
         right_layout.addWidget(scroll, stretch=1)
@@ -527,8 +528,13 @@ class GridDesigner(QMainWindow):
             self.page_widget._ensure_splits()
             self.page_widget.update_display()
 
+    def showEvent(self, event: QShowEvent):
+        super().showEvent(event)
+        self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
+
     def set_page(self, pixmap: QPixmap, bbox=None):
         self.page_widget.set_image(pixmap, bbox)
+        self.page_widget.set_fit_width()
         self.autofit_button.setEnabled(True)
         self.fit_width_button.setEnabled(True)
         self.fit_height_button.setEnabled(True)

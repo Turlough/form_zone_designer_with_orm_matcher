@@ -375,7 +375,7 @@ class Designer(QMainWindow):
         gd = GridDesigner(self)
         gd.set_page(page_pixmap, bbox)
         gd.groups_submitted.connect(self._on_grid_designer_submitted)
-        gd.show()
+        gd.showMaximized()
 
     def _on_grid_designer_submitted(self, groups: list):
         """Append emitted radio groups to the current page, persist, and refresh UI."""
