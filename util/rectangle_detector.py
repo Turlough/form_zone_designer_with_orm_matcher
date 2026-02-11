@@ -10,10 +10,10 @@ logger = logging.getLogger(__name__)
 
 
 # How much to blur/smoothen the image before detecting edges. Higher values means more blur.
-blur_kernel_size = 5
+blur_kernel_size = 3
 
 # Dilate iterations: how much to expand the edges to connect nearby contours
-dilate_iterations = 1  # higher number accepts weaker or slightly broken lines
+dilate_iterations = 3  # higher number accepts weaker or slightly broken lines
 
 # epsilon factor is the accuracy factor for contour simplification
 epsilon_factor = 0.02  # the higher the factor, the more irregular the boundary can be
@@ -23,7 +23,7 @@ epsilon_factor = 0.02  # the higher the factor, the more irregular the boundary 
 ##----------------------------------------------------------
 
 # canny low threshold is for edge detection sensitivity
-canny_low_threshold = 50  # Increase this to reduce noise
+canny_low_threshold = 60  # Increase this to reduce noise
 # canny high threshold is the threshold for the high threshold of the Canny edge detector
 canny_high_threshold = 150  # Adjust the low threshold first. 
 
