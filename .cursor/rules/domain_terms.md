@@ -28,4 +28,4 @@ The project also contains a form design app that defines fields and locations th
 - Project: Defines a form type and the data to be captured from it.
 - Job: A collection of batches from the same project, typically gathered in a "job folder" on the file system. A project may have several jobs, and each job may have multiple batches.
 - Validation: These are automatic boolean tests on Field values, such as "is_empty", "is_not_decimal" etc. Validations help indexers by providing visual cues to staff while indexing. For QC staff, validations can additionally form a list of values to check.
-
+- Double keying: A quality control method in which two operators index the same batch, and any differences in output data are escalated. The remainder is deemed 'good', because both operators have agreed on it.
