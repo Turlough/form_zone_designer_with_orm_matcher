@@ -6,7 +6,7 @@ from PIL import Image
 import numpy as np
 import logging
 
-from .designer_thumbnail_widget import DesignerThumbnailWidget
+from .designer_thumbnail_widget import DesignerThumbnailWidget, PAGE_NUM_WIDTH
 from fields import Field
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ class DesignerThumbnailPanel(QWidget):
         # Thumbnail list widget (no selection - we use custom highlight for current page)
         self.thumbnail_list = QListWidget()
         self.thumbnail_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        self.thumbnail_list.setMaximumWidth(thumbnail_width + 2 * thumbnail_margin)
+        self.thumbnail_list.setMaximumWidth(thumbnail_width + 2 * thumbnail_margin + PAGE_NUM_WIDTH)
         self.thumbnail_list.setIconSize(QSize(thumbnail_width, thumbnail_height))
         self.thumbnail_list.itemClicked.connect(self._on_item_clicked)
         layout.addWidget(self.thumbnail_list)
@@ -171,12 +171,12 @@ class DesignerThumbnailPanel(QWidget):
         # Create custom thumbnail widget with overlay
         is_current = self._current_page_idx is not None and page_idx == self._current_page_idx
         thumbnail_widget = DesignerThumbnailWidget(
-            thumbnail_pixmap, scaled_bbox, scaled_field_list, is_current=is_current
+            thumbnail_pixmap, scaled_bbox, scaled_field_list,
+            is_current=is_current, page_number=page_idx + 1
         )
         
         # Create list item
         item = QListWidgetItem(self.thumbnail_list)
-        item.setText(f"Page {page_idx + 1}")
         # Use the actual widget size (including margins) for the item size hint
         item.setSizeHint(thumbnail_widget.size())
         item.setData(Qt.ItemDataRole.UserRole, page_idx)  # Store page index
@@ -243,7 +243,8 @@ class DesignerThumbnailPanel(QWidget):
         # Create custom thumbnail widget with overlay
         is_current = self._current_page_idx is not None and page_idx == self._current_page_idx
         thumbnail_widget = DesignerThumbnailWidget(
-            thumbnail_pixmap, scaled_bbox, scaled_field_list, is_current=is_current
+            thumbnail_pixmap, scaled_bbox, scaled_field_list,
+            is_current=is_current, page_number=page_idx + 1
         )
         
         # Update the existing list item

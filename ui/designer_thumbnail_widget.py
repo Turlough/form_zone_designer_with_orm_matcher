@@ -1,20 +1,26 @@
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtGui import QPainter, QColor, QPen
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont
 from fields import Field, RadioGroup
+
+# Space for page number to the right of thumbnail
+PAGE_NUM_WIDTH = 28
 
 class DesignerThumbnailWidget(QWidget):
     """Custom widget to display a thumbnail with bounding box overlay."""
     
-    def __init__(self, pixmap, bbox=None, field_list=None, margin=10, is_current=False):
+    def __init__(self, pixmap, bbox=None, field_list=None, margin=10, is_current=False, page_number=1):
         super().__init__()
         self.pixmap = pixmap
         self.bbox = bbox  # (top_left, bottom_right) tuples for logo
         self.field_list = field_list or []  # List of Field objects
         self.margin = margin
         self.is_current = is_current
+        self.page_number = page_number
         
-        # Set fixed size to include margin
-        total_width = pixmap.width() + 2 * margin
+        # Set fixed size: thumbnail + margins + page number on right
+        thumb_width = pixmap.width() + 2 * margin
+        total_width = thumb_width + PAGE_NUM_WIDTH
         total_height = pixmap.height() + 2 * margin
         self.setFixedSize(total_width, total_height)
     
@@ -70,5 +76,15 @@ class DesignerThumbnailWidget(QWidget):
                             painter.setPen(rb_pen)
                             painter.drawRect(radio_button.x + self.margin, radio_button.y + self.margin,
                                            radio_button.width, radio_button.height)
+        
+        # Draw page number to the right of thumbnail
+        thumb_width = self.pixmap.width() + 2 * self.margin
+        num_rect = self.rect()
+        num_rect.setLeft(thumb_width)
+        painter.setPen(QColor(200, 200, 200))
+        font = QFont()
+        font.setPointSize(9)
+        painter.setFont(font)
+        painter.drawText(num_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, str(self.page_number))
         
         painter.end()
