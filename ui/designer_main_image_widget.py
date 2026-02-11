@@ -313,6 +313,7 @@ class ImageDisplayWidget(QLabel):
             # Draw current rectangle being drawn (blue)
             if self.is_drawing and self.start_point and self.current_point:
                 pen = QPen(QColor(0, 150, 255), 3)  # Blue pen with 3px width
+                pen.setDashPattern([1, 4])
                 painter.setPen(pen)
                 x1 = self.start_point.x() - self.image_offset_x
                 y1 = self.start_point.y() - self.image_offset_y

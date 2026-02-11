@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 blur_kernel_size = 3
 
 # Dilate iterations: how much to expand the edges to connect nearby contours
-dilate_iterations = 3  # higher number accepts weaker or slightly broken lines
+dilate_iterations = 7 # higher number accepts weaker or slightly broken lines
 
 # epsilon factor is the accuracy factor for contour simplification
 epsilon_factor = 0.02  # the higher the factor, the more irregular the boundary can be

@@ -13,11 +13,12 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QWidget
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QTimer
 from PyQt6.QtGui import QGuiApplication
 from fields import FIELD_TYPE_MAP
 
 FIELD_TYPES = list(FIELD_TYPE_MAP.keys())
+
 
 class RectangleSelectedDialog(QDialog):
     """
@@ -26,6 +27,8 @@ class RectangleSelectedDialog(QDialog):
     Delete / Submit / Cancel. For drawn rect with RadioGroup, shows name
     inputs for each inner rectangle.
     """
+
+    _last_pos = None  # Persists last position within app session
 
     # Emitted with config dict: {"field_type": str, "field_name": str}
     # or for RadioGroup: {"field_type": "RadioGroup", "field_name": str, "inner_names": [str, ...]}
@@ -154,9 +157,25 @@ class RectangleSelectedDialog(QDialog):
         self.cancelled.emit()
         super().reject()
 
+    def done(self, result: int):
+        self._save_geometry()
+        super().done(result)
+
+    def _save_geometry(self):
+        RectangleSelectedDialog._last_pos = self.pos()
+
     def showEvent(self, event):
         super().showEvent(event)
-        self._position_near_anchor()
+        last = RectangleSelectedDialog._last_pos
+        if last is not None:
+            # Defer so window manager doesn't override; apply after dialog is fully shown
+            QTimer.singleShot(0, lambda: self.move(last))
+        else:
+            self._position_near_anchor()
+
+    def closeEvent(self, event):
+        self._save_geometry()
+        super().closeEvent(event)
 
     def _position_near_anchor(self):
         """Position dialog to the right of anchor (or left if no room), vertically centered."""
