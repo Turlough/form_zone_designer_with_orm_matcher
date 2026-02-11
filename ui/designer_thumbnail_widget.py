@@ -5,24 +5,38 @@ from fields import Field, RadioGroup
 class DesignerThumbnailWidget(QWidget):
     """Custom widget to display a thumbnail with bounding box overlay."""
     
-    def __init__(self, pixmap, bbox=None, field_list=None, margin=10):
+    def __init__(self, pixmap, bbox=None, field_list=None, margin=10, is_current=False):
         super().__init__()
         self.pixmap = pixmap
         self.bbox = bbox  # (top_left, bottom_right) tuples for logo
         self.field_list = field_list or []  # List of Field objects
         self.margin = margin
+        self.is_current = is_current
         
         # Set fixed size to include margin
         total_width = pixmap.width() + 2 * margin
         total_height = pixmap.height() + 2 * margin
         self.setFixedSize(total_width, total_height)
     
+    def set_highlighted(self, highlighted: bool):
+        """Set whether this thumbnail is highlighted as the current page."""
+        if self.is_current != highlighted:
+            self.is_current = highlighted
+            self.update()
+    
     def paintEvent(self, event):
         """Paint the thumbnail with bounding box overlay."""
         painter = QPainter(self)
         
-        # Fill background with light gray
-        painter.fillRect(self.rect(), QColor(60, 60, 60))
+        # Fill background; use brighter color when current page
+        if self.is_current:
+            painter.fillRect(self.rect(), QColor(80, 80, 100))
+            # Draw highlight border
+            pen = QPen(QColor(100, 150, 255), 3)
+            painter.setPen(pen)
+            painter.drawRect(self.rect().adjusted(1, 1, -2, -2))
+        else:
+            painter.fillRect(self.rect(), QColor(60, 60, 60))
         
         # Draw pixmap with margin offset
         painter.drawPixmap(self.margin, self.margin, self.pixmap)

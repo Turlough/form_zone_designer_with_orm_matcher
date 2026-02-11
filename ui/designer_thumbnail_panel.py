@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QListWidget, QListWidgetItem
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtWidgets import QAbstractItemView
 from PyQt6.QtGui import QPixmap, QImage
 from PIL import Image
 import numpy as np
@@ -10,6 +11,9 @@ from fields import Field
 
 logger = logging.getLogger(__name__)
 
+thumbnail_width = 100
+thumbnail_height = 100
+thumbnail_margin = 10
 
 class DesignerThumbnailPanel(QWidget):
     """Panel to display thumbnails of pages."""
@@ -24,11 +28,11 @@ class DesignerThumbnailPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # Thumbnail list widget
+        # Thumbnail list widget (no selection - we use custom highlight for current page)
         self.thumbnail_list = QListWidget()
-        self.thumbnail_list.setMaximumWidth(250)
-        # Icon size includes margin (200 + 2*10 = 220)
-        self.thumbnail_list.setIconSize(QSize(220, 220))
+        self.thumbnail_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.thumbnail_list.setMaximumWidth(thumbnail_width + 2 * thumbnail_margin)
+        self.thumbnail_list.setIconSize(QSize(thumbnail_width, thumbnail_height))
         self.thumbnail_list.itemClicked.connect(self._on_item_clicked)
         layout.addWidget(self.thumbnail_list)
         
@@ -36,6 +40,36 @@ class DesignerThumbnailPanel(QWidget):
         self._pages = []
         self._page_bboxes = []
         self._page_field_list = []
+        self._current_page_idx = None
+    
+    def set_current_page(self, page_idx):
+        """Set the current page, highlight it, and scroll so it is at the top.
+        
+        Args:
+            page_idx: Index of the page to set as current
+        """
+        if page_idx is None or page_idx < 0:
+            return
+        old_idx = self._current_page_idx
+        self._current_page_idx = page_idx
+        
+        # Update highlight on previous and current widgets
+        if old_idx is not None and old_idx != page_idx:
+            self._set_item_highlighted(old_idx, False)
+        self._set_item_highlighted(page_idx, True)
+        
+        # Scroll so current page is at the top of the visible area
+        item = self.thumbnail_list.item(page_idx)
+        if item:
+            self.thumbnail_list.scrollToItem(item, QAbstractItemView.ScrollHint.PositionAtTop)
+    
+    def _set_item_highlighted(self, page_idx, highlighted):
+        """Set highlight state for a thumbnail widget."""
+        item = self.thumbnail_list.item(page_idx)
+        if item:
+            widget = self.thumbnail_list.itemWidget(item)
+            if isinstance(widget, DesignerThumbnailWidget):
+                widget.set_highlighted(highlighted)
     
     def populate_thumbnails(self, pages, page_bboxes, page_field_list):
         """Populate the thumbnail list with pages.
@@ -47,6 +81,7 @@ class DesignerThumbnailPanel(QWidget):
         """
         # Clear existing items
         self.thumbnail_list.clear()
+        self._current_page_idx = None
         
         # Store references to data
         self._pages = pages
@@ -90,7 +125,7 @@ class DesignerThumbnailPanel(QWidget):
         """
         # Create thumbnail
         thumbnail = page.copy()
-        thumbnail.thumbnail((200, 200), Image.Resampling.LANCZOS)
+        thumbnail.thumbnail((thumbnail_width, thumbnail_height), Image.Resampling.LANCZOS)
         
         # Convert PIL Image to QPixmap
         thumbnail_array = np.array(thumbnail)
@@ -134,7 +169,10 @@ class DesignerThumbnailPanel(QWidget):
                 scaled_field_list.append(scaled_field)
         
         # Create custom thumbnail widget with overlay
-        thumbnail_widget = DesignerThumbnailWidget(thumbnail_pixmap, scaled_bbox, scaled_field_list)
+        is_current = self._current_page_idx is not None and page_idx == self._current_page_idx
+        thumbnail_widget = DesignerThumbnailWidget(
+            thumbnail_pixmap, scaled_bbox, scaled_field_list, is_current=is_current
+        )
         
         # Create list item
         item = QListWidgetItem(self.thumbnail_list)
@@ -158,7 +196,7 @@ class DesignerThumbnailPanel(QWidget):
         """
         # Create thumbnail
         thumbnail = page.copy()
-        thumbnail.thumbnail((200, 200), Image.Resampling.LANCZOS)
+        thumbnail.thumbnail((thumbnail_width, thumbnail_height), Image.Resampling.LANCZOS)
         
         # Convert PIL Image to QPixmap
         thumbnail_array = np.array(thumbnail)
@@ -203,7 +241,10 @@ class DesignerThumbnailPanel(QWidget):
                 scaled_field_list.append(scaled_field)
         
         # Create custom thumbnail widget with overlay
-        thumbnail_widget = DesignerThumbnailWidget(thumbnail_pixmap, scaled_bbox, scaled_field_list)
+        is_current = self._current_page_idx is not None and page_idx == self._current_page_idx
+        thumbnail_widget = DesignerThumbnailWidget(
+            thumbnail_pixmap, scaled_bbox, scaled_field_list, is_current=is_current
+        )
         
         # Update the existing list item
         item = self.thumbnail_list.item(page_idx)

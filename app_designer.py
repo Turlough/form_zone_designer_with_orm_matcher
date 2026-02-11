@@ -307,6 +307,7 @@ class Designer(QMainWindow):
                 self.edit_panel.set_field_from_object(None)
             
             self.current_page_idx = page_idx
+            self.thumbnail_panel.set_current_page(page_idx)
             page = self.pages[page_idx]
             bbox = self.fiducials[page_idx]
             field_list = self.page_field_list[page_idx]
