@@ -103,7 +103,7 @@ class GridDesignerPageWidget(QLabel):
 
     def set_grid_shape(self, n_rows: int, n_cols: int):
         self.n_rows = max(1, n_rows)
-        self.n_cols = max(2, n_cols)
+        self.n_cols = max(1, n_cols)
         self._reset_splits()
 
     def _reset_splits(self):
@@ -409,7 +409,6 @@ class GridDesigner(QMainWindow):
         mid.addWidget(self.col_label)
         self.col_container = QHBoxLayout()
         self._add_col_edit()
-        self._add_col_edit()
         mid.addLayout(self.col_container)
         add_col_btn = QPushButton("+ Add column")
         add_col_btn.clicked.connect(self._add_col_edit)
@@ -485,6 +484,7 @@ class GridDesigner(QMainWindow):
         e.setPlaceholderText("Row label")
         e.setMaxLength(LABEL_MAX_LENGTH)
         e.textChanged.connect(self._sync_grid_shape)
+        e.returnPressed.connect(self._on_row_edit_enter)
         self.row_edits.append(e)
         self.row_container.addWidget(e)
         self._sync_grid_shape()
@@ -494,9 +494,18 @@ class GridDesigner(QMainWindow):
         e.setPlaceholderText("Column label")
         e.setMaxLength(LABEL_MAX_LENGTH)
         e.textChanged.connect(self._sync_grid_shape)
+        e.returnPressed.connect(self._on_col_edit_enter)
         self.col_edits.append(e)
         self.col_container.addWidget(e)
         self._sync_grid_shape()
+
+    def _on_row_edit_enter(self):
+        self._add_row_edit()
+        self.row_edits[-1].setFocus()
+
+    def _on_col_edit_enter(self):
+        self._add_col_edit()
+        self.col_edits[-1].setFocus()
 
     def _orientation_is_vertical(self) -> bool:
         return self.orient_vertical_rb.isChecked()
@@ -512,7 +521,7 @@ class GridDesigner(QMainWindow):
 
     def _sync_grid_shape(self):
         n_rows = max(1, len(self.row_edits))
-        n_cols = max(2, len(self.col_edits))
+        n_cols = max(1, len(self.col_edits))
         self.page_widget.set_grid_shape(n_rows, n_cols)
         if self.page_widget.grid_rect is not None:
             self.page_widget._ensure_splits()
