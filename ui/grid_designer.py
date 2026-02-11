@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
     QRadioButton,
     QButtonGroup,
 )
-from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal, QSize, QTimer
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QShowEvent
 
 from fields import RadioGroup, RadioButton
@@ -421,7 +421,8 @@ class GridDesigner(QMainWindow):
 
         content = QHBoxLayout()
         left_panel = QWidget()
-        left_panel.setMaximumWidth(220)
+        left_panel.setMaximumWidth(700)
+        left_panel.setMinimumWidth(400)
         left_layout = QVBoxLayout(left_panel)
         left_layout.addStretch()
         self.row_label = QLabel("Rows (questions):")
@@ -479,6 +480,7 @@ class GridDesigner(QMainWindow):
         main.addLayout(btn_row)
 
         self._sync_grid_shape()
+        self.page_widget.set_fit_width()
 
     def _add_row_edit(self):
         e = QLineEdit()
@@ -531,6 +533,9 @@ class GridDesigner(QMainWindow):
     def showEvent(self, event: QShowEvent):
         super().showEvent(event)
         self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
+        # Defer fit update until layout is applied (viewport size is 0 when set_page runs before show)
+        if self.page_widget.base_pixmap:
+            QTimer.singleShot(0, self.page_widget.update_display)
 
     def set_page(self, pixmap: QPixmap, bbox=None):
         self.page_widget.set_image(pixmap, bbox)
