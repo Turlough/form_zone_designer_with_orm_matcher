@@ -16,6 +16,8 @@ class IndexMenuBar(QMenuBar):
     batch_import_selected = pyqtSignal(str)  # Emits full path to selected batch import file
     ocr_requested = pyqtSignal()  # User chose to OCR the current text field
     review_batch_comments_requested = pyqtSignal()  # User chose QC > Review batch comments
+    validate_document_requested = pyqtSignal()  # User chose QC > Validate document
+    validate_batch_requested = pyqtSignal()  # User chose QC > Validate batch
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -208,8 +210,20 @@ class IndexMenuBar(QMenuBar):
         """Build QC (Quality Control) menu."""
         self._qc_menu = QMenu("QC", self)
         self.addMenu(self._qc_menu)
+        action_doc = self._qc_menu.addAction("Validate document")
+        action_doc.triggered.connect(self._on_validate_document_triggered)
+        action_batch = self._qc_menu.addAction("Validate batch")
+        action_batch.triggered.connect(self._on_validate_batch_triggered)
         action = self._qc_menu.addAction("Review batch comments")
         action.triggered.connect(self._on_review_batch_comments_triggered)
+
+    def _on_validate_document_triggered(self) -> None:
+        """Emit signal when Validate document is chosen."""
+        self.validate_document_requested.emit()
+
+    def _on_validate_batch_triggered(self) -> None:
+        """Emit signal when Validate batch is chosen."""
+        self.validate_batch_requested.emit()
 
     def _on_review_batch_comments_triggered(self) -> None:
         """Emit signal when Review batch comments is chosen."""

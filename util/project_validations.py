@@ -1,73 +1,215 @@
-import re
+"""Project-level validations: config-driven business rules per project."""
+import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-import csv
+from typing import Any
 
-################################################################################
-# Single field validations
-################################################################################
-def is_valid_email(value: str) -> str | None:
-    return "Invalid email address" if re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", value) is not None else None
+from util.lookup_manager import LookupManager
+from util.path_utils import resolve_path_or_original
+
+logger = logging.getLogger(__name__)
 
 
-def is_valid_phone_number(value: str) -> str | None:
-    return "Invalid phone number" if re.match(r"^\d{10}$", value) is not None else None
+@dataclass
+class ValidationContext:
+    """Everything a validation strategy might need. Built per row."""
 
-def is_valid_date(value: str) -> str | None:
-    # Match dd/MM/yyyy
-    return "Invalid date" if re.match(r"^\d{2}/\d{2}/\d{4}$", value) is None else None
+    field_values: dict[str, Any]
+    field_names: list[str]
+    params: dict
+    field_to_page: dict[str, int] | None
+    lookup_manager: LookupManager | None
+    row_index: int
 
-################################################################################
-# Lookup-list validations
-################################################################################
-# A CSV file contains a structured, comma-separated list of values.
-# For example, "Herd number", "Owner name""
-# We would validate that 1) The herd number exists. 2) The owner name exists, and corresponds to the herd number.
 
-#TODO: Create a LookupManager class that can maintain both the current export CSV file and the lookup list CSV file,
-# and provide helper functions
+def _is_ticked(value: Any) -> bool:
+    """Normalize tickbox semantics: non-empty string or 'Ticked'."""
+    if value is None:
+        return False
+    s = str(value).strip()
+    return s != "" and s.lower() != "false"
 
-def value_exists_in_lookup_list(value: str, lookup_list: Path, column_index: int) -> str | None:
-    """
-    Check if the value exists in the lookup list.
-    """
-    with open(lookup_list, 'r') as f:
-        reader = csv.reader(f)
-        for row in reader:
-            if row[column_index] == value:
-                return None
-    return f"Value {value} not found in lookup list"
-    
-# Helper function to get the value of a field in the current export CSV file
-def get_field_value(field_name: str, current_row: int, output_csv_file: Path) -> str | None:
-    with open(output_csv_file, 'r') as f:
-        reader = csv.reader(f)
-        field_names = next(reader)
-        column_index = field_names.index(field_name)
-        actual_row = current_row + 1  # Skip header
-        if actual_row >= len(reader):
-            return None
-        return reader[actual_row][column_index] 
 
-def lookup_value(
-value: str, # value of the current field
-lookup_list: Path, # path to the lookup list CSV file
-name_of_field_to_lookup: str, # The field name of the field whose value we are looking up
-prime_column: int=1, # The column number in the lookup list that contains the current field's value
-lookup_column=2, # The column number in the lookup list that contains the name
-) -> str | None:
-    """
-    Look up the value of the current field in the lookup list.
-    Find the row in the lookup list that contains the value of the current field.
-    Check that the value of the field in the lookup column matches the value of the "name_of_field_to_lookup" field.
-    """
-    lookup_value = get_field_value(value, current_row, output_csv_file)# TODO: Fix this.  
-    with open(lookup_list, 'r') as f:
-        reader = csv.reader(f)
-        for row in reader:
-            if row[prime_column] == value:
-                if row[lookup_column] != value:
-                    return f"Looked up value does not match the Form's value of {name_of_field_to_lookup}"
-                else:
-                    return None
-    return f"Value {value} not  found in lookup list"
+def _strategy_max_tickboxes(ctx: ValidationContext) -> list[tuple[int, str, str]]:
+    """Count ticked fields; if > params['max'], invalidate last ticked field."""
+    max_val = ctx.params.get("max", 1)
+    ticked: list[tuple[str, int]] = []  # (field_name, page)
 
+    for name in ctx.field_names:
+        val = ctx.field_values.get(name)
+        if _is_ticked(val):
+            page = (ctx.field_to_page or {}).get(name, 1)
+            ticked.append((name, page))
+
+    if len(ticked) <= max_val:
+        return []
+
+    # Invalidate the last ticked field
+    last_name, last_page = ticked[-1]
+    return [
+        (
+            last_page,
+            last_name,
+            f"At most {max_val} of these may be ticked; {len(ticked)} are ticked.",
+        )
+    ]
+
+
+def _strategy_mutually_exclusive(ctx: ValidationContext) -> list[tuple[int, str, str]]:
+    """If exclusive_field is ticked and any other is ticked, invalidate exclusive_field."""
+    exclusive = ctx.params.get("exclusive_field")
+    if not exclusive:
+        return []
+
+    others = [n for n in ctx.field_names if n != exclusive]
+    exclusive_ticked = _is_ticked(ctx.field_values.get(exclusive))
+    any_other_ticked = any(_is_ticked(ctx.field_values.get(n)) for n in others)
+
+    if not exclusive_ticked or not any_other_ticked:
+        return []
+
+    page = (ctx.field_to_page or {}).get(exclusive, 1)
+    return [
+        (
+            page,
+            exclusive,
+            "This option is mutually exclusive with the others; do not tick both.",
+        )
+    ]
+
+
+def _strategy_value_exists_in_lookup(ctx: ValidationContext) -> list[tuple[int, str, str]]:
+    """Check that the value exists in the lookup list."""
+    if ctx.lookup_manager is None:
+        return []
+
+    lookup_col = ctx.params.get("lookup_column", 0)
+    prime_index = ctx.params.get("prime_index", 0)
+
+    # field_names[0] is the field whose value we look up
+    if not ctx.field_names:
+        return []
+
+    field_name = ctx.field_names[0]
+    value = ctx.field_values.get(field_name)
+    if value is None or str(value).strip() == "":
+        return []
+
+    # LookupManager uses prime_index in __init__; we assume it matches
+    lookup_val = ctx.lookup_manager.lookup_value(value, lookup_col)
+    if lookup_val is None:
+        page = (ctx.field_to_page or {}).get(field_name, 1)
+        return [
+            (
+                page,
+                field_name,
+                f"Value {value!r} not found in lookup list.",
+            )
+        ]
+    return []
+
+
+def _strategy_match_value_in_lookup(ctx: ValidationContext) -> list[tuple[int, str, str]]:
+    """Check that the looked-up value matches the indexed field value."""
+    if ctx.lookup_manager is None:
+        return []
+
+    prime_field = ctx.params.get("prime_field")
+    lookup_column = ctx.params.get("lookup_column", 0)
+    field_to_match = ctx.params.get("field_to_match")
+
+    if not prime_field or not field_to_match:
+        return []
+
+    prime_value = ctx.field_values.get(prime_field)
+    if prime_value is None or str(prime_value).strip() == "":
+        return []
+
+    msg = ctx.lookup_manager.match_value(prime_value, lookup_column, field_to_match)
+    if msg is None:
+        return []
+
+    page = (ctx.field_to_page or {}).get(field_to_match, 1)
+    return [(page, field_to_match, msg)]
+
+
+PROJECT_VALIDATION_REGISTRY: dict[str, Callable[[ValidationContext], list[tuple[int, str, str]]]] = {
+    "max_tickboxes": _strategy_max_tickboxes,
+    "mutually_exclusive": _strategy_mutually_exclusive,
+    "value_exists_in_lookup": _strategy_value_exists_in_lookup,
+    "match_value_in_lookup": _strategy_match_value_in_lookup,
+}
+
+
+class ProjectValidations:
+    """Validation service for a single batch. Created once when batch loads."""
+
+    def __init__(self, project_config: dict, csv_path: Path, config_folder: str | None = None):
+        self.project_config = project_config
+        self.csv_path = csv_path
+        self.validations = list(project_config.get("validations", []))
+
+        lookup_path_str = project_config.get("lookup_list")
+        if lookup_path_str:
+            lookup_path = Path(str(lookup_path_str))
+            if not lookup_path.is_absolute() and config_folder:
+                lookup_path = Path(config_folder) / lookup_path
+            resolved = resolve_path_or_original(str(lookup_path))
+            if resolved and Path(resolved).exists():
+                prime_index = project_config.get("lookup_prime_index", 0)
+                try:
+                    self.lookup_manager = LookupManager(
+                        Path(resolved), csv_path, prime_index=prime_index
+                    )
+                except Exception as e:
+                    logger.warning("Could not create LookupManager: %s", e)
+                    self.lookup_manager = None
+            else:
+                self.lookup_manager = None
+        else:
+            self.lookup_manager = None
+
+    def run_validations(
+        self,
+        row_index: int,
+        field_values: dict[str, Any],
+        field_to_page: dict[str, int] | None,
+    ) -> list[tuple[int, str, str]]:
+        """Run all project validations for one row."""
+        if self.lookup_manager:
+            self.lookup_manager.set_current_row(row_index)
+
+        seen: set[tuple[int, str]] = set()
+        all_failures: list[tuple[int, str, str]] = []
+
+        for rule in self.validations:
+            strategy_name = rule.get("strategy")
+            if not strategy_name:
+                continue
+
+            fn = PROJECT_VALIDATION_REGISTRY.get(strategy_name)
+            if fn is None:
+                logger.warning("Unknown validation strategy: %s", strategy_name)
+                continue
+
+            ctx = ValidationContext(
+                field_values=field_values,
+                field_names=rule.get("field_names", []),
+                params=rule.get("params", {}),
+                field_to_page=field_to_page,
+                lookup_manager=self.lookup_manager,
+                row_index=row_index,
+            )
+
+            try:
+                failures = fn(ctx)
+                for page, field_name, message in failures:
+                    key = (page, field_name)
+                    if key not in seen:
+                        seen.add(key)
+                        all_failures.append((page, field_name, message))
+            except Exception as e:
+                logger.warning("Validation strategy %s failed: %s", strategy_name, e)
+
+        return all_failures

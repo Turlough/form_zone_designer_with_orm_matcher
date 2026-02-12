@@ -14,7 +14,7 @@ from PyQt6.QtCore import Qt, QSize, QPoint, QRect
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent, QFont, QIcon
 from PIL import Image
 from dotenv import load_dotenv
-from util import ORMMatcher, CSVManager
+from util import ORMMatcher, CSVManager, ProjectValidations
 from util.index_comments import Comment, Comments
 from util.app_state import load_state, save_state
 from util.path_utils import (
@@ -54,6 +54,9 @@ class Indexer(QMainWindow):
         
         # CSV manager
         self.csv_manager = CSVManager()
+
+        # Project validations (created when batch loads; one per batch)
+        self.project_validations: ProjectValidations | None = None
         
         # Current state
         # NOTE: Historically this indexer worked only with TIFFs. These fields
@@ -92,7 +95,8 @@ class Indexer(QMainWindow):
 
         config_path = config_resolved
         self.config_folder = str(config_path)
-        self.json_folder = str(config_path / 'json')
+        self.json_folder = str(config_path / "json")
+        self.project_validations = None  # Reset when switching project
 
         # Find logo in fiducials subfolder (same convention as form_zone_designer)
         fiducials = config_path / 'fiducials'
@@ -138,7 +142,9 @@ class Indexer(QMainWindow):
         self._index_menu_bar.batch_import_selected.connect(self._on_batch_import_selected)
         self._index_menu_bar.ocr_requested.connect(self._on_ocr_requested)
         self._index_menu_bar.review_batch_comments_requested.connect(self._on_review_batch_comments_requested)
-        
+        self._index_menu_bar.validate_document_requested.connect(self._on_validate_document_requested)
+        self._index_menu_bar.validate_batch_requested.connect(self._on_validate_batch_requested)
+
         self.setMenuBar(self._index_menu_bar)
 
         central_widget = QWidget()
@@ -238,6 +244,16 @@ class Indexer(QMainWindow):
                 filename = os.path.basename(document_path)
                 self.tiff_list.addItem(filename)
             logger.info("Loaded %d documents", len(self.document_paths))
+
+            # Create ProjectValidations for this batch (owns LookupManager)
+            config = self._load_project_config()
+            if config and self.csv_manager.csv_path:
+                self.project_validations = ProjectValidations(
+                    config, Path(self.csv_manager.csv_path), self.config_folder
+                )
+            else:
+                self.project_validations = None
+
             return True
         except Exception as e:
             logger.warning("Could not load import file from path %s: %s", file_path, e)
@@ -949,6 +965,114 @@ class Indexer(QMainWindow):
         self._qc_review_index = 0
         self._qc_review_dialog_positioned = False  # Position only on first show; then keep user's placement
         self._show_current_qc_review_comment()
+
+    def _on_validate_document_requested(self) -> None:
+        """Handle QC > Validate document: run project validations on current row."""
+        if not self.document_paths:
+            QMessageBox.information(
+                self,
+                "No batch loaded",
+                "Load a batch first (Batch menu).",
+            )
+            return
+        if not self.project_validations:
+            QMessageBox.information(
+                self,
+                "No validations",
+                "No project validations configured for this project.",
+            )
+            return
+        if not self.project_validations.validations:
+            QMessageBox.information(
+                self,
+                "No validations",
+                "No project validations configured for this project.",
+            )
+            return
+
+        row_index = self.current_document_index
+        field_values = {
+            name: self.csv_manager.get_field_value(row_index, name) or ""
+            for name in self.csv_manager.field_names
+        }
+        field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
+
+        failures = self.project_validations.run_validations(
+            row_index, field_values, field_to_page
+        )
+
+        if failures:
+            existing = self.csv_manager.get_field_value(row_index, "Comments") or ""
+            row_comments = Comments.from_string(existing)
+            for page, field_name, message in failures:
+                row_comments.add_comment(Comment(page, field_name, message))
+            self.csv_manager.set_field_value(
+                row_index, "Comments", row_comments.to_csv_string()
+            )
+            self.csv_manager.save_csv()
+
+        msg = (
+            f"Validated 1 document. {len(failures)} validation failure(s) added as comments."
+            if failures
+            else "No validation failures found."
+        )
+        QMessageBox.information(self, "Validation", msg)
+
+    def _on_validate_batch_requested(self) -> None:
+        """Handle QC > Validate batch: run project validations on all rows."""
+        if not self.document_paths:
+            QMessageBox.information(
+                self,
+                "No batch loaded",
+                "Load a batch first (Batch menu).",
+            )
+            return
+        if not self.project_validations:
+            QMessageBox.information(
+                self,
+                "No validations",
+                "No project validations configured for this project.",
+            )
+            return
+        if not self.project_validations.validations:
+            QMessageBox.information(
+                self,
+                "No validations",
+                "No project validations configured for this project.",
+            )
+            return
+
+        field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
+        total_failures = 0
+
+        for row_index in range(len(self.document_paths)):
+            field_values = {
+                name: self.csv_manager.get_field_value(row_index, name) or ""
+                for name in self.csv_manager.field_names
+            }
+            failures = self.project_validations.run_validations(
+                row_index, field_values, field_to_page
+            )
+            if failures:
+                existing = self.csv_manager.get_field_value(row_index, "Comments") or ""
+                row_comments = Comments.from_string(existing)
+                for page, field_name, message in failures:
+                    row_comments.add_comment(Comment(page, field_name, message))
+                self.csv_manager.set_field_value(
+                    row_index, "Comments", row_comments.to_csv_string()
+                )
+                total_failures += len(failures)
+
+        if total_failures > 0:
+            self.csv_manager.save_csv()
+
+        n_docs = len(self.document_paths)
+        msg = (
+            f"Validated {n_docs} document(s). {total_failures} validation failure(s) added as comments."
+            if total_failures
+            else f"Validated {n_docs} document(s). No validation failures found."
+        )
+        QMessageBox.information(self, "Validation", msg)
 
     def _show_current_qc_review_comment(self) -> None:
         """Navigate to the current comment's page and show the QC dialog."""

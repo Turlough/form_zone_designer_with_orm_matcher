@@ -140,6 +140,37 @@ class CSVManager:
             page_num += 1
         
         return field_names
+
+    def get_field_to_page(self, json_folder) -> dict[str, int]:
+        """Build mapping from field name to page number (1-based).
+        Mirrors _get_field_names_from_json logic."""
+        field_to_page: dict[str, int] = {}
+        page_num = 1
+
+        while True:
+            json_path = find_file_case_insensitive(json_folder, f"{page_num}.json")
+            if json_path is None:
+                break
+
+            try:
+                with open(json_path, "r") as f:
+                    data = json.load(f)
+
+                for item in data:
+                    field = Field.from_dict(item)
+                    if isinstance(field, RadioGroup):
+                        if field.name not in field_to_page:
+                            field_to_page[field.name] = page_num
+                    else:
+                        if field.name not in field_to_page:
+                            field_to_page[field.name] = page_num
+
+            except Exception as e:
+                logger.warning(f"Error reading {json_path!s}: {e}")
+
+            page_num += 1
+
+        return field_to_page
     
     def get_document_paths(self) -> list[str]:
         """Return list of document paths from CSV (excluding header)."""
