@@ -1,5 +1,7 @@
 ---
-When working with Python projects, always check for and activate a virtual environment (.venv or venv) before running pip install commands. If no virtual environment is found, remind the user to create one first with: python -m venv .venv
+We will 
+When working with Python projects, always check for and activate a virtual environment (.venv or venv) before running pip install commands. If no virtual environment is found, remind the user to create one first.
+Maintain both a requirements.txt file for pip, and a pyproject.toml for uv. Automatically update one if the other has been edited.
 
 alwaysApply: true
 ---
