@@ -25,7 +25,7 @@ from util.path_utils import (
 from util.document_loader import get_document_loader_for_path
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
 import logging
-from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog
+from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog, QcCommentDialog
 from util.gemini_ocr_client import ocr_image_region
 
 logging.basicConfig(level=logging.INFO)
@@ -137,6 +137,7 @@ class Indexer(QMainWindow):
         self._index_menu_bar.project_selected.connect(self._apply_config_folder)
         self._index_menu_bar.batch_import_selected.connect(self._on_batch_import_selected)
         self._index_menu_bar.ocr_requested.connect(self._on_ocr_requested)
+        self._index_menu_bar.review_batch_comments_requested.connect(self._on_review_batch_comments_requested)
         
         self.setMenuBar(self._index_menu_bar)
 
@@ -219,6 +220,11 @@ class Indexer(QMainWindow):
         # QC comments dialog (shown to the left of the selected field)
         self._comment_dialog = IndexCommentDialog(self)
         self._comment_dialog.comment_submitted.connect(self._on_comment_submitted)
+
+        # QC batch review dialog (non-modal, for Review batch comments)
+        self._qc_comment_dialog = QcCommentDialog(self)
+        self._qc_comment_dialog.remove_clicked.connect(self._on_qc_review_remove)
+        self._qc_comment_dialog.next_clicked.connect(self._on_qc_review_next)
     
     def _load_import_file_from_path(self, file_path: str, json_folder_override: str | None = None) -> bool:
         """Load import file from path (no dialog). If json_folder_override is set, use it for this load. Returns True on success."""
@@ -911,6 +917,104 @@ class Indexer(QMainWindow):
                 field_values=self.field_values,
                 field_comments=self.page_comments,
             )
+
+    def _on_review_batch_comments_requested(self) -> None:
+        """Handle QC > Review batch comments: iterate through all comments in the batch."""
+        if not self.document_paths:
+            QMessageBox.information(
+                self,
+                "No batch loaded",
+                "Load a batch first (Batch menu).",
+            )
+            return
+
+        # Build checklist: (row_index, Comment) for all comments in the batch
+        checklist: list[tuple[int, Comment]] = []
+        for row_idx in range(len(self.document_paths)):
+            comments_str = self.csv_manager.get_field_value(row_idx, "Comments") or ""
+            row_comments = Comments.from_string(comments_str)
+            for c in sorted(row_comments.comments.values(), key=lambda x: (x.page, x.field)):
+                if c.comment.strip():
+                    checklist.append((row_idx, c))
+
+        if not checklist:
+            QMessageBox.information(
+                self,
+                "No comments",
+                "There are no QC comments in this batch.",
+            )
+            return
+
+        self._qc_review_checklist = checklist
+        self._qc_review_index = 0
+        self._qc_review_dialog_positioned = False  # Position only on first show; then keep user's placement
+        self._show_current_qc_review_comment()
+
+    def _show_current_qc_review_comment(self) -> None:
+        """Navigate to the current comment's page and show the QC dialog."""
+        if not hasattr(self, "_qc_review_checklist") or self._qc_review_index >= len(self._qc_review_checklist):
+            self._qc_comment_dialog.close()
+            QMessageBox.information(self, "Review complete", "No more comments to review.")
+            return
+
+        row_idx, comment = self._qc_review_checklist[self._qc_review_index]
+
+        # Navigate to the document and page
+        if self.current_document_index != row_idx:
+            self.tiff_list.setCurrentRow(row_idx)
+            self.on_document_selected(row_idx)
+        self.current_page_index = comment.page - 1  # 1-indexed in Comments
+        self.display_current_page()
+
+        # Get field value
+        field_value = self.csv_manager.get_field_value(row_idx, comment.field) or ""
+
+        self._qc_comment_dialog.set_content(
+            page=comment.page,
+            field_name=comment.field,
+            field_value=field_value,
+            comment_text=comment.comment,
+        )
+
+        self._qc_comment_dialog.adjustSize()
+        # Position only on first show in session; preserve user's placement thereafter
+        if not getattr(self, "_qc_review_dialog_positioned", True):
+            # Default: to the left of the field list (detail panel), vertically centered
+            panel_top_left = self.detail_panel.mapToGlobal(QPoint(0, 0))
+            panel_height = self.detail_panel.height()
+            margin = 8
+            dx = panel_top_left.x() - self._qc_comment_dialog.width() - margin
+            dy = panel_top_left.y() + (panel_height - self._qc_comment_dialog.height()) // 2
+            if dx < 0:
+                dx = 0
+            if dy < 0:
+                dy = 0
+            self._qc_comment_dialog.move(dx, dy)
+            self._qc_review_dialog_positioned = True
+        self._qc_comment_dialog.show()
+        self._qc_comment_dialog.raise_()
+        self._qc_comment_dialog.activateWindow()
+
+    def _on_qc_review_remove(self) -> None:
+        """Remove the current comment from the CSV and advance to next."""
+        if not hasattr(self, "_qc_review_checklist") or self._qc_review_index >= len(self._qc_review_checklist):
+            return
+        row_idx, comment = self._qc_review_checklist[self._qc_review_index]
+        existing = self.csv_manager.get_field_value(row_idx, "Comments") or ""
+        row_comments = Comments.from_string(existing)
+        row_comments.remove_comment(comment.identity)
+        new_str = row_comments.to_csv_string()
+        self.csv_manager.set_field_value(row_idx, "Comments", new_str)
+        self.csv_manager.save_csv()
+        self._qc_review_index += 1
+        self._show_current_qc_review_comment()
+
+    def _on_qc_review_next(self) -> None:
+        """Advance to the next comment without removing."""
+        if not hasattr(self, "_qc_review_checklist"):
+            return
+        self._qc_review_index += 1
+        self._show_current_qc_review_comment()
 
     def _on_ocr_requested(self) -> None:
         """Handle OCR menu action: open selection dialog and run Cloud Vision."""

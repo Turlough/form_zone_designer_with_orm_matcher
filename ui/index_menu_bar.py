@@ -15,6 +15,7 @@ class IndexMenuBar(QMenuBar):
     project_selected = pyqtSignal(str)  # Emits the selected project config folder path
     batch_import_selected = pyqtSignal(str)  # Emits full path to selected batch import file
     ocr_requested = pyqtSignal()  # User chose to OCR the current text field
+    review_batch_comments_requested = pyqtSignal()  # User chose QC > Review batch comments
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -22,6 +23,7 @@ class IndexMenuBar(QMenuBar):
         self._current_project_path: str | None = None
         self._init_project_menu()
         self._init_batch_menu()
+        self._init_qc_menu()
         self._init_cloud_vision_menu()
 
     def _init_project_menu(self) -> None:
@@ -201,6 +203,17 @@ class IndexMenuBar(QMenuBar):
     def set_current_project_path(self, path: str | None) -> None:
         """Set the current project path (e.g. when restoring from session)."""
         self._current_project_path = path
+
+    def _init_qc_menu(self) -> None:
+        """Build QC (Quality Control) menu."""
+        self._qc_menu = QMenu("QC", self)
+        self.addMenu(self._qc_menu)
+        action = self._qc_menu.addAction("Review batch comments")
+        action.triggered.connect(self._on_review_batch_comments_triggered)
+
+    def _on_review_batch_comments_triggered(self) -> None:
+        """Emit signal when Review batch comments is chosen."""
+        self.review_batch_comments_requested.emit()
 
     def _init_cloud_vision_menu(self) -> None:
         """Build Cloud Vision menu."""
