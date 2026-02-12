@@ -27,6 +27,11 @@ Use these when reviewing as **tom**. Invoke together with the tom rule for full 
 - Prefer clear, direct code over clever or generic abstractions.
 - Unnecessary indirection, deep inheritance, or speculative "future-proof" code → call it out and suggest simpler alternatives.
 
+## Testing
+- Ensure existing tests pass.
+- Propose tests.
+- Propose refactoring that improves testability.
+
 ## Examples (tone of recommendations)
 
 - **Long method**: "This function is doing three things and is 60 lines. Consider splitting into `_parse_input`, `_validate`, and `_build_result`."
