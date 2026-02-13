@@ -16,11 +16,18 @@ class ValidationContext:
     """Everything a validation strategy might need. Built per row."""
 
     field_values: dict[str, Any]
-    field_names: list[str]
+    # This is used when multiple fields form a validation group, e.g. max_tickboxes or mutually_exclusive.
+    # If only one field is provided, it is used as the prime field for lookup_value or match_value.
+    field_names: list[str] | None
     params: dict
     field_to_page: dict[str, int] | None
     lookup_manager: LookupManager | None
     row_index: int
+
+def __str__(self):
+    return f"ValidationContext(field_values={self.field_values}, field_names={self.field_names}, params={self.params}, field_to_page={self.field_to_page}, lookup_manager={self.lookup_manager}, row_index={self.row_index})"
+def __repr__(self):
+    return self.__str__()
 
 
 def _is_ticked(value: Any) -> bool:
@@ -56,6 +63,7 @@ def _strategy_max_tickboxes(ctx: ValidationContext) -> list[tuple[int, str, str]
     ]
 
 
+
 def _strategy_mutually_exclusive(ctx: ValidationContext) -> list[tuple[int, str, str]]:
     """If exclusive_field is ticked and any other is ticked, invalidate exclusive_field."""
     exclusive = ctx.params.get("exclusive_field")
@@ -83,9 +91,8 @@ def _strategy_value_exists_in_lookup(ctx: ValidationContext) -> list[tuple[int, 
     """Check that the value exists in the lookup list."""
     if ctx.lookup_manager is None:
         return []
-
+    logger.info(f"_strategy_value_exists_in_lookup: {ctx}")
     lookup_col = ctx.params.get("lookup_column", 0)
-    prime_index = ctx.params.get("prime_index", 0)
 
     # field_names[0] is the field whose value we look up
     if not ctx.field_names:
@@ -114,19 +121,25 @@ def _strategy_match_value_in_lookup(ctx: ValidationContext) -> list[tuple[int, s
     """Check that the looked-up value matches the indexed field value."""
     if ctx.lookup_manager is None:
         return []
-
-    prime_field = ctx.params.get("prime_field")
+    logger.info(f"_strategy_match_value_in_lookup: {ctx}")
     lookup_column = ctx.params.get("lookup_column", 0)
-    field_to_match = ctx.params.get("field_to_match")
 
-    if not prime_field or not field_to_match:
+     # field_names[0] is the field whose value we look up
+     # field_names[1] is the field whose value we match
+    if not ctx.field_names or len(ctx.field_names) < 2:
         return []
 
-    prime_value = ctx.field_values.get(prime_field)
-    if prime_value is None or str(prime_value).strip() == "":
+    field_name = ctx.field_names[0]
+    field_to_match = ctx.field_names[1]
+    value = ctx.field_values.get(field_name)
+    if value is None or str(value).strip() == "":
         return []
 
-    msg = ctx.lookup_manager.match_value(prime_value, lookup_column, field_to_match)
+    lookup_value = ctx.field_values.get(field_to_match)
+    if lookup_value is None or str(lookup_value).strip() == "":
+        return []
+
+    msg = ctx.lookup_manager.match_value(value, lookup_column, field_to_match)
     if msg is None:
         return []
 

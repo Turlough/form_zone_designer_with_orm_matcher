@@ -40,16 +40,23 @@ class LookupManager:
         return self.indexed_rows[self.current_row][self.field_names.index(field_name)]
     
     def lookup_value(self, value: str | int, lookup_column: int) -> str | None:
-        '''Lookup the value of a field in the lookup list, in the given column.'''
+        '''Lookup the value of a field in the lookup list, in the given column.
+        value: the value to lookup
+        lookup_column: the column in the lookup list to lookup
+        Returns: None if not found, or the looked up value that was found (will be the same as the value passed in, of course)'''
         if value not in self.lookup_dict:
             return None
         return self.lookup_dict[value][lookup_column]
 
     def match_value(self, value: str | int, lookup_column: int, field_name: str) -> str | None:
-        lookup_value = self.lookup_value(value, lookup_column)
-        indexed_value = self.get_indexed_value(field_name)
+        '''Match the value of a field in the lookup list, in the given column, with the value in the indexed field, field_name.
+        value: the value to match
+        lookup_column: the column in the lookup list to match
+        field_name: the name of the field in the indexed field to match'''
+        lookup_value = self.lookup_value(value, lookup_column).upper()
+        indexed_value = self.get_indexed_value(field_name).upper()
         if lookup_value is None:
             return None
         if lookup_value != indexed_value:
-            return f"Indexed value {indexed_value} does not match the value in the lookup list {lookup_value}"
+            return f"Indexed value '{indexed_value}' does not match the value in the lookup list '{lookup_value}'"
         return None
