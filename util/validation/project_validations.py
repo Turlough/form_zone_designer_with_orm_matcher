@@ -91,7 +91,6 @@ def _strategy_value_exists_in_lookup(ctx: ValidationContext) -> list[tuple[int, 
     """Check that the value exists in the lookup list."""
     if ctx.lookup_manager is None:
         return []
-    logger.info(f"_strategy_value_exists_in_lookup: {ctx}")
     lookup_col = ctx.params.get("lookup_column", 0)
 
     # field_names[0] is the field whose value we look up
@@ -121,7 +120,6 @@ def _strategy_match_value_in_lookup(ctx: ValidationContext) -> list[tuple[int, s
     """Check that the looked-up value matches the indexed field value."""
     if ctx.lookup_manager is None:
         return []
-    logger.info(f"_strategy_match_value_in_lookup: {ctx}")
     lookup_column = ctx.params.get("lookup_column", 0)
 
      # field_names[0] is the field whose value we look up
@@ -147,11 +145,51 @@ def _strategy_match_value_in_lookup(ctx: ValidationContext) -> list[tuple[int, s
     return [(page, field_to_match, msg)]
 
 
+
+def _strategy_numbers_nearly_equal(ctx: ValidationContext) -> list[tuple[int, str, str]]:
+    """Check that the looked-up value matches the indexed field value."""
+    if ctx.lookup_manager is None:
+        return []
+
+     # field_names[0] is the field whose value we look up
+     # field_names[1] is the field whose value we match
+    if not ctx.field_names or len(ctx.field_names) != 2:
+        return []
+
+    field1 = ctx.field_names[0]
+    value1 = ctx.field_values.get(field1)
+    field2 = ctx.field_names[1]
+    value2 = ctx.field_values.get(field2)
+    tolerance = ctx.params.get("tolerance", 0.01)
+
+    try:
+        value1 = float(value1)
+        value2 = float(value2)
+    except ValueError:
+        return []
+    upper_bound = value1 * (1 + tolerance)
+    lower_bound = value1 * (1 - tolerance)
+    if value2 >= lower_bound and value2 <= upper_bound:
+        return []
+    page1 = (ctx.field_to_page or {}).get(field1, 1) 
+    page2 = (ctx.field_to_page or {}).get(field2, 1)
+    msg = f"This number ({value1}) is not within {tolerance*100}% of '{field2.upper()}'s value ({value2})."
+    if page1 != page2:
+        msg += f" On page {page2}, '{field2.upper()}'s value is {value2}."
+    fault1 = (page1, field1, msg)
+    msg = f"This number ({value2}) is not within {tolerance*100}% of '{field1.upper()}'s value ({value1})."
+    if page1 != page2:
+        msg += f" On page {page1}, '{field1.upper()}'s value is {value1}."
+    fault2 = (page2, field2, msg)
+    return [fault1, fault2]
+
+
 PROJECT_VALIDATION_REGISTRY: dict[str, Callable[[ValidationContext], list[tuple[int, str, str]]]] = {
     "max_tickboxes": _strategy_max_tickboxes,
     "mutually_exclusive": _strategy_mutually_exclusive,
     "value_exists_in_lookup": _strategy_value_exists_in_lookup,
     "match_value_in_lookup": _strategy_match_value_in_lookup,
+    "numbers_nearly_equal": _strategy_numbers_nearly_equal,
 }
 
 

@@ -13,7 +13,7 @@ class LookupManager:
         self.lookup_dict = dict()
         self.current_row = 0
         self._load_lookup_list()
-        self._load_output_csv()
+        self.load_output_csv()
 
     def _load_lookup_list(self):
         with open(self.lookup_list, 'r') as f:
@@ -22,10 +22,13 @@ class LookupManager:
             for row in reader:
                 self.lookup_dict[row[self.prime_index]] = row
     
-    def _load_output_csv(self):
-        with open(self.output_csv_file, 'r') as f:
+    def load_output_csv(self) -> None:
+        """Load (or reload) the output CSV from disk."""
+        self.field_names = []
+        self.indexed_rows = []
+        with open(self.output_csv_file, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
-            self.field_names = next(reader) # Skip header
+            self.field_names = next(reader)  # Skip header
             for row in reader:
                 self.indexed_rows.append(row)
 

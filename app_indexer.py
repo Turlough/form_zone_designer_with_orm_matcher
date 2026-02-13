@@ -990,6 +990,8 @@ class Indexer(QMainWindow):
             )
             return
 
+        if self.project_validations.lookup_manager:
+            self.project_validations.lookup_manager.load_output_csv()
         row_index = self.current_document_index
         field_values = {
             name: self.csv_manager.get_field_value(row_index, name) or ""
@@ -1042,6 +1044,8 @@ class Indexer(QMainWindow):
             )
             return
 
+        if self.project_validations.lookup_manager:
+            self.project_validations.lookup_manager.load_output_csv()
         field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
         total_failures = 0
 
