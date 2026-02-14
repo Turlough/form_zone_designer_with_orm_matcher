@@ -11,7 +11,20 @@ from util.path_utils import resolve_path_or_original
 
 logger = logging.getLogger(__name__)
 
-EIRCODE_REGEX = r"\b(?:(a(4[125s]|6[37]|7[5s]|[8b][1-6s]|9[12468b])|c1[5s]|d([0o][1-9sb]|1[0-8osb]|2[024o]|6w)|e(2[15s]|3[24]|4[15s]|[5s]3|91)|f(12|2[368b]|3[15s]|4[25s]|[5s][26]|9[1-4])|h(1[2468b]|23|[5s][34]|6[25s]|[79]1)|k(3[246]|4[5s]|[5s]6|67|7[8b])|n(3[79]|[49]1)|p(1[247]|2[45s]|3[126]|4[37]|[5s][16]|6[17]|7[25s]|[8b][15s])|r(14|21|3[25s]|4[25s]|[5s][16]|9[35s])|t(12|23|34|4[5s]|[5s]6)|v(1[45s]|23|3[15s]|42|9[2-5s])|w(12|23|34|91)|x(3[5s]|42|91)|y(14|2[15s]|3[45s]))\s?[acdefhknprtvwxy\d]{4})\b"
+# Northern Ireland (BT) postcodes only. Valid districts per BT postcode area:
+# BT1-BT17 (Belfast), BT18-BT49, BT51-BT57, BT58, BT60-BT71, BT74-BT82, BT92-BT94.
+# Inward code: digit + 2 letters (C,I,K,M,O,V excluded per UK postcode rules).
+NI_POSTCODE_REGEX = (
+    r"\bBT"
+    r"([1-9]|[1-4][0-9]|5[1-8]|6[0-9]|7[01]|7[4-9]|8[0-2]|9[2-4])"
+    r"\s?\d[ABDEGHJLNPQRSTUWXYZ]{2}\b"
+)
+EIRCODE_REGEX = r"\b(?:(a(4[125s]|6[37]|7[5s]|[8b][1-6s]|9[12468b])"
+r"|c1[5s]|d([0o][1-9sb]|1[0-8osb]|2[024o]|6w)|e(2[15s]|3[24]|4[15s]|[5s]3|91)|f(12|2[368b]"
+r"|3[15s]|4[25s]|[5s][26]|9[1-4])|h(1[2468b]|23|[5s][34]|6[25s]|[79]1)|k(3[246]|4[5s]|[5s]6|67|7[8b])"
+r"|n(3[79]|[49]1)|p(1[247]|2[45s]|3[126]|4[37]|[5s][16]|6[17]|7[25s]|[8b][15s])|r(14|21|3[25s]|4[25s]"
+r"|[5s][16]|9[35s])|t(12|23|34|4[5s]|[5s]6)|v(1[45s]|23|3[15s]|42|9[2-5s])|w(12|23|34|91)|x(3[5s]|42|91)"
+r"|y(14|2[15s]|3[45s]))\s?[acdefhknprtvwxy\d]{4})\b"
 
 
 @dataclass
@@ -102,6 +115,22 @@ def _strategy_eircode_valid(ctx: ValidationContext) -> list[tuple[int, str, str]
             return []
         if not re.match(EIRCODE_REGEX, str(value).strip(), re.IGNORECASE):
             faults.append((ctx.field_to_page.get(field_name, 1), field_name, f"Invalid eircode: {value}"))
+    return faults
+
+
+def _strategy_ni_postcode_valid(ctx: ValidationContext) -> list[tuple[int, str, str]]:
+    """Check that the postcode is a valid Northern Ireland (BT) postcode."""
+    if not ctx.field_names:
+        return []
+    faults: list[tuple[int, str, str]] = []
+    for field_name in ctx.field_names:
+        value = ctx.field_values.get(field_name)
+        if value is None or str(value).strip() == "":
+            return []
+        if not re.match(NI_POSTCODE_REGEX, str(value).strip(), re.IGNORECASE):
+            faults.append(
+                (ctx.field_to_page.get(field_name, 1), field_name, f"Invalid NI postcode: {value}")
+            )
     return faults
 
 
@@ -234,6 +263,7 @@ PROJECT_VALIDATION_REGISTRY: dict[str, Callable[[ValidationContext], list[tuple[
     "email_addresses_valid": _strategy_email_addresses_valid,
     "phone_numbers_valid": _strategy_phone_numbers_valid,
     "eircode_valid": _strategy_eircode_valid,
+    "ni_postcode_valid": _strategy_ni_postcode_valid,
 }
 
 
