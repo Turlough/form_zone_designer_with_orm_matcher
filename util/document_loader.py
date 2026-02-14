@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 
 from PIL import Image
-import fitz  # type: ignore[import-not-found]  # PyMuPDF
+import pymupdf as fitz  # type: ignore[import-not-found]  # PyMuPDF
 
 
 logger = logging.getLogger(__name__)
