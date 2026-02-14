@@ -417,8 +417,15 @@ class Indexer(QMainWindow):
         q_image = QImage(img_array.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(q_image)
         
-        # Detect logo
-        self.page_bbox = self.detect_logo(pil_image)
+        # Detect logo (skip for pages in pages_without_fiducial from project_config.json)
+        config = self._load_project_config()
+        raw = config.get("pages_without_fiducial", []) if config else []
+        pages_without_fiducial = {int(x) for x in raw}
+        if page_num in pages_without_fiducial:
+            self.page_bbox = None
+            logger.info("Page %d: Skipping fiducial (pages_without_fiducial)", page_num + 1)
+        else:
+            self.page_bbox = self.detect_logo(pil_image)
         
         # Load fields for this page
         self.page_fields = self.load_page_fields(page_num + 1)  # JSON files are 1-indexed

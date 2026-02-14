@@ -165,6 +165,20 @@ class Designer(QMainWindow):
         self.load_multipage_tiff(str(self.config.template_path))
         return True
 
+    def _load_project_config(self) -> dict | None:
+        """Load project_config.json for the current project, if available."""
+        if not self.config:
+            return None
+        config_path = find_file_case_insensitive(self.config.json_folder, "project_config.json")
+        if config_path is None:
+            return None
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning("Could not read project_config.json at %s: %s", config_path, e)
+            return None
+
     def _try_restore_last_session(self) -> None:
         """Restore last config folder and page from AppData if valid."""
         state = load_state()
@@ -263,29 +277,39 @@ class Designer(QMainWindow):
     
     def process_pages(self):
         """Run ORM matcher on each page to find logo bounding boxes."""
+        pages_without_fiducial = []
+        if self.config:
+            config = self._load_project_config()
+            if config:
+                pages_without_fiducial = list(config.get("pages_without_fiducial", []))
+
         if not self.matcher:
             logger.warning("No matcher available, skipping logo detection")
             self.fiducials = [None] * len(self.pages)
             self.page_field_list = [[] for _ in range(len(self.pages))]
             self.page_detected_rects = [[] for _ in range(len(self.pages))]
             return
-        
+
         for idx, page in enumerate(self.pages):
-            # Convert PIL Image to OpenCV format
-            page_array = np.array(page)
-            page_cv = cv2.cvtColor(page_array, cv2.COLOR_RGB2BGR)
-            
-            # Run the matcher
-            self.matcher.locate_from_cv2_image(page_cv)
-            
-            # Store the bounding box
-            if self.matcher.top_left and self.matcher.bottom_right:
-                self.fiducials.append((self.matcher.top_left, self.matcher.bottom_right))
-                logger.info(f"Page {idx + 1}: Logo found at {self.matcher.top_left}")
-            else:
+            if idx in pages_without_fiducial:
                 self.fiducials.append(None)
-                logger.warning(f"Page {idx + 1}: No logo found")
-            
+                logger.info(f"Page {idx + 1}: Skipping fiducial (pages_without_fiducial)")
+            else:
+                # Convert PIL Image to OpenCV format
+                page_array = np.array(page)
+                page_cv = cv2.cvtColor(page_array, cv2.COLOR_RGB2BGR)
+
+                # Run the matcher
+                self.matcher.locate_from_cv2_image(page_cv)
+
+                # Store the bounding box
+                if self.matcher.top_left and self.matcher.bottom_right:
+                    self.fiducials.append((self.matcher.top_left, self.matcher.bottom_right))
+                    logger.info(f"Page {idx + 1}: Logo found at {self.matcher.top_left}")
+                else:
+                    self.fiducials.append(None)
+                    logger.warning(f"Page {idx + 1}: No logo found")
+
             # Initialize empty field list for this page
             self.page_field_list.append([])
             self.page_detected_rects.append([])
