@@ -38,7 +38,6 @@ class Indexer(QMainWindow):
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Field Indexer")
         self.setGeometry(100, 100, 1200, 800)
         
         # Load environment variables
@@ -76,6 +75,20 @@ class Indexer(QMainWindow):
         self.init_ui()
         # Restore last import file, page, and config folder if available
         self._try_restore_last_session()
+        self._update_window_title()
+
+    def _update_window_title(self) -> None:
+        """Set window title to 'Field Indexer' with optional project and batch name."""
+        title = "Field Indexer"
+        parts = []
+        if self.config_folder:
+            parts.append(Path(self.config_folder).name)
+        csv_path = getattr(self.csv_manager, "csv_path", None)
+        if csv_path:
+            parts.append(Path(csv_path).parent.name)
+        if parts:
+            title += " - " + " - ".join(parts)
+        self.setWindowTitle(title)
 
     def _init_matcher_from_fallbacks(self) -> None:
         """Initialize ORM matcher from logo_path (env or config_folder)."""
@@ -114,6 +127,7 @@ class Indexer(QMainWindow):
         if hasattr(self, '_index_menu_bar'):
             self._index_menu_bar.set_current_project_path(self.config_folder)
         save_state(last_indexer_config_folder=self.config_folder)
+        self._update_window_title()
         logger.info("Project selected: %s (json=%s, logo=%s)", self.config_folder, self.json_folder, self.logo_path)
         # Refresh current page if one is displayed (uses new json_folder and matcher)
         if self.current_page_images:
@@ -254,6 +268,7 @@ class Indexer(QMainWindow):
             else:
                 self.project_validations = None
 
+            self._update_window_title()
             return True
         except Exception as e:
             logger.warning("Could not load import file from path %s: %s", file_path, e)

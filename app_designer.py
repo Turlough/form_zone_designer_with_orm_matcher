@@ -46,7 +46,6 @@ class Designer(QMainWindow):
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Form Zone Designer")
         self.setGeometry(100, 100, 1200, 800)
         
         # Load environment variables for default folder location
@@ -79,6 +78,7 @@ class Designer(QMainWindow):
             self.edit_panel.page_json_changed.connect(self.on_page_json_changed)
         # Restore last folder and page from AppData if available
         self._try_restore_last_session()
+        self._update_window_title()
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -163,7 +163,15 @@ class Designer(QMainWindow):
         if not self.config.template_path.exists():
             return False
         self.load_multipage_tiff(str(self.config.template_path))
+        self._update_window_title()
         return True
+
+    def _update_window_title(self) -> None:
+        """Set window title to 'Form Zone Designer' with optional project name."""
+        title = "Form Zone Designer"
+        if self.config:
+            title += " - " + Path(self.config.config_folder).name
+        self.setWindowTitle(title)
 
     def _load_project_config(self) -> dict | None:
         """Load project_config.json for the current project, if available."""
