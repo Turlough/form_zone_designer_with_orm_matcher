@@ -5,6 +5,7 @@ __pycache__/
 build/
 dist/
 .idea/
+*.spec
 
 .cursor/agents/workspace/
 .cursor/workspace/
