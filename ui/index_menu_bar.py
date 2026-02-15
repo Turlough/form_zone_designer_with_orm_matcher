@@ -211,10 +211,14 @@ class IndexMenuBar(QMenuBar):
         """Build QC (Quality Control) menu."""
         self._qc_menu = QMenu("QC", self)
         self.addMenu(self._qc_menu)
+        
+        # Document QC menu
         action_doc = self._qc_menu.addAction("Validate document")
         action_doc.triggered.connect(self._on_validate_document_triggered)
         action_doc = self._qc_menu.addAction("Review document comments")
         action_doc.triggered.connect(self._on_review_document_comments_triggered)
+
+        # Batch QC menu 
         qc_batch_menu = self._qc_menu.addMenu("QC batch")
         action_batch = qc_batch_menu.addAction("Validate batch")
         action_batch.triggered.connect(self._on_validate_batch_triggered)

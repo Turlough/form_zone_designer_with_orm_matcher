@@ -529,6 +529,7 @@ class Indexer(QMainWindow):
     
     def display_current_page(self):
         """Display the current page with fields."""
+        self._index_text_dialog.hide()
         if not self.current_page_images:
             return
         
@@ -814,6 +815,7 @@ class Indexer(QMainWindow):
             self._set_current_field(field_to_show)
         
         if isinstance(field, Tickbox):
+            self._index_text_dialog.hide()
             # Toggle tickbox
             current_value = self.field_values.get(field.name, False)
             new_value = not current_value
@@ -850,6 +852,7 @@ class Indexer(QMainWindow):
             logger.info(f"Tickbox '{field.name}' set to {new_value}")
         
         elif isinstance(field, RadioGroup) and sub_field:
+            self._index_text_dialog.hide()
             # Select radio button
             self.field_values[field.name] = sub_field.name
             
@@ -1073,6 +1076,7 @@ class Indexer(QMainWindow):
         top_left_global = table.viewport().mapToGlobal(row_rect.topLeft())
         global_rect = QRect(top_left_global, row_rect.size())
 
+        self._index_text_dialog.hide()
         existing_comment = self.page_comments.get(field_name, "")
         presets = getattr(self, "_qc_comment_presets", [])
         self._comment_dialog.set_field(field_name, existing_comment, presets)
@@ -1320,6 +1324,7 @@ class Indexer(QMainWindow):
                 dy = 0
             self._qc_comment_dialog.move(dx, dy)
             self._qc_review_dialog_positioned = True
+        self._index_text_dialog.hide()
         self._qc_comment_dialog.show()
         self._qc_comment_dialog.raise_()
         self._qc_comment_dialog.activateWindow()
