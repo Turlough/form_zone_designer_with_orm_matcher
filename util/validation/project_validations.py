@@ -104,6 +104,20 @@ def _strategy_phone_numbers_valid(ctx: ValidationContext) -> list[tuple[int, str
             faults.append((ctx.field_to_page.get(field_name, 1), field_name, f"Invalid phone number: {value}"))
     return faults
 
+def _strategy_num_characters_valid(ctx: ValidationContext) -> list[tuple[int, str, str]]:
+    """Check that the number of characters are valid."""
+    if not ctx.field_names:
+        return []
+    faults: list[tuple[int, str, str]] = []
+    num_characters = ctx.params.get("num_characters", [1])
+    for field_name in ctx.field_names:
+        value = ctx.field_values.get(field_name)
+        if value is None or str(value).strip() == "":
+            return []
+        if not len(value) in num_characters:
+            faults.append((ctx.field_to_page.get(field_name, 1), field_name, f"The length of {value} is{len(value)}. Permitted lengths are: {num_characters}: "))
+    return faults
+
 def _strategy_eircode_valid(ctx: ValidationContext) -> list[tuple[int, str, str]]:
     """Check that the eircode is valid."""
     if not ctx.field_names:
@@ -264,6 +278,7 @@ PROJECT_VALIDATION_REGISTRY: dict[str, Callable[[ValidationContext], list[tuple[
     "phone_numbers_valid": _strategy_phone_numbers_valid,
     "eircode_valid": _strategy_eircode_valid,
     "ni_postcode_valid": _strategy_ni_postcode_valid,
+    "num_characters_valid": _strategy_num_characters_valid,
 }
 
 
