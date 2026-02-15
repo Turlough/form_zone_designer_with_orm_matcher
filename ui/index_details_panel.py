@@ -14,7 +14,8 @@ from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
 from PyQt6.QtGui import QPixmap, QImage, QFont, QIcon
 from PIL import Image
 import numpy as np
-from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
+from datetime import datetime
+from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, DateField
 
 
 class IndexDetailPanel(QWidget):
@@ -329,8 +330,20 @@ class IndexDetailPanel(QWidget):
         """Handle changes to the value text area."""
         if not self.current_field:
             return
-        
-        new_value = self.value_text_edit.toPlainText().upper()
+
+        new_value = self.value_text_edit.toPlainText()
+
+        # Auto-format DateField: when user types 4 digits (e.g. 3112), format as dd/mm/yyyy
+        if isinstance(self.current_field, DateField) and len(new_value) == 4 and new_value.isdigit():
+            dd, mm = new_value[:2], new_value[2:4]
+            year = datetime.now().year
+            formatted = f"{dd}/{mm}/{year}"
+            self.value_text_edit.blockSignals(True)
+            self.value_text_edit.setPlainText(formatted)
+            self.value_text_edit.blockSignals(False)
+            new_value = formatted
+
+        new_value = new_value.upper()
         field_name = self.current_field.name
         
         # Update local field_values

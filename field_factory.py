@@ -17,9 +17,9 @@ FIELD_TYPE_MAP = {
     "RadioButton": (RadioButton, QColor(100, 150, 0), TextValidator),
     "RadioGroup": (RadioGroup, QColor(100, 150, 0), TextValidator),
     "TextField": (TextField, QColor(0, 150, 50), TextValidator),
-    "IntegerField": (IntegerField, QColor(0, 150, 150), IntegerValidator),
-    "DecimalField": (DecimalField, QColor(0, 150, 150), DecimalValidator),
-    "DateField": (DateField, QColor(0, 150, 150), DateValidator),
+    "IntegerField": (IntegerField, QColor(0, 0, 150), IntegerValidator),
+    "DecimalField": (DecimalField, QColor(0, 0, 150), DecimalValidator),
+    "DateField": (DateField, QColor(0, 100, 250), DateValidator),
     "NumericRadioGroup": (NumericRadioGroup, QColor(0, 150, 150), IntegerValidator()),
 }
 INVALID_COLOUR = QColor(255, 0, 0)

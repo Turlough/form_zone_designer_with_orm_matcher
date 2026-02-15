@@ -893,7 +893,7 @@ class Indexer(QMainWindow):
             if rect is not None:
                 global_bottom_left = self.image_label.mapToGlobal(rect.bottomLeft())
                 current_value = self.field_values.get(field.name, "")
-                self._index_text_dialog.set_field(field.name or "TextField", current_value)
+                self._index_text_dialog.set_field(field.name or "TextField", current_value, field=field)
                 self._index_text_dialog.show_under_rect(global_bottom_left, rect.width())
 
             if hasattr(self, 'detail_panel') and self.current_page_images:
@@ -1003,7 +1003,7 @@ class Indexer(QMainWindow):
         if rect is not None:
             global_bottom_left = self.image_label.mapToGlobal(rect.bottomLeft())
             current_value = self.field_values.get(next_field.name, "")
-            self._index_text_dialog.set_field(next_field.name or "TextField", current_value)
+            self._index_text_dialog.set_field(next_field.name or "TextField", current_value, field=next_field)
             self._index_text_dialog.show_under_rect(global_bottom_left, rect.width())
 
     def on_detail_panel_edit_completed(self, field_name: str):

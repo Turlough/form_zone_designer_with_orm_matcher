@@ -21,7 +21,7 @@ def is_date(value: str) -> bool:
         return False # is empty has already been tested
     else:
         try:
-            datetime.datetime.strptime(value, "d%/m%/yyyy")
+            datetime.datetime.strptime(value, "%d/%m/%Y")
             return True
         except ValueError:
             return False

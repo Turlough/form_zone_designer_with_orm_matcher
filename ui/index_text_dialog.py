@@ -1,5 +1,7 @@
+from datetime import datetime
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint
+from fields import DateField
 
 # Fixed height for the dialog: one line of text (line edit + minimal padding).
 # Large enough to show one line; total window height includes title bar.
@@ -24,6 +26,7 @@ class IndexTextDialog(QDialog):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         self._field_name = ""
+        self._field = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         self._line_edit = QLineEdit()
@@ -33,9 +36,10 @@ class IndexTextDialog(QDialog):
         layout.addWidget(self._line_edit)
         self.setFixedHeight(SINGLE_LINE_DIALOG_HEIGHT)
 
-    def set_field(self, field_name: str, initial_value: str = ""):
-        """Set the field name (window title) and initial text."""
+    def set_field(self, field_name: str, initial_value: str = "", field=None):
+        """Set the field name (window title), initial text, and optional field for type-specific behaviour."""
         self._field_name = field_name or ""
+        self._field = field
         self.setWindowTitle(self._field_name or "TextField")
         self._line_edit.blockSignals(True)
         self._line_edit.setText(initial_value or "")
@@ -52,9 +56,21 @@ class IndexTextDialog(QDialog):
         return self._field_name
 
     def _on_text_changed(self, text: str):
-        if self._field_name:
-            text = text.upper()
-            self.text_changed.emit(self._field_name, text)
+        if not self._field_name:
+            return
+
+        # Auto-format DateField: when user types 4 digits (e.g. 3112), format as dd/mm/yyyy
+        if isinstance(self._field, DateField) and len(text) == 4 and text.isdigit():
+            dd, mm = text[:2], text[2:4]
+            year = datetime.now().year
+            formatted = f"{dd}/{mm}/{year}"
+            self._line_edit.blockSignals(True)
+            self._line_edit.setText(formatted)
+            self._line_edit.blockSignals(False)
+            text = formatted
+
+        text = text.upper()
+        self.text_changed.emit(self._field_name, text)
 
     def _on_return_pressed(self):
         """Handle Enter in the dialog: complete this field and hide the dialog."""
