@@ -8,7 +8,8 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QListWidget, QListWidgetItem, QLabel, QScrollArea, QPushButton,
-    QDialog, QLineEdit, QDialogButtonBox, QFileDialog, QMessageBox
+    QDialog, QLineEdit, QDialogButtonBox, QFileDialog, QMessageBox,
+    QStyledItemDelegate,
 )
 from PyQt6.QtCore import Qt, QSize, QPoint, QRect
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent, QFont, QIcon
@@ -32,6 +33,52 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 nav_widget_height = 100 # pixels
+
+# Bar dimensions for document list completion indicator
+_completion_bar_width = 48
+_completion_bar_height = 8
+
+
+class DocumentListDelegate(QStyledItemDelegate):
+    """Paints document list items with filename and a small completion bar (green=filled, red=blank)."""
+
+    def paint(self, painter, option, index):
+        text = index.data(Qt.ItemDataRole.DisplayRole) or ""
+        data = index.data(Qt.ItemDataRole.UserRole)
+        filled, total = data if isinstance(data, tuple) and len(data) == 2 else (0, 0)
+
+        rect = option.rect
+        margin = 2
+        bar_rect = QRect(
+            rect.right() - _completion_bar_width - margin,
+            rect.center().y() - _completion_bar_height // 2,
+            _completion_bar_width,
+            _completion_bar_height,
+        )
+        text_rect = rect.adjusted(margin, 0, -_completion_bar_width - margin * 2, 0)
+
+        # Draw background and text in text area only (so text doesn't overlap bar)
+        opt = type(option)(option)
+        opt.rect = text_rect
+        super().paint(painter, opt, index)
+
+        # Draw completion bar: green (filled) | red (blank)
+        if total > 0:
+            filled_ratio = filled / total
+            green_width = int(bar_rect.width() * filled_ratio)
+            if green_width > 0:
+                painter.fillRect(bar_rect.x(), bar_rect.y(), green_width, bar_rect.height(), QColor("#2e7d32"))
+            if green_width < bar_rect.width():
+                painter.fillRect(
+                    bar_rect.x() + green_width, bar_rect.y(),
+                    bar_rect.width() - green_width, bar_rect.height(),
+                    QColor("#c62828"),
+                )
+
+    def sizeHint(self, option, index):
+        base = super().sizeHint(option, index)
+        return QSize(max(base.width(), 120), base.height())
+
 
 class Indexer(QMainWindow):
     """Main window for the Field Indexer application."""
@@ -171,6 +218,7 @@ class Indexer(QMainWindow):
         left_panel = QVBoxLayout()
         
         self.tiff_list = QListWidget()
+        self.tiff_list.setItemDelegate(DocumentListDelegate(self.tiff_list))
         self.tiff_list.currentRowChanged.connect(self.on_document_selected)
         left_panel.addWidget(self.tiff_list)
         
@@ -254,9 +302,12 @@ class Indexer(QMainWindow):
             self.csv_manager.load_csv(file_path, self.json_folder)
             self.document_paths = self.csv_manager.get_document_paths()
             self.tiff_list.clear()
-            for document_path in self.document_paths:
+            for i, document_path in enumerate(self.document_paths):
                 filename = os.path.basename(document_path)
-                self.tiff_list.addItem(filename)
+                item = QListWidgetItem(filename)
+                filled, total = self._get_document_completion(i)
+                item.setData(Qt.ItemDataRole.UserRole, (filled, total))
+                self.tiff_list.addItem(item)
             logger.info("Loaded %d documents", len(self.document_paths))
 
             # Create ProjectValidations for this batch (owns LookupManager)
@@ -273,6 +324,27 @@ class Indexer(QMainWindow):
         except Exception as e:
             logger.warning("Could not load import file from path %s: %s", file_path, e)
             return False
+
+    def _get_document_completion(self, row_index: int) -> tuple[int, int]:
+        """Return (filled_count, total_count) for the given document row. Excludes File and Comments."""
+        total = len(self.csv_manager.field_names)
+        if total == 0:
+            return (0, 0)
+        filled = 0
+        for name in self.csv_manager.field_names:
+            val = self.csv_manager.get_field_value(row_index, name)
+            if val is not None and str(val).strip():
+                filled += 1
+        return (filled, total)
+
+    def _refresh_document_completion_bar(self, row_index: int) -> None:
+        """Update the completion bar for the document at row_index."""
+        item = self.tiff_list.item(row_index)
+        if item is not None:
+            filled, total = self._get_document_completion(row_index)
+            item.setData(Qt.ItemDataRole.UserRole, (filled, total))
+            idx = self.tiff_list.indexFromItem(item)
+            self.tiff_list.viewport().update(self.tiff_list.visualRect(idx))
 
     def _try_restore_last_session(self) -> None:
         """Restore last import file, config folder (project), and page from persisted state if valid."""
@@ -689,6 +761,7 @@ class Indexer(QMainWindow):
                 'Ticked' if new_value else ''
             )
             self.csv_manager.save_csv()
+            self._refresh_document_completion_bar(self.current_document_index)
             
             # Update display
             self.image_label.update_display()
@@ -722,6 +795,7 @@ class Indexer(QMainWindow):
                 sub_field.name
             )
             self.csv_manager.save_csv()
+            self._refresh_document_completion_bar(self.current_document_index)
             
             # Update display
             self.image_label.update_display()
@@ -786,6 +860,7 @@ class Indexer(QMainWindow):
             new_value
         )
         self.csv_manager.save_csv()
+        self._refresh_document_completion_bar(self.current_document_index)
 
         # Update display
         self.image_label.update_display()
@@ -810,6 +885,7 @@ class Indexer(QMainWindow):
         self.image_label.field_values = self.field_values.copy()
         self.csv_manager.set_field_value(self.current_document_index, field_name, new_value)
         self.csv_manager.save_csv()
+        self._refresh_document_completion_bar(self.current_document_index)
         self.image_label.update_display()
         logger.info(f"Field '{field_name}' value changed to '{new_value}' via text dialog")
 
