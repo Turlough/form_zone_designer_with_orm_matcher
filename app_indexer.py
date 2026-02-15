@@ -104,6 +104,9 @@ class Indexer(QMainWindow):
         # Project validations (created when batch loads; one per batch)
         self.project_validations: ProjectValidations | None = None
         
+        # Template page dimensions (width, height) per page, loaded when project is selected
+        self.template_page_dimensions: list[tuple[int, int]] = []
+        
         # Current state
         # NOTE: Historically this indexer worked only with TIFFs. These fields
         # are now document-agnostic and can point at TIFF, PDF, etc.
@@ -158,6 +161,9 @@ class Indexer(QMainWindow):
         self.json_folder = str(config_path / "json")
         self.project_validations = None  # Reset when switching project
 
+        # Load template page dimensions for rescaling survey pages
+        self._load_template_page_dimensions(config_path)
+
         # Find logo in fiducials subfolder (same convention as form_zone_designer)
         fiducials = config_path / 'fiducials'
         logo_candidates = ['logo.png', 'logo.tif', 'fiducial.png', 'fiducial.jpg']
@@ -174,11 +180,10 @@ class Indexer(QMainWindow):
         if hasattr(self, '_index_menu_bar'):
             self._index_menu_bar.set_current_project_path(self.config_folder)
         save_state(last_indexer_config_folder=self.config_folder)
-        self._update_window_title()
         logger.info("Project selected: %s (json=%s, logo=%s)", self.config_folder, self.json_folder, self.logo_path)
-        # Refresh current page if one is displayed (uses new json_folder and matcher)
-        if self.current_page_images:
-            self.display_current_page()
+        # New project invalidates current batch; clear documents and display
+        self._clear_batch()
+        self._update_window_title()
 
     def _load_qc_comment_presets(self, config_path: Path) -> None:
         """Load preset QC comments from qc_comments.txt for the current project, if present."""
@@ -194,6 +199,54 @@ class Indexer(QMainWindow):
                         self._qc_comment_presets.append(text)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not read qc_comments.txt at %s: %s", qc_found, exc)
+
+    def _load_template_page_dimensions(self, config_path: Path) -> None:
+        """Load (width, height) for each page of the project template. Clears on failure."""
+        self.template_page_dimensions = []
+        template_path = find_file_case_insensitive(config_path, "template.tif")
+        if template_path is None or not template_path.is_file():
+            logger.warning("Template not found in %s, rescaling disabled", config_path)
+            return
+        try:
+            with Image.open(template_path) as img:
+                page_num = 0
+                while True:
+                    try:
+                        img.seek(page_num)
+                        self.template_page_dimensions.append((img.width, img.height))
+                        page_num += 1
+                    except EOFError:
+                        break
+            logger.info("Loaded template dimensions for %d pages", len(self.template_page_dimensions))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not read template dimensions from %s: %s", template_path, exc)
+            self.template_page_dimensions = []
+
+    def _clear_batch(self) -> None:
+        """Clear current batch, document list, and displayed images."""
+        self.document_paths = []
+        self.current_document_index = -1
+        self.current_page_index = 0
+        self.current_page_images = []
+        self.page_fields = []
+        self.page_bbox = None
+        self.field_values = {}
+        self.page_comments = {}
+        self.current_field = None
+        self.csv_manager.csv_path = None
+        self.csv_manager.csv_dir = None
+        self.csv_manager.rows = []
+        self.csv_manager.headers = []
+        self.csv_manager.field_names = []
+        self.tiff_list.clear()
+        self.page_info_label.setText("No file loaded")
+        self.image_label.set_image(None)
+        if hasattr(self, "detail_panel"):
+            self.detail_panel.set_current_field(None, page_fields=[], field_values={}, field_comments={})
+        if self.prev_button is not None:
+            self.prev_button.setEnabled(False)
+        if self.next_button is not None:
+            self.next_button.setEnabled(False)
     
     def init_ui(self):
         """Initialize the user interface."""
@@ -499,6 +552,18 @@ class Indexer(QMainWindow):
         
         # Get PIL image
         pil_image = self.current_page_images[page_num]
+        
+        # Rescale to template dimensions if they differ (survey pages may have different size)
+        if (self.template_page_dimensions and
+                page_num < len(self.template_page_dimensions)):
+            target_w, target_h = self.template_page_dimensions[page_num]
+            w, h = pil_image.size
+            if (w, h) != (target_w, target_h):
+                pil_image = pil_image.resize(
+                    (target_w, target_h),
+                    Image.Resampling.LANCZOS,
+                )
+                logger.debug("Rescaled page %d from %dx%d to %dx%d", page_num + 1, w, h, target_w, target_h)
         
         # Convert to QPixmap
         img_array = np.array(pil_image)
