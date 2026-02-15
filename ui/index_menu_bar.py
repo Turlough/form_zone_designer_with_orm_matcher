@@ -20,10 +20,14 @@ class IndexMenuBar(QMenuBar):
     validate_document_requested = pyqtSignal()  # User chose QC > Validate document
     validate_batch_requested = pyqtSignal()  # User chose QC > Validate batch
 
+    # Special batch folder names (used for "Other batch" submenu and filtering)
+    _OTHER_BATCH_FOLDERS = ("_in_progress", "_complete", "_qc")
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._designer_config_folder = os.getenv("DESIGNER_CONFIG_FOLDER", "").strip()
         self._current_project_path: str | None = None
+        self._batch_source_folder: str | None = None  # None = main folder; else _in_progress/_complete/_qc
         self._init_project_menu()
         self._init_batch_menu()
         self._init_qc_menu()
@@ -114,11 +118,36 @@ class IndexMenuBar(QMenuBar):
             action.setEnabled(False)
             return
 
+        # First item: "Other batch" submenu to switch source folder
+        other_menu = self._batch_menu.addMenu("Other batch")
+        _labels = {"_in_progress": "In progress", "_complete": "Complete", "_qc": "QC"}
+        for folder_name in self._OTHER_BATCH_FOLDERS:
+            sub_path = base / folder_name
+            if sub_path.is_dir():
+                action = other_menu.addAction(_labels[folder_name])
+                action.triggered.connect(
+                    lambda checked=False, f=folder_name: self._on_other_batch_folder_chosen(f)
+                )
+
+        if self._batch_source_folder is not None:
+            action = self._batch_menu.addAction("← Back to main batches")
+            action.triggered.connect(self._on_back_to_main_batches)
+            self._batch_menu.addSeparator()
+
+        # Resolve base: main folder or chosen subfolder
+        if self._batch_source_folder:
+            base = base / self._batch_source_folder
+            if not base.is_dir():
+                action = self._batch_menu.addAction(f"(Folder {self._batch_source_folder} not found)")
+                action.setEnabled(False)
+                return
+
         # Collect direct subfolders that contain the import file.
-        # Skip special folders used for coordination between indexers.
+        # When using main folder, skip special coordination folders.
+        skip_folders = set(self._OTHER_BATCH_FOLDERS) if self._batch_source_folder is None else set()
         candidates = []
         for d in sorted(p for p in base.iterdir() if p.is_dir() and not p.name.startswith(".")):
-            if d.name in {"_in_progress", "_complete", "_qc"}:
+            if d.name in skip_folders:
                 continue
             candidate_file = find_file_case_insensitive(d, import_filename)
             if candidate_file is not None:
@@ -129,11 +158,21 @@ class IndexMenuBar(QMenuBar):
             action.setEnabled(False)
             return
 
+        if self._batch_source_folder is None:
+            self._batch_menu.addSeparator()
         for folder_name, file_path in candidates:
             action = self._batch_menu.addAction(folder_name)
             action.triggered.connect(
                 lambda checked=False, p=str(file_path): self._on_batch_selected(p)
             )
+
+    def _on_other_batch_folder_chosen(self, folder_name: str) -> None:
+        """Switch batch source to the chosen folder (_in_progress, _complete, _qc)."""
+        self._batch_source_folder = folder_name
+
+    def _on_back_to_main_batches(self) -> None:
+        """Switch batch source back to main folder."""
+        self._batch_source_folder = None
 
     def _on_batch_selected(self, import_file_path: str) -> None:
         """
@@ -211,7 +250,7 @@ class IndexMenuBar(QMenuBar):
         """Build QC (Quality Control) menu."""
         self._qc_menu = QMenu("QC", self)
         self.addMenu(self._qc_menu)
-        
+
         # Document QC menu
         action_doc = self._qc_menu.addAction("Validate document")
         action_doc.triggered.connect(self._on_validate_document_triggered)
