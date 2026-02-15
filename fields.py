@@ -148,6 +148,12 @@ class DecimalField(TextField):
         self.colour = (0, 150, 150)
 
 
+@dataclass
+class DateField(TextField):
+    def __post_init__(self):
+        super().__post_init__()
+        self.colour = (0, 150, 150)
+
 
 FIELD_TYPE_MAP = {
     "Tickbox": Tickbox,
@@ -156,5 +162,6 @@ FIELD_TYPE_MAP = {
     "TextField": TextField,
     "IntegerField": IntegerField,
     "DecimalField": DecimalField,
+    "DateField": DateField,
     "NumericRadioGroup": NumericRadioGroup,
 }

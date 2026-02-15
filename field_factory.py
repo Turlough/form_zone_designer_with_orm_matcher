@@ -6,9 +6,10 @@ from fields import TextField
 from fields import IntegerField
 from fields import DecimalField
 from fields import NumericRadioGroup
+from fields import DateField
 from PyQt6.QtGui import QColor
 
-from util.validation.indexer_validations import TextValidator, IntegerValidator, DecimalValidator
+from util.validation.indexer_validations import TextValidator, IntegerValidator, DecimalValidator, DateValidator
 
 # Class, Display colour, Validation class
 FIELD_TYPE_MAP = {
@@ -18,7 +19,8 @@ FIELD_TYPE_MAP = {
     "TextField": (TextField, QColor(0, 150, 50), TextValidator),
     "IntegerField": (IntegerField, QColor(0, 150, 150), IntegerValidator),
     "DecimalField": (DecimalField, QColor(0, 150, 150), DecimalValidator),
-    "NumericRadioGroup": (NumericRadioGroup, QColor(0, 150, 150), TextValidator()),
+    "DateField": (DateField, QColor(0, 150, 150), DateValidator),
+    "NumericRadioGroup": (NumericRadioGroup, QColor(0, 150, 150), IntegerValidator()),
 }
 INVALID_COLOUR = QColor(255, 0, 0)
 

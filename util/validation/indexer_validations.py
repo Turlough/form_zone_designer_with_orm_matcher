@@ -1,4 +1,5 @@
 from typing import Any
+import datetime
 
 def contains_text(value: str) -> bool:
     return value is not None and value.strip() != ""
@@ -15,6 +16,15 @@ def is_decimal(value: str) -> bool:
     else:
         return value.replace(".", "", 1).isdigit()
 
+def is_date(value: str) -> bool:
+    if value is None or value.strip() == "":
+        return False # is empty has already been tested
+    else:
+        try:
+            datetime.datetime.strptime(value, "d%/m%/yyyy")
+            return True
+        except ValueError:
+            return False
 
 class Validator:
     tests: list[callable]
@@ -43,3 +53,7 @@ class DecimalValidator(Validator):
         super().__init__(float)
         self.tests = [contains_text, is_decimal]
 
+class DateValidator(Validator):
+    def __init__(self):
+        super().__init__(str)
+        self.tests = [contains_text, is_date]
