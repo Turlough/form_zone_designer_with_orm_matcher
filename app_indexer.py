@@ -202,9 +202,12 @@ class Indexer(QMainWindow):
         self._index_menu_bar.project_selected.connect(self._apply_config_folder)
         self._index_menu_bar.batch_import_selected.connect(self._on_batch_import_selected)
         self._index_menu_bar.ocr_requested.connect(self._on_ocr_requested)
-        self._index_menu_bar.review_batch_comments_requested.connect(self._on_review_batch_comments_requested)
+        # QC menu
         self._index_menu_bar.validate_document_requested.connect(self._on_validate_document_requested)
+        self._index_menu_bar.review_document_comments_requested.connect(self._on_review_document_comments_requested)
+
         self._index_menu_bar.validate_batch_requested.connect(self._on_validate_batch_requested)
+        self._index_menu_bar.review_batch_comments_requested.connect(self._on_review_batch_comments_requested)
 
         self.setMenuBar(self._index_menu_bar)
 
@@ -1031,6 +1034,37 @@ class Indexer(QMainWindow):
                 field_values=self.field_values,
                 field_comments=self.page_comments,
             )
+
+    def _on_review_document_comments_requested(self) -> None:
+        """Handle QC > Review document comments: show only comments for the current document."""
+        if not self.document_paths:
+            QMessageBox.information(
+                self,
+                "No batch loaded",
+                "Load a batch first (Batch menu).",
+            )
+            return
+
+        row_idx = self.current_document_index
+        comments_str = self.csv_manager.get_field_value(row_idx, "Comments") or ""
+        row_comments = Comments.from_string(comments_str)
+        checklist: list[tuple[int, Comment]] = []
+        for c in sorted(row_comments.comments.values(), key=lambda x: (x.page, x.field)):
+            if c.comment.strip():
+                checklist.append((row_idx, c))
+
+        if not checklist:
+            QMessageBox.information(
+                self,
+                "No comments",
+                "There are no QC comments in this document.",
+            )
+            return
+
+        self._qc_review_checklist = checklist
+        self._qc_review_index = 0
+        self._qc_review_dialog_positioned = False
+        self._show_current_qc_review_comment()
 
     def _on_review_batch_comments_requested(self) -> None:
         """Handle QC > Review batch comments: iterate through all comments in the batch."""

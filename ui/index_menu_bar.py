@@ -16,6 +16,7 @@ class IndexMenuBar(QMenuBar):
     batch_import_selected = pyqtSignal(str)  # Emits full path to selected batch import file
     ocr_requested = pyqtSignal()  # User chose to OCR the current text field
     review_batch_comments_requested = pyqtSignal()  # User chose QC > Review batch comments
+    review_document_comments_requested = pyqtSignal()  # User chose QC > Review document comments
     validate_document_requested = pyqtSignal()  # User chose QC > Validate document
     validate_batch_requested = pyqtSignal()  # User chose QC > Validate batch
 
@@ -212,9 +213,12 @@ class IndexMenuBar(QMenuBar):
         self.addMenu(self._qc_menu)
         action_doc = self._qc_menu.addAction("Validate document")
         action_doc.triggered.connect(self._on_validate_document_triggered)
-        action_batch = self._qc_menu.addAction("Validate batch")
+        action_doc = self._qc_menu.addAction("Review document comments")
+        action_doc.triggered.connect(self._on_review_document_comments_triggered)
+        qc_batch_menu = self._qc_menu.addMenu("QC batch")
+        action_batch = qc_batch_menu.addAction("Validate batch")
         action_batch.triggered.connect(self._on_validate_batch_triggered)
-        action = self._qc_menu.addAction("Review batch comments")
+        action = qc_batch_menu.addAction("Review batch comments")
         action.triggered.connect(self._on_review_batch_comments_triggered)
 
     def _on_validate_document_triggered(self) -> None:
@@ -228,6 +232,10 @@ class IndexMenuBar(QMenuBar):
     def _on_review_batch_comments_triggered(self) -> None:
         """Emit signal when Review batch comments is chosen."""
         self.review_batch_comments_requested.emit()
+
+    def _on_review_document_comments_triggered(self) -> None:
+        """Emit signal when Review document comments is chosen."""
+        self.review_document_comments_requested.emit()
 
     def _init_cloud_vision_menu(self) -> None:
         """Build Cloud Vision menu."""
