@@ -1150,6 +1150,8 @@ class Indexer(QMainWindow):
             if failures
             else "No validation failures found."
         )
+        if failures:
+            self._on_review_document_comments_requested()
         QMessageBox.information(self, "Validation", msg)
 
     def _on_validate_batch_requested(self) -> None:
@@ -1208,6 +1210,8 @@ class Indexer(QMainWindow):
             if total_failures
             else f"Validated {n_docs} document(s). No validation failures found."
         )
+        if total_failures > 0:
+            self._on_review_batch_comments_requested()
         QMessageBox.information(self, "Validation", msg)
 
     def _show_current_qc_review_comment(self) -> None:
