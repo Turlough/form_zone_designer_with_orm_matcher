@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import json
 import csv
@@ -624,7 +625,11 @@ class Exporter(QMainWindow):
         """
         Convert a (possibly multipage) TIFF file into a multipage PDF at
         ``pdf_path``. One TIFF becomes one PDF with the same number of pages.
+        If the source is already a PDF, copy and rename it to ``pdf_path``.
         """
+        if Path(tiff_path).suffix.lower() == ".pdf":
+            shutil.copy2(tiff_path, pdf_path)
+            return
         try:
             with Image.open(tiff_path) as img:
                 frames = []
