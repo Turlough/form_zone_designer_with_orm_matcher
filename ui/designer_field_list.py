@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QMenu, QApplication
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint
 from PyQt6.QtGui import QDropEvent, QPainter, QPen
 import json
 import logging
@@ -27,6 +27,8 @@ class DesignerFieldList(QTableWidget):
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setAlternatingRowColors(True)
         self.setAcceptDrops(True)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._on_context_menu_requested)
         
         # Store field identifiers (name, type) for each row in order
         # This is lightweight and only tracks order - full data comes from page_field_list
@@ -54,6 +56,19 @@ class DesignerFieldList(QTableWidget):
         
         # Call parent to handle the actual drag operation
         super().startDrag(supportedActions)
+
+    def _on_context_menu_requested(self, pos: QPoint):
+        """Show context menu and copy field name to clipboard on selection."""
+        index = self.indexAt(pos)
+        if not index.isValid() or index.row() >= len(self._field_order):
+            return
+        field_name, _ = self._field_order[index.row()]
+        menu = QMenu(self)
+        copy_action = menu.addAction("Copy field name")
+        action = menu.exec(self.mapToGlobal(pos))
+        if action == copy_action:
+            clipboard = QApplication.clipboard()
+            clipboard.setText(field_name)
 
     def dragMoveEvent(self, event):
         """Show a visual insertion line between rows while dragging."""
