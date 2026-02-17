@@ -11,11 +11,47 @@ from PyQt6.QtWidgets import (
     QStyle,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
-from PyQt6.QtGui import QPixmap, QImage, QFont, QIcon
+from PyQt6.QtGui import QPixmap, QImage, QFont, QIcon, QTextCursor
 from PIL import Image
 import numpy as np
 from datetime import datetime
-from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, DateField
+from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, DateField, IntegerField, DecimalField
+
+
+_THOUSANDS_SEP = "\u202f"  # Narrow no-break space
+
+
+def _add_thousands(s: str, sep: str = _THOUSANDS_SEP) -> str:
+    """Add thousands separator. Preserves leading minus."""
+    neg = s.startswith("-")
+    s = s.lstrip("-")
+    parts = []
+    for i in range(len(s), 0, -3):
+        parts.append(s[max(0, i - 3) : i])
+    return ("-" if neg else "") + sep.join(reversed(parts))
+
+
+def _format_number_for_display(s: str) -> str:
+    """Add thousands separator for display only. Returns s unchanged if not a valid number."""
+    s = s.strip()
+    if not s:
+        return s
+    s_clean = _strip_thousands_separators(s)
+    try:
+        if "." in s_clean:
+            int_part, dec_part = s_clean.rsplit(".", 1)
+            if dec_part.isdigit() and (int_part.replace("-", "").isdigit() or int_part in ("-", "")):
+                return _add_thousands(int_part) + "." + dec_part
+        if s_clean.replace("-", "").isdigit():
+            return _add_thousands(s_clean)
+    except Exception:
+        pass
+    return s
+
+
+def _strip_thousands_separators(s: str) -> str:
+    """Remove thousands separators. Keeps decimal point."""
+    return s.replace(" ", "").replace(_THOUSANDS_SEP, "").replace(",", "")
 
 
 class IndexDetailPanel(QWidget):
@@ -173,6 +209,8 @@ class IndexDetailPanel(QWidget):
                 value_str = "Ticked" if current_value else ""
             else:
                 value_str = str(current_value) if current_value else ""
+            if isinstance(self.current_field, (IntegerField, DecimalField)):
+                value_str = _format_number_for_display(value_str)
             
             # Block signals to avoid triggering change event while updating
             self.value_text_edit.blockSignals(True)
@@ -297,6 +335,8 @@ class IndexDetailPanel(QWidget):
                 value_str = "Ticked" if value else ""
             else:
                 value_str = str(value) if value else ""
+            if isinstance(field, (IntegerField, DecimalField)):
+                value_str = _format_number_for_display(value_str)
             
             # Truncate if too long
             max_length = 50
@@ -343,7 +383,19 @@ class IndexDetailPanel(QWidget):
             self.value_text_edit.blockSignals(False)
             new_value = formatted
 
-        new_value = new_value.upper()
+        # IntegerField/DecimalField: strip thousands separators before storing
+        if isinstance(self.current_field, (IntegerField, DecimalField)):
+            new_value = _strip_thousands_separators(new_value)
+            formatted = _format_number_for_display(new_value)
+            if formatted != self.value_text_edit.toPlainText():
+                self.value_text_edit.blockSignals(True)
+                self.value_text_edit.setPlainText(formatted)
+                cursor = self.value_text_edit.textCursor()
+                cursor.movePosition(QTextCursor.MoveOperation.End)
+                self.value_text_edit.setTextCursor(cursor)
+                self.value_text_edit.blockSignals(False)
+        else:
+            new_value = new_value.upper()
         field_name = self.current_field.name
         
         # Update local field_values
