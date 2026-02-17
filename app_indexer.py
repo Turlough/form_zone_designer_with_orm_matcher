@@ -1412,11 +1412,13 @@ class Indexer(QMainWindow):
 
     def _complete_current_batch(self) -> None:
         """
-        Mark the current batch as completed by moving its folder into the
-        '_qc' subfolder of the configured batch_folder, when possible.
+        Mark the current batch as completed by moving its folder.
+
+        - Indexing staff (batch from main or _in_progress): move to _qc.
+        - QC staff (batch from _qc or _qc/_in_progress): move to _complete.
 
         This relies on the current CSV path being located somewhere under the
-        configured batch_folder (typically under '_in_progress/<batch_name>').
+        configured batch_folder.
         """
         csv_path = getattr(self.csv_manager, "csv_path", None)
         if not csv_path:
@@ -1453,6 +1455,11 @@ class Indexer(QMainWindow):
         # - <batch_root>/<batch_name>
         # - <batch_root>/_in_progress/<batch_name>
         # - <batch_root>/_complete/<batch_name> (already completed)
+        # - <batch_root>/_qc/<batch_name>
+        # - <batch_root>/_qc/_in_progress/<batch_name>
+        source_dir: Path | None = None
+        move_to_complete = False  # True when completing from QC -> _complete; else -> _qc
+
         if len(parts) == 1:
             # Direct child of batch_root.
             source_dir = batch_root / parts[0]
@@ -1461,11 +1468,19 @@ class Indexer(QMainWindow):
         elif len(parts) == 2 and parts[0] == "_complete":
             # Already marked complete.
             return
+        elif len(parts) == 2 and parts[0] == "_qc":
+            # QC staff: batch loaded directly from _qc.
+            source_dir = batch_root / "_qc" / parts[1]
+            move_to_complete = True
+        elif len(parts) == 3 and parts[0] == "_qc" and parts[1] == "_in_progress":
+            # QC staff: batch moved to _qc/_in_progress when selected.
+            source_dir = batch_root / "_qc" / "_in_progress" / parts[2]
+            move_to_complete = True
         else:
             # Unexpected nesting; don't attempt to move.
             return
 
-        if not source_dir.exists():
+        if source_dir is None or not source_dir.exists():
             return
 
         qc_root = batch_root / "_qc"
@@ -1482,11 +1497,13 @@ class Indexer(QMainWindow):
             logger.warning("Could not ensure _complete folder exists under %s", batch_root)
             return
 
-        dest_dir = qc_root / source_dir.name
+        dest_root = complete_root if move_to_complete else qc_root
+        dest_dir = dest_root / source_dir.name
 
         # If destination already exists, do not overwrite – just log it.
         if dest_dir.exists():
-            logger.warning("Destination batch folder already exists in _qc: %s", dest_dir)
+            dest_name = "_complete" if move_to_complete else "_qc"
+            logger.warning("Destination batch folder already exists in %s: %s", dest_name, dest_dir)
             return
 
         try:
