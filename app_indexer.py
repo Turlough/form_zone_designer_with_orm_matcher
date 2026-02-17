@@ -1509,6 +1509,7 @@ class Indexer(QMainWindow):
         try:
             source_dir.rename(dest_dir)
             logger.info("Moved batch folder from %s to %s", source_dir, dest_dir)
+            self._clear_batch()
         except Exception as e:
             logger.warning("Could not move batch folder %s to %s: %s", source_dir, dest_dir, e)
 
