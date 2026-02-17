@@ -1,6 +1,6 @@
 import unittest
 
-from util.validation.indexer_validations import TextValidator, IntegerValidator, DecimalValidator
+from util.validation import TextValidator, IntegerValidator, DecimalValidator
 
 
 class TestTextValidator(unittest.TestCase):

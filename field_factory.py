@@ -9,7 +9,7 @@ from fields import NumericRadioGroup
 from fields import DateField
 from PyQt6.QtGui import QColor
 
-from util.validation.indexer_validations import TextValidator, IntegerValidator, DecimalValidator, DateValidator
+from util.validation import TextValidator, IntegerValidator, DecimalValidator, DateValidator
 
 # Class, Display colour, Validation class
 FIELD_TYPE_MAP = {

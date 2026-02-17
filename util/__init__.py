@@ -7,4 +7,4 @@ from .orm_matcher import ORMMatcher
 from .designer_config import DesignerConfig
 from .csv_manager import CSVManager
 from .lookup_manager import LookupManager
-from .validation.project_validations import ProjectValidations
+from .validation import ProjectValidations

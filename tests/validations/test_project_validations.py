@@ -2,7 +2,7 @@
 import unittest
 from pathlib import Path
 
-from util.validation.project_validations import (
+from util.validation import (
     ValidationContext,
     ProjectValidations,
     PROJECT_VALIDATION_REGISTRY,
