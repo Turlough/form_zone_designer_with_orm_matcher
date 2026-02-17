@@ -40,10 +40,10 @@ class ValidationContext:
     lookup_manager: LookupManager | None
     row_index: int
 
-def __str__(self):
-    return f"ValidationContext(field_values={self.field_values}, field_names={self.field_names}, params={self.params}, field_to_page={self.field_to_page}, lookup_manager={self.lookup_manager}, row_index={self.row_index})"
-def __repr__(self):
-    return self.__str__()
+    def __str__(self):
+        return f"ValidationContext(field_values={self.field_values}, field_names={self.field_names}, params={self.params}, field_to_page={self.field_to_page}, lookup_manager={self.lookup_manager}, row_index={self.row_index})"
+    def __repr__(self):
+        return self.__str__()
 
 
 def _is_ticked(value: Any) -> bool:
