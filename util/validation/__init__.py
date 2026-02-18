@@ -2,7 +2,7 @@
 
 from .project_validations import ProjectValidations
 from .strategies import PROJECT_VALIDATION_REGISTRY, ValidationContext
-from .indexer_validations import (
+from .field_validations import (
     TextValidator,
     IntegerValidator,
     DecimalValidator,
