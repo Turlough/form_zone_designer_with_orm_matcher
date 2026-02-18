@@ -14,7 +14,7 @@ class IndexMenuBar(QMenuBar):
 
     project_selected = pyqtSignal(str)  # Emits the selected project config folder path
     batch_import_selected = pyqtSignal(str)  # Emits full path to selected batch import file
-    ocr_requested = pyqtSignal()  # User chose to OCR the current text field
+    ocr_page_requested = pyqtSignal()  # User chose to OCR all TextFields on the current page
     review_batch_comments_requested = pyqtSignal()  # User chose QC > Review batch comments
     review_document_comments_requested = pyqtSignal()  # User chose QC > Review document comments
     validate_document_requested = pyqtSignal()  # User chose QC > Validate document
@@ -290,13 +290,13 @@ class IndexMenuBar(QMenuBar):
         """Refresh the Cloud Vision submenu."""
         self._cloud_vision_menu.clear()
         # Single OCR action; enabled/disabled by main window depending on field type
-        self._ocr_action = self._cloud_vision_menu.addAction("OCR current text field")
+        self._ocr_action = self._cloud_vision_menu.addAction("OCR current page")
         self._ocr_action.setEnabled(False)
         self._ocr_action.triggered.connect(self._on_ocr_triggered)
 
     def _on_ocr_triggered(self) -> None:
-        """Emit signal when OCR menu item is chosen."""
-        self.ocr_requested.emit()
+        """Emit signal when OCR current page menu item is chosen."""
+        self.ocr_page_requested.emit()
 
     def set_ocr_enabled(self, enabled: bool) -> None:
         """Enable or disable the OCR menu item."""

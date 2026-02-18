@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import csv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import cv2
 import numpy as np
 from pathlib import Path
@@ -11,7 +12,7 @@ from PyQt6.QtWidgets import (
     QDialog, QLineEdit, QDialogButtonBox, QFileDialog, QMessageBox,
     QStyledItemDelegate,
 )
-from PyQt6.QtCore import Qt, QSize, QPoint, QRect
+from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent, QFont, QIcon
 from PIL import Image
 from dotenv import load_dotenv
@@ -24,7 +25,7 @@ from util.path_utils import (
     find_file_case_insensitive,
 )
 from util.document_loader import get_document_loader_for_path
-from fields import Field, Tickbox, RadioButton, RadioGroup, TextField
+from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField
 import logging
 from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog, QcCommentDialog
 from util.gemini_ocr_client import ocr_image_region
@@ -35,6 +36,12 @@ logger = logging.getLogger(__name__)
 nav_widget_height = 100 # pixels
 
 # Bar dimensions for document list completion indicator
+
+
+def _sanitize_integer_ocr(text: str) -> str:
+    """For IntegerField: remove commas and non-digit characters."""
+    text = text.replace(",", "")
+    return "".join(c for c in text if c.isdigit())
 _completion_bar_width = 48
 _completion_bar_height = 8
 
@@ -78,6 +85,66 @@ class DocumentListDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index):
         base = super().sizeHint(option, index)
         return QSize(max(base.width(), 120), base.height())
+
+
+class PageOcrWorker(QObject):
+    """Worker that runs Gemini OCR on all TextFields of a page in a background thread."""
+
+    result_ready = pyqtSignal(int, str, str)  # document_index, field_name, text
+    finished = pyqtSignal()
+    error_occurred = pyqtSignal(str)
+
+    def __init__(
+        self,
+        document_index: int,
+        pil_image: Image.Image,
+        logo_tl: tuple[int, int],
+        text_fields: list,
+    ):
+        super().__init__()
+        self.document_index = document_index
+        self.pil_image = pil_image
+        self.logo_tl = logo_tl
+        self.text_fields = text_fields
+
+    def run(self) -> None:
+        """Process each TextField concurrently and emit results as they complete."""
+        def ocr_one(field) -> tuple[str, str]:
+            rect = (
+                field.x + self.logo_tl[0],
+                field.y + self.logo_tl[1],
+                field.width,
+                field.height,
+            )
+            try:
+                text = ocr_image_region(self.pil_image, rect)
+            except Exception as e:  # noqa: BLE001
+                self.error_occurred.emit(f"OCR failed for '{field.name}': {e}")
+                text = ""
+            text = text or ""
+            if isinstance(field, IntegerField):
+                text = _sanitize_integer_ocr(text)
+            return (field.name, text)
+
+        valid_fields = [
+            f for f in self.text_fields
+            if hasattr(f, "name") and f.name and f.width > 0 and f.height > 0
+        ]
+        if not valid_fields:
+            self.finished.emit()
+            return
+
+        max_workers = min(8, len(valid_fields))
+        try:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(ocr_one, f): f for f in valid_fields}
+                for future in as_completed(futures):
+                    field_name, text = future.result()
+                    self.result_ready.emit(self.document_index, field_name, text)
+        except Exception as e:  # noqa: BLE001
+            self.error_occurred.emit(str(e))
+        finally:
+            self.finished.emit()
 
 
 class Indexer(QMainWindow):
@@ -254,7 +321,7 @@ class Indexer(QMainWindow):
         self._index_menu_bar = IndexMenuBar(self)
         self._index_menu_bar.project_selected.connect(self._apply_config_folder)
         self._index_menu_bar.batch_import_selected.connect(self._on_batch_import_selected)
-        self._index_menu_bar.ocr_requested.connect(self._on_ocr_requested)
+        self._index_menu_bar.ocr_page_requested.connect(self._on_ocr_page_requested)
         # QC menu
         self._index_menu_bar.validate_document_requested.connect(self._on_validate_document_requested)
         self._index_menu_bar.review_document_comments_requested.connect(self._on_review_document_comments_requested)
@@ -1026,9 +1093,10 @@ class Indexer(QMainWindow):
     def _set_current_field(self, field: Field | None) -> None:
         """Track the currently selected field and update OCR menu state."""
         self.current_field = field
-        can_ocr = isinstance(field, TextField) and bool(self.current_page_images)
+        has_text_fields = any(isinstance(f, TextField) for f in self.page_fields)
+        can_ocr_page = bool(self.current_page_images) and has_text_fields
         if hasattr(self, "_index_menu_bar"):
-            self._index_menu_bar.set_ocr_enabled(can_ocr)
+            self._index_menu_bar.set_ocr_enabled(can_ocr_page)
 
     def _normalize_comment_field_name(self, field_name: str) -> str:
         """
@@ -1426,12 +1494,73 @@ class Indexer(QMainWindow):
 
         if text is None:
             text = ""
+        if isinstance(self.current_field, IntegerField):
+            text = _sanitize_integer_ocr(text)
 
         # Apply OCR result to the current TextField value, reusing existing plumbing
         field_name = self.current_field.name or ""
         if not field_name:
             return
         self.on_index_text_dialog_value_changed(field_name, text)
+
+    def _on_ocr_page_requested(self) -> None:
+        """OCR all TextFields on the current page asynchronously using Gemini."""
+        text_fields = [f for f in self.page_fields if isinstance(f, TextField)]
+        if not text_fields:
+            QMessageBox.warning(self, "OCR", "No text fields on this page.")
+            return
+        if not self.current_page_images:
+            QMessageBox.warning(self, "OCR", "No page is currently loaded.")
+            return
+        if self.current_document_index < 0:
+            return
+
+        pil_image = self.current_page_images[self.current_page_index]
+        logo_tl = self.page_bbox[0] if self.page_bbox else (0, 0)
+
+        worker = PageOcrWorker(
+            document_index=self.current_document_index,
+            pil_image=pil_image,
+            logo_tl=logo_tl,
+            text_fields=text_fields,
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+
+        def on_result(doc_idx: int, field_name: str, text: str) -> None:
+            self.csv_manager.set_field_value(doc_idx, field_name, text)
+            self.csv_manager.save_csv()
+            self._refresh_document_completion_bar(doc_idx)
+            if doc_idx == self.current_document_index:
+                self.field_values[field_name] = text
+                if hasattr(self, "detail_panel") and self.detail_panel.current_field and self.detail_panel.current_field.name == field_name:
+                    self.detail_panel.set_current_field(
+                        self.detail_panel.current_field,
+                        page_image=self.detail_panel.current_page_image,
+                        page_bbox=self.detail_panel.page_bbox,
+                        page_fields=self.detail_panel.page_fields,
+                        field_values=self.field_values,
+                        field_comments=self.page_comments,
+                    )
+                self.image_label.field_values = self.field_values.copy()
+                self.image_label.update_display()
+
+        def on_finished() -> None:
+            thread.quit()
+            self.statusBar().showMessage("OCR complete", 3000)
+
+        def on_error(msg: str) -> None:
+            QMessageBox.warning(self, "OCR", msg)
+
+        worker.result_ready.connect(on_result)
+        worker.finished.connect(on_finished)
+        worker.error_occurred.connect(on_error)
+        thread.started.connect(worker.run)
+        thread.start()
+
+        self._ocr_thread = thread
+        self._ocr_worker = worker
+        self.statusBar().showMessage(f"OCR running ({len(text_fields)} fields)...")
 
     def _complete_current_batch(self) -> None:
         """
