@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QListWidget, QListWidgetItem, QLabel, QScrollArea, QPushButton,
     QDialog, QLineEdit, QDialogButtonBox, QFileDialog, QMessageBox,
-    QStyledItemDelegate, QStyle,
+    QStyledItemDelegate, QStyle, QFrame,
 )
 from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent, QFont, QIcon
@@ -33,7 +33,7 @@ from util.gemini_ocr_client import ocr_image_region
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-nav_widget_height = 100 # pixels
+nav_widget_height = 80 # pixels
 
 # Bar dimensions for document list completion indicator
 
@@ -412,7 +412,7 @@ class Indexer(QMainWindow):
         self.ocr_page_button = QPushButton()
         self.ocr_page_button.setFixedHeight(nav_widget_height)
         self.ocr_page_button.setFixedWidth(nav_widget_height)
-        self.ocr_page_button.setStyleSheet("background-color: #555555; color: #2e7d32;")
+        self.ocr_page_button.setStyleSheet("background-color: #555555; color: #009900;")
         self.ocr_page_button.setIcon(
             QIcon.fromTheme(
                 "document-open",
@@ -425,6 +425,22 @@ class Indexer(QMainWindow):
         nav_layout.addWidget(self.ocr_page_button)
 
         center_panel.addWidget(nav_widget)
+
+        # Page numbers bar (narrow, under nav buttons)
+        page_numbers_height = 28
+        self.page_numbers_scroll = QScrollArea()
+        self.page_numbers_scroll.setFixedHeight(page_numbers_height)
+        self.page_numbers_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.page_numbers_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.page_numbers_scroll.setWidgetResizable(True)
+        self.page_numbers_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.page_numbers_content = QWidget()
+        self.page_numbers_layout = QHBoxLayout(self.page_numbers_content)
+        self.page_numbers_layout.setContentsMargins(0, 0, 0, 0)
+        self.page_numbers_layout.setSpacing(2)
+        self.page_numbers_scroll.setWidget(self.page_numbers_content)
+        self.page_number_buttons: list[QPushButton] = []
+        center_panel.addWidget(self.page_numbers_scroll)
 
         # Text field popup dialog (shown under clicked TextField; synced with detail panel)
         self._index_text_dialog = IndexTextDialog(self)
@@ -623,6 +639,7 @@ class Indexer(QMainWindow):
     def display_current_page(self):
         """Display the current page with fields."""
         self._index_text_dialog.hide()
+        self._update_page_numbers_bar()
         if not self.current_page_images:
             return
         
@@ -838,6 +855,44 @@ class Indexer(QMainWindow):
         self.current_page_index = prev_idx
         self.display_current_page()
         save_state(last_indexer_tiff_index=self.current_document_index, last_indexer_page_index=self.current_page_index)
+
+    def _go_to_page(self, page_index: int) -> None:
+        """Navigate directly to the given page (0-based index)."""
+        if not self.current_page_images or page_index < 0 or page_index >= len(self.current_page_images):
+            return
+        self.current_page_index = page_index
+        self.display_current_page()
+        save_state(
+            last_indexer_tiff_index=self.current_document_index,
+            last_indexer_page_index=self.current_page_index,
+        )
+
+    def _update_page_numbers_bar(self) -> None:
+        """Rebuild page number buttons and highlight the current page."""
+        if not hasattr(self, "page_number_buttons"):
+            return
+        # Clear existing buttons
+        for btn in self.page_number_buttons:
+            self.page_numbers_layout.removeWidget(btn)
+            btn.deleteLater()
+        self.page_number_buttons.clear()
+        if not self.current_page_images:
+            return
+        total = len(self.current_page_images)
+        current = self.current_page_index
+        for i in range(total):
+            btn = QPushButton(str(i + 1))
+            btn.setFixedHeight(22)
+            btn.setMinimumWidth(28)
+            btn.setToolTip(f"Go to page {i + 1}")
+            if i == current:
+                btn.setStyleSheet("background-color: #0078d4; color: white; font-weight: bold;")
+            else:
+                btn.setStyleSheet("background-color: #444444; color: #cccccc;")
+            page_idx = i
+            btn.clicked.connect(lambda checked, idx=page_idx: self._go_to_page(idx))
+            self.page_numbers_layout.addWidget(btn)
+            self.page_number_buttons.append(btn)
 
     def next_page(self):
         """Navigate to next page that has fields (skipping blank pages).
