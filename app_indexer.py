@@ -349,6 +349,7 @@ class Indexer(QMainWindow):
         self._qc_comment_dialog = QcCommentDialog(self)
         self._qc_comment_dialog.remove_clicked.connect(self._on_qc_review_remove)
         self._qc_comment_dialog.previous_clicked.connect(self._on_qc_review_previous)
+        self._qc_comment_dialog.edit_saved.connect(self._on_qc_review_edit)
         self._qc_comment_dialog.next_clicked.connect(self._on_qc_review_next)
     
     def _load_import_file_from_path(self, file_path: str, json_folder_override: str | None = None) -> bool:
@@ -1352,6 +1353,18 @@ class Indexer(QMainWindow):
             return
         self._qc_review_index -= 1
         self._show_current_qc_review_comment()
+
+    def _on_qc_review_edit(self, new_text: str) -> None:
+        """Update the current comment text in the CSV."""
+        if not hasattr(self, "_qc_review_checklist") or self._qc_review_index >= len(self._qc_review_checklist):
+            return
+        row_idx, comment = self._qc_review_checklist[self._qc_review_index]
+        comment.comment = new_text
+        existing = self.csv_manager.get_field_value(row_idx, "Comments") or ""
+        row_comments = Comments.from_string(existing)
+        row_comments.add_comment(comment)
+        self.csv_manager.set_field_value(row_idx, "Comments", row_comments.to_csv_string())
+        self.csv_manager.save_csv()
 
     def _on_qc_review_next(self) -> None:
         """Advance to the next comment without removing."""

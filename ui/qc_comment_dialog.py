@@ -7,6 +7,8 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QFrame,
+    QTextEdit,
+    QDialogButtonBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -16,11 +18,12 @@ class QcCommentDialog(QDialog):
     Non-modal dialog for reviewing a single QC comment in the batch.
 
     Displays: Page, Field name, Field value, Comment text.
-    Buttons: Previous (go back), Remove (removes comment from CSV), Next (advance).
+    Buttons: Previous, Edit (edit comment text), Remove, Next.
     """
 
     remove_clicked = pyqtSignal()
     previous_clicked = pyqtSignal()
+    edit_saved = pyqtSignal(str)  # new comment text
     next_clicked = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -31,6 +34,7 @@ class QcCommentDialog(QDialog):
             | Qt.WindowType.WindowCloseButtonHint
         )
         self.setWindowTitle("Review Comment")
+        self._current_comment_text = ""
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -75,6 +79,10 @@ class QcCommentDialog(QDialog):
         self._previous_btn.clicked.connect(self._on_previous)
         button_layout.addWidget(self._previous_btn)
 
+        self._edit_btn = QPushButton("Edit")
+        self._edit_btn.clicked.connect(self._on_edit)
+        button_layout.addWidget(self._edit_btn)
+
         self._remove_btn = QPushButton("Remove")
         self._remove_btn.setStyleSheet("background-color: #c0392b; color: white;")
         self._remove_btn.clicked.connect(self._on_remove)
@@ -96,6 +104,7 @@ class QcCommentDialog(QDialog):
         comment_text: str,
     ) -> None:
         """Set the displayed content for the current comment."""
+        self._current_comment_text = comment_text or ""
         self._page_label.setText(f"Page: {page}")
         self._field_label.setText(f"Field: {field_name or '—'}")
         self._value_label.setText(f"Field value: {field_value or '(empty)'}")
@@ -106,6 +115,27 @@ class QcCommentDialog(QDialog):
 
     def _on_previous(self) -> None:
         self.previous_clicked.emit()
+
+    def _on_edit(self) -> None:
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Edit Comment")
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(12, 12, 12, 12)
+        edit = QTextEdit()
+        edit.setPlainText(getattr(self, "_current_comment_text", ""))
+        edit.setMinimumSize(300, 120)
+        layout.addWidget(edit)
+        btn_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btn_box.accepted.connect(dlg.accept)
+        btn_box.rejected.connect(dlg.reject)
+        layout.addWidget(btn_box)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            new_text = edit.toPlainText().strip()
+            self.edit_saved.emit(new_text)
+            self._current_comment_text = new_text
+            self._comment_value.setText(new_text or "(empty)")
 
     def _on_next(self) -> None:
         self.next_clicked.emit()
