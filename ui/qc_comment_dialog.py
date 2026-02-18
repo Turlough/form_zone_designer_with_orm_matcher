@@ -16,10 +16,11 @@ class QcCommentDialog(QDialog):
     Non-modal dialog for reviewing a single QC comment in the batch.
 
     Displays: Page, Field name, Field value, Comment text.
-    Two buttons: Remove (removes comment from CSV) and Next (advance to next).
+    Buttons: Previous (go back), Remove (removes comment from CSV), Next (advance).
     """
 
     remove_clicked = pyqtSignal()
+    previous_clicked = pyqtSignal()
     next_clicked = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -70,6 +71,10 @@ class QcCommentDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
 
+        self._previous_btn = QPushButton("Previous")
+        self._previous_btn.clicked.connect(self._on_previous)
+        button_layout.addWidget(self._previous_btn)
+
         self._remove_btn = QPushButton("Remove")
         self._remove_btn.setStyleSheet("background-color: #c0392b; color: white;")
         self._remove_btn.clicked.connect(self._on_remove)
@@ -98,6 +103,9 @@ class QcCommentDialog(QDialog):
 
     def _on_remove(self) -> None:
         self.remove_clicked.emit()
+
+    def _on_previous(self) -> None:
+        self.previous_clicked.emit()
 
     def _on_next(self) -> None:
         self.next_clicked.emit()
