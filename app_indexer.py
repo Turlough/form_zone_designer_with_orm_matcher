@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QListWidget, QListWidgetItem, QLabel, QScrollArea, QPushButton,
     QDialog, QLineEdit, QDialogButtonBox, QFileDialog, QMessageBox,
-    QStyledItemDelegate,
+    QStyledItemDelegate, QStyle,
 )
 from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent, QFont, QIcon
@@ -25,7 +25,7 @@ from util.path_utils import (
     find_file_case_insensitive,
 )
 from util.document_loader import get_document_loader_for_path
-from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField
+from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField, DecimalField
 import logging
 from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog, QcCommentDialog
 from util.gemini_ocr_client import ocr_image_region
@@ -42,6 +42,13 @@ def _sanitize_integer_ocr(text: str) -> str:
     """For IntegerField: remove commas and non-digit characters."""
     text = text.replace(",", "")
     return "".join(c for c in text if c.isdigit())
+
+
+def _sanitize_decimal_ocr(text: str) -> str:
+    """For DecimalField: remove any characters except digits and period."""
+    return "".join(c for c in text if c.isdigit() or c == ".")
+
+
 _completion_bar_width = 48
 _completion_bar_height = 8
 
@@ -124,6 +131,8 @@ class PageOcrWorker(QObject):
             text = text or ""
             if isinstance(field, IntegerField):
                 text = _sanitize_integer_ocr(text)
+            elif isinstance(field, DecimalField):
+                text = _sanitize_decimal_ocr(text)
             return (field.name, text)
 
         valid_fields = [
@@ -399,7 +408,22 @@ class Indexer(QMainWindow):
         self.next_button.clicked.connect(self.next_page)
         self.next_button.setEnabled(False)
         nav_layout.addWidget(self.next_button, 3)
-        
+
+        self.ocr_page_button = QPushButton()
+        self.ocr_page_button.setFixedHeight(nav_widget_height)
+        self.ocr_page_button.setFixedWidth(nav_widget_height)
+        self.ocr_page_button.setStyleSheet("background-color: #555555; color: #2e7d32;")
+        self.ocr_page_button.setIcon(
+            QIcon.fromTheme(
+                "document-open",
+                self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView),
+            )
+        )
+        self.ocr_page_button.setToolTip("OCR all text fields on this page")
+        self.ocr_page_button.clicked.connect(self._on_ocr_page_requested)
+        self.ocr_page_button.setEnabled(False)
+        nav_layout.addWidget(self.ocr_page_button)
+
         center_panel.addWidget(nav_widget)
 
         # Text field popup dialog (shown under clicked TextField; synced with detail panel)
@@ -1097,6 +1121,8 @@ class Indexer(QMainWindow):
         can_ocr_page = bool(self.current_page_images) and has_text_fields
         if hasattr(self, "_index_menu_bar"):
             self._index_menu_bar.set_ocr_enabled(can_ocr_page)
+        if hasattr(self, "ocr_page_button"):
+            self.ocr_page_button.setEnabled(can_ocr_page)
 
     def _normalize_comment_field_name(self, field_name: str) -> str:
         """
@@ -1496,6 +1522,8 @@ class Indexer(QMainWindow):
             text = ""
         if isinstance(self.current_field, IntegerField):
             text = _sanitize_integer_ocr(text)
+        elif isinstance(self.current_field, DecimalField):
+            text = _sanitize_decimal_ocr(text)
 
         # Apply OCR result to the current TextField value, reusing existing plumbing
         field_name = self.current_field.name or ""
