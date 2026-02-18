@@ -217,6 +217,7 @@ class IndexDetailPanel(QWidget):
             self.value_text_edit.setPlainText(value_str)
             self.value_text_edit.blockSignals(False)
             self.value_text_edit.setEnabled(True)
+            self.value_text_edit.selectAll()
         else:
             self.value_text_edit.blockSignals(True)
             self.value_text_edit.clear()

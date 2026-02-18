@@ -90,3 +90,4 @@ class IndexTextDialog(QDialog):
         self.move(global_bottom_left)
         self.show()
         self._line_edit.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._line_edit.selectAll()
