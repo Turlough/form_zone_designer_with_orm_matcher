@@ -32,7 +32,10 @@ class MainImageIndexPanel(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setStyleSheet("QLabel { background-color: #2b2b2b; }")
         self.setMinimumSize(400, 400)
-        
+
+        # Whether to show field values to the right of each field (controlled by Show Value toggle)
+        self.show_field_values = True
+
         # Callback for field clicks
         self.on_field_click = None
 
@@ -134,6 +137,50 @@ class MainImageIndexPanel(QLabel):
         font.setPointSize(16)
         painter.setFont(font)
         painter.drawText(tick_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, character)
+
+    def _draw_value_to_right(
+        self,
+        painter: QPainter,
+        scaled_rect: QRect,
+        base_color: QColor,
+        value_str: str,
+        is_invalid: bool,
+    ) -> None:
+        """
+        Draw field value to the right of the field rect.
+        Black text on 70% opaque white background.
+        Truncates to 30 characters.
+        """
+        if not value_str:
+            return
+        display_text = (value_str[:30] + "…") if len(value_str) > 30 else value_str
+        offset = 8
+        font = QFont()
+        font.setPointSize(8)
+        font.setBold(True)
+        painter.setFont(font)
+        metrics = painter.fontMetrics()
+        text_w = metrics.horizontalAdvance(display_text)
+        text_h = metrics.height()
+        pad_h = 8
+        pad_v = 4
+        value_rect = QRect(
+            scaled_rect.right() + offset,
+            scaled_rect.y(),
+            text_w + pad_h * 2,
+            text_h + pad_v * 2,
+        )
+        bg_color = QColor(255, 255, 255)
+        bg_color.setAlpha(int(255 * 0.8))
+        painter.fillRect(value_rect, bg_color)
+        bg_color.setAlpha(int(255))
+        painter.drawRect(value_rect)
+        painter.setPen(QColor(100, 100, 100))
+        painter.drawText(
+            value_rect.adjusted(pad_h, pad_v, -pad_h, -pad_v),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            display_text,
+        )
 
     def set_image(self, pixmap, bbox=None, field_data=None, field_values=None, field_comments=None):
         """Set the image, bounding box, fields, and field values/comments to display."""
@@ -254,7 +301,12 @@ class MainImageIndexPanel(QLabel):
                         painter.fillRect(rb_scaled_rect, fill_color)
 
                         self._draw_tick_to_right(painter, rb_scaled_rect, QColor(0, 255, 0), TICK_CHAR)
-            
+                # Show RadioGroup selected value to the right when Show Value is on
+                if self.show_field_values and selected_rb_name:
+                    self._draw_value_to_right(
+                        painter, scaled_rect, base_color, selected_rb_name, is_invalid
+                    )
+
             elif isinstance(field, (Tickbox, TextField)):
                 # Tickbox/TextField (and subclasses): colour reflects validation
                 is_invalid = self._is_field_invalid(field)
@@ -294,8 +346,8 @@ class MainImageIndexPanel(QLabel):
                     # QC tick/cross beside tickbox
                     if has_comment:
                         self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
-                    # else:
-                    #     self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
+                    else:
+                        self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
                 
                 # Fill and show text for TextField
                 if isinstance(field, TextField) and field_value:
@@ -304,24 +356,14 @@ class MainImageIndexPanel(QLabel):
                     fill_color.setAlpha(100)
                     painter.fillRect(scaled_rect, fill_color)
 
-                    # Draw text below the field
-                    text_color = INVALID_COLOUR if is_invalid else base_color
-                    painter.setPen(text_color)
-                    font = QFont()
-                    font.setPointSize(8)
-                    painter.setFont(font)
-                    text_rect = QRect(
-                        scaled_rect.x(),
-                        scaled_rect.y() + scaled_rect.height(),
-                        scaled_rect.width() * 3,  # Allow text to extend
-                        20,
-                    )
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft, field_value)
+                    # Draw value to the right when Show Value is on
+                    if self.show_field_values:
+                        self._draw_value_to_right(
+                            painter, scaled_rect, base_color, str(field_value), is_invalid
+                        )
                     # QC tick/cross beside text field
                     if has_comment:
                         self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
-                    # else:
-                    #     self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
         
         painter.end()
         self.setPixmap(display_pixmap)

@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QListWidget, QListWidgetItem, QLabel, QScrollArea, QPushButton,
     QDialog, QLineEdit, QDialogButtonBox, QFileDialog, QMessageBox,
-    QStyledItemDelegate, QStyle, QFrame,
+    QStyledItemDelegate, QStyle, QFrame, QCheckBox,
 )
 from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent, QFont, QIcon
@@ -359,10 +359,16 @@ class Indexer(QMainWindow):
         # Center panel - Image display and navigation
         center_panel = QVBoxLayout()
         
-        # Page info label
+        # Page info label and Show Value toggle
+        page_info_row = QHBoxLayout()
         self.page_info_label = QLabel("No file loaded")
         self.page_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        center_panel.addWidget(self.page_info_label)
+        page_info_row.addWidget(self.page_info_label, 1)
+        self.show_value_check = QCheckBox("Show Value")
+        self.show_value_check.setChecked(True)
+        self.show_value_check.toggled.connect(self._on_show_value_toggled)
+        page_info_row.addWidget(self.show_value_check)
+        center_panel.addLayout(page_info_row)
         
         # Image display
         scroll_area = QScrollArea()
@@ -371,6 +377,7 @@ class Indexer(QMainWindow):
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
         self.image_label = MainImageIndexPanel()
+        self.image_label.show_field_values = self.show_value_check.isChecked()
         self.image_label.on_field_click = self.on_field_click
         scroll_area.setWidget(self.image_label)
         
@@ -630,6 +637,11 @@ class Indexer(QMainWindow):
     def on_tiff_selected(self, index: int) -> None:
         """Backward-compatible wrapper; prefer on_document_selected."""
         self.on_document_selected(index)
+
+    def _on_show_value_toggled(self, checked: bool) -> None:
+        """Update image panel when Show Value toggle changes."""
+        self.image_label.show_field_values = checked
+        self.image_label.update_display()
 
     def load_document(self, document_path: str) -> None:
         """Load a multipage document (TIFF, PDF, etc.) into memory."""
