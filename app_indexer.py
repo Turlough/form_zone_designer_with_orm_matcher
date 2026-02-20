@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import csv
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import cv2
 import numpy as np
@@ -51,6 +52,30 @@ def _sanitize_decimal_ocr(text: str) -> str:
 
 _completion_bar_width = 48
 _completion_bar_height = 8
+
+_DOCUMENT_CACHE_MAX_SIZE = 10
+
+
+class DocumentLoadWorker(QObject):
+    """Worker that loads a document's pages in a background thread for preloading."""
+
+    loaded = pyqtSignal(str, list)  # path, list of PIL Images
+    finished = pyqtSignal()
+
+    def __init__(self, document_path: str):
+        super().__init__()
+        self.document_path = document_path
+
+    def run(self) -> None:
+        """Load document pages and emit result."""
+        try:
+            loader = get_document_loader_for_path(self.document_path)
+            images = loader.load_pages(self.document_path)
+            self.loaded.emit(self.document_path, images)
+        except Exception as e:
+            logger.warning("Preload failed for %s: %s", self.document_path, e)
+        finally:
+            self.finished.emit()
 
 
 class DocumentListDelegate(QStyledItemDelegate):
@@ -196,6 +221,13 @@ class Indexer(QMainWindow):
         # Mapping of field name -> QC comment string for the current page
         self.page_comments: dict[str, str] = {}
         self.current_field: Field | None = None  # Currently selected field on this page
+
+        # Document cache (LRU) for recently visited documents; path -> list of PIL Images
+        self._document_cache: OrderedDict[str, list[Image.Image]] = OrderedDict()
+        # Preloaded next document for QC batch review; (path, images) or None
+        self._qc_preloaded: tuple[str, list[Image.Image]] | None = None
+        self._qc_preload_thread: QThread | None = None
+        self._qc_preload_worker: DocumentLoadWorker | None = None
         
         # Initialize UI
         self.init_ui()
@@ -300,6 +332,9 @@ class Indexer(QMainWindow):
 
     def _clear_batch(self) -> None:
         """Clear current batch, document list, and displayed images."""
+        self._document_cache.clear()
+        self._qc_preloaded = None
+        self._stop_qc_preload()
         self.document_paths = []
         self.current_document_index = -1
         self.current_page_index = 0
@@ -469,6 +504,9 @@ class Indexer(QMainWindow):
     def _load_import_file_from_path(self, file_path: str, json_folder_override: str | None = None) -> bool:
         """Load import file from path (no dialog). If json_folder_override is set, use it for this load. Returns True on success."""
         try:
+            self._document_cache.clear()
+            self._qc_preloaded = None
+            self._stop_qc_preload()
             if json_folder_override:
                 self.json_folder = json_folder_override
             self.csv_manager.load_csv(file_path, self.json_folder)
@@ -644,9 +682,36 @@ class Indexer(QMainWindow):
         self.image_label.update_display()
 
     def load_document(self, document_path: str) -> None:
-        """Load a multipage document (TIFF, PDF, etc.) into memory."""
+        """Load a multipage document (TIFF, PDF, etc.) into memory.
+
+        Uses preload (QC review) or cache (recently visited) when available.
+        """
+        # Clear stale preload if we're loading a different document
+        if self._qc_preloaded and self._qc_preloaded[0] != document_path:
+            self._qc_preloaded = None
+
+        # 1. Check preload (next document in QC review)
+        if self._qc_preloaded and self._qc_preloaded[0] == document_path:
+            self.current_page_images = self._qc_preloaded[1]
+            self._qc_preloaded = None
+            self._document_cache[document_path] = self.current_page_images
+            self._document_cache.move_to_end(document_path)
+            return
+
+        # 2. Check cache
+        if document_path in self._document_cache:
+            self.current_page_images = self._document_cache[document_path]
+            self._document_cache.move_to_end(document_path)
+            return
+
+        # 3. Load from disk
         loader = get_document_loader_for_path(document_path)
         self.current_page_images = loader.load_pages(document_path)
+
+        # Add to cache (evict oldest if at capacity)
+        if len(self._document_cache) >= _DOCUMENT_CACHE_MAX_SIZE:
+            self._document_cache.popitem(last=False)
+        self._document_cache[document_path] = self.current_page_images
     
     def display_current_page(self):
         """Display the current page with fields."""
@@ -1449,6 +1514,8 @@ class Indexer(QMainWindow):
     def _show_current_qc_review_comment(self) -> None:
         """Navigate to the current comment's page and show the QC dialog."""
         if not hasattr(self, "_qc_review_checklist") or self._qc_review_index >= len(self._qc_review_checklist):
+            self._qc_preloaded = None
+            self._stop_qc_preload()
             self._qc_comment_dialog.close()
             QMessageBox.information(self, "Review complete", "No more comments to review.")
             return
@@ -1509,6 +1576,45 @@ class Indexer(QMainWindow):
         self._qc_comment_dialog.raise_()
         self._qc_comment_dialog.activateWindow()
 
+        self._start_qc_preload_next()
+
+    def _stop_qc_preload(self) -> None:
+        """Stop any in-flight preload."""
+        if self._qc_preload_thread is not None and self._qc_preload_thread.isRunning():
+            self._qc_preload_thread.quit()
+            self._qc_preload_thread.wait(500)
+        self._qc_preload_thread = None
+        self._qc_preload_worker = None
+
+    def _start_qc_preload_next(self) -> None:
+        """Preload the next document in the QC review checklist in background."""
+        if not hasattr(self, "_qc_review_checklist") or self._qc_review_index + 1 >= len(self._qc_review_checklist):
+            return
+        next_row_idx = self._qc_review_checklist[self._qc_review_index + 1][0]
+        next_path = self.csv_manager.get_absolute_document_path(self.document_paths[next_row_idx])
+        if not next_path or next_path in self._document_cache:
+            return
+        if self._qc_preloaded and self._qc_preloaded[0] == next_path:
+            return
+        self._stop_qc_preload()
+        worker = DocumentLoadWorker(next_path)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+
+        def on_loaded(path: str, images: list) -> None:
+            self._qc_preloaded = (path, images)
+
+        def on_worker_finished() -> None:
+            thread.quit()
+
+        worker.loaded.connect(on_loaded)
+        worker.finished.connect(on_worker_finished)
+        thread.started.connect(worker.run)
+        thread.finished.connect(worker.deleteLater)
+        thread.start()
+        self._qc_preload_thread = thread
+        self._qc_preload_worker = worker
+
     def _on_qc_review_remove(self) -> None:
         """Remove the current comment from the CSV and advance to next."""
         if not hasattr(self, "_qc_review_checklist") or self._qc_review_index >= len(self._qc_review_checklist):
@@ -1529,6 +1635,8 @@ class Indexer(QMainWindow):
             return
         if self._qc_review_index <= 0:
             return
+        self._qc_preloaded = None
+        self._stop_qc_preload()
         self._qc_review_index -= 1
         self._show_current_qc_review_comment()
 
