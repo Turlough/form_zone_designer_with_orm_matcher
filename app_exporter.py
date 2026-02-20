@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image
 from dotenv import load_dotenv
 from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtGui import QBrush, QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -322,7 +323,11 @@ class Exporter(QMainWindow):
             return
 
         table = self.batch_table
-        table.setRowCount(len(self._batches))
+        total_rows = 0
+        total_rows_with_comments = 0
+        total_comments = 0
+
+        table.setRowCount(len(self._batches) + 1)  # +1 for totals row
 
         for row, (batch_name, path) in enumerate(self._batches):
             # Column 0: batch name
@@ -331,15 +336,37 @@ class Exporter(QMainWindow):
             # Columns 1–3: summary stats if available
             stats = self._batch_stats.get(path)
             if stats:
-                row_count, rows_with_comments, total_comments = stats
+                row_count, rows_with_comments, batch_comments = stats
+                total_rows += row_count
+                total_rows_with_comments += rows_with_comments
+                total_comments += batch_comments
                 table.setItem(row, 1, QTableWidgetItem(str(row_count)))
                 table.setItem(row, 2, QTableWidgetItem(str(rows_with_comments)))
-                table.setItem(row, 3, QTableWidgetItem(str(total_comments)))
+                table.setItem(row, 3, QTableWidgetItem(str(batch_comments)))
             else:
                 # Empty cells when no summary has been computed yet
                 table.setItem(row, 1, QTableWidgetItem(""))
                 table.setItem(row, 2, QTableWidgetItem(""))
                 table.setItem(row, 3, QTableWidgetItem(""))
+
+        # Totals row
+        totals_row = len(self._batches)
+        totals_font = QFont()
+        totals_font.setPointSize(totals_font.pointSize() + 1)
+        totals_font.setBold(True)
+        totals_bg = QBrush(QColor(230, 230, 230))
+
+        totals_cells = [
+            "Total",
+            str(total_rows) if total_rows else "",
+            str(total_rows_with_comments) if total_rows_with_comments else "",
+            str(total_comments) if total_comments else "",
+        ]
+        for col, text in enumerate(totals_cells):
+            item = QTableWidgetItem(text)
+            item.setFont(totals_font)
+            item.setBackground(totals_bg)
+            table.setItem(totals_row, col, item)
 
 
     # ---- Tools menu handlers (stubs for now) ----
