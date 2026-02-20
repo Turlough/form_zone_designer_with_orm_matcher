@@ -1462,6 +1462,23 @@ class Indexer(QMainWindow):
         self.current_page_index = comment.page - 1  # 1-indexed in Comments
         self.display_current_page()
 
+        # Show the current field in the right-hand detail panel
+        field_to_show = next(
+            (f for f in self.page_fields if f.name == comment.field),
+            None,
+        )
+        if field_to_show and hasattr(self, "detail_panel") and self.current_page_images:
+            current_pil_image = self.current_page_images[self.current_page_index]
+            self.detail_panel.set_current_field(
+                field_to_show,
+                page_image=current_pil_image,
+                page_bbox=self.page_bbox,
+                page_fields=self.page_fields,
+                field_values=self.field_values,
+                field_comments=self.page_comments,
+            )
+            self._set_current_field(field_to_show)
+
         # Get field value
         field_value = self.csv_manager.get_field_value(row_idx, comment.field) or ""
 
