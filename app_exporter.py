@@ -137,7 +137,7 @@ class ExporterMenuBar(QMenuBar):
         summarise_action.triggered.connect(lambda: self.summarise_requested.emit())
 
         validate_menu = self._tools_menu.addMenu("Validate")
-        validate_action = validate_menu.addAction("Run validation")
+        validate_action = validate_menu.addAction("Check file headers")
         validate_action.triggered.connect(lambda: self.validate_requested.emit())
 
         export_menu = self._tools_menu.addMenu("Deliver")
@@ -388,8 +388,64 @@ class Exporter(QMainWindow):
         self._populate_batch_table()
 
     def _on_validate_requested(self) -> None:
-        """Placeholder handler for Tools > Validate."""
-        QMessageBox.information(self, "Validate", "Validate is not implemented yet.")
+        """
+        Check that each batch import file's header row matches the expected
+        headings derived from the project's JSON field definitions.
+
+        Expected format: File, [field names from JSON in order], Comments
+        """
+        if not self._batches:
+            QMessageBox.information(self, "Validate", "No batches loaded to validate.")
+            return
+
+        if not self.config_folder:
+            QMessageBox.warning(self, "Validate", "Select a project from the Project menu first.")
+            return
+
+        project_root = Path(resolve_path_or_original(self.config_folder))
+        json_folder = project_root / "json"
+        expected_headers = self._get_expected_headers_from_json(json_folder)
+
+        if not expected_headers:
+            QMessageBox.warning(
+                self,
+                "Validate",
+                "No field definitions found in project JSON. Cannot validate headers.",
+            )
+            return
+
+        mismatches: list[str] = []
+
+        for batch_name, import_path in self._batches:
+            try:
+                with open(import_path, newline="", encoding="utf-8-sig") as f:
+                    reader = csv.reader(f)
+                    try:
+                        actual = next(reader)
+                    except StopIteration:
+                        mismatches.append(f"{batch_name}: file is empty")
+                        continue
+
+                if not actual:
+                    mismatches.append(f"{batch_name}: no header row")
+                    continue
+
+                diff = self._compare_headers(expected_headers, actual)
+                if diff:
+                    mismatches.append(f"{batch_name}: {diff}")
+
+            except Exception as exc:
+                mismatches.append(f"{batch_name}: could not read file ({exc})")
+
+        if mismatches:
+            msg = "Header mismatches:\n\n" + "\n".join(mismatches)
+            QMessageBox.warning(self, "Validate", msg)
+        else:
+            QMessageBox.information(
+                self,
+                "Validate",
+                f"All {len(self._batches)} batch file headers match the expected format.",
+            )
 
     def _on_export_requested(self) -> None:
         """
@@ -466,10 +522,11 @@ class Exporter(QMainWindow):
             lower_headers = [h.strip().lower() for h in headers]
 
             # Locate tiff_path and comments columns.
+            ## TODO: use the field names from the json files to locate the columns
             try:
-                tiff_idx = lower_headers.index("tiff_path")
+                tiff_idx = lower_headers.index("file")
             except ValueError as exc:
-                raise RuntimeError("Header must contain a 'tiff_path' column.") from exc
+                raise RuntimeError("Header must contain a 'file' column.") from exc
 
             comments_idx = None
             for i, name in enumerate(lower_headers):
@@ -569,7 +626,67 @@ class Exporter(QMainWindow):
             f"Delivery files created in:\n{job_output_dir}",
         )
 
-    # ---- Helpers for Deliver ----
+    # ---- Helpers for Deliver and Validate ----
+
+    def _get_expected_headers_from_json(self, json_folder: Path) -> list[str]:
+        """
+        Build the canonical header list from project JSON: File, [field names], Comments.
+        Mirrors CSVManager._get_field_names_from_json logic.
+        """
+        field_names: list[str] = []
+        page_num = 1
+
+        while True:
+            json_path = find_file_case_insensitive(json_folder, f"{page_num}.json")
+            if json_path is None:
+                break
+
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                for item in data:
+                    field = Field.from_dict(item)
+                    name = getattr(field, "name", None)
+                    if name and name not in field_names:
+                        field_names.append(name)
+            except Exception:
+                pass
+
+            page_num += 1
+
+        return ["File"] + field_names + ["Comments"]
+
+    def _compare_headers(self, expected: list[str], actual: list[str]) -> str | None:
+        """
+        Compare actual CSV headers to expected. Returns a short error message if
+        they differ, or None if they match. Uses case-insensitive comparison;
+        first column accepts File/tiff_path/path/document_path, last accepts
+        Comments/Comment.
+        """
+        if len(actual) != len(expected):
+            return f"expected {len(expected)} columns, got {len(actual)}"
+
+        first_ok = actual[0].strip().lower() in (
+            "file",
+            "tiff_path",
+            "path",
+            "document_path",
+        )
+        if not first_ok:
+            return f"first column should be File/tiff_path/path, got '{actual[0]}'"
+
+        last_ok = actual[-1].strip().lower() in ("comments", "comment")
+        if not last_ok:
+            return f"last column should be Comments/Comment, got '{actual[-1]}'"
+
+        for i in range(1, len(expected) - 1):
+            exp = expected[i].strip().lower()
+            act = actual[i].strip().lower()
+            if exp != act:
+                return f"column {i + 1}: expected '{expected[i]}', got '{actual[i]}'"
+
+        return None
 
     def _load_field_type_map(self, json_folder: Path) -> dict[str, type]:
         """
