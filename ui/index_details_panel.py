@@ -16,6 +16,10 @@ from PIL import Image
 import numpy as np
 from datetime import datetime
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, DateField, IntegerField, DecimalField
+from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP, INVALID_COLOUR
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 _THOUSANDS_SEP = "\u202f"  # Narrow no-break space
@@ -159,6 +163,53 @@ class IndexDetailPanel(QWidget):
         self.field_values = {}
         # Mapping of field_name -> comment string for the current page
         self.field_comments = {}
+
+    def _get_validator_for_field(self, field: Field):
+        """Look up the appropriate Validator instance for a given field."""
+        for field_class, _color, validator in FACTORY_FIELD_TYPE_MAP.values():
+            if type(field) is field_class:
+                try:
+                    if isinstance(validator, type):
+                        return validator()
+                    return validator
+                except Exception:
+                    logger.exception("Error creating validator for field %s", getattr(field, "name", ""))
+                    return None
+        return None
+
+    def _get_value_for_validation(self, field: Field):
+        """Normalise the current value for validation, per field type."""
+        if isinstance(field, Tickbox):
+            checked = bool(self.field_values.get(field.name, False))
+            return "Ticked" if checked else ""
+        if isinstance(field, RadioGroup):
+            value = self.field_values.get(field.name, "")
+            return value or ""
+        value = self.field_values.get(field.name, "")
+        if value is None:
+            return ""
+        return str(value)
+
+    def _is_field_invalid(self, field: Field) -> bool:
+        """Determine whether the current value for this field fails validation."""
+        validator = self._get_validator_for_field(field)
+        if validator is None:
+            return False
+        value = self._get_value_for_validation(field)
+        try:
+            return not validator.is_valid(value)
+        except Exception:
+            logger.error("Validation error for field %s", getattr(field, "name", ""))
+            return False
+
+    def _update_value_edit_style(self):
+        """Set value_text_edit background to INVALID_COLOUR when current field is invalid."""
+        if self.current_field and self._is_field_invalid(self.current_field):
+            self.value_text_edit.setStyleSheet(
+                f"QTextEdit {{ background-color: rgba({INVALID_COLOUR.red()}, {INVALID_COLOUR.green()}, {INVALID_COLOUR.blue()}, 0.10); }}"
+            )
+        else:
+            self.value_text_edit.setStyleSheet("")
     
     def set_current_field(self, field: Field | None, page_image: Image.Image | None = None,
                           page_bbox=None, page_fields=None, field_values=None, field_comments=None):
@@ -223,6 +274,8 @@ class IndexDetailPanel(QWidget):
             self.value_text_edit.clear()
             self.value_text_edit.blockSignals(False)
             self.value_text_edit.setEnabled(False)
+
+        self._update_value_edit_style()
         
         # Update fields table
         self._update_fields_table()
@@ -407,6 +460,7 @@ class IndexDetailPanel(QWidget):
         
         # Update the table to reflect the change
         self._update_fields_table()
+        self._update_value_edit_style()
     
     def resizeEvent(self, event):
         """Handle resize events to update close-up image."""
