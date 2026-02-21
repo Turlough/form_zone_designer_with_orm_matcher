@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtCore import Qt, QRect
-from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QFont
+from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QFont, QFontMetrics
 
 from fields import Field, RadioGroup, RadioButton, Tickbox, TextField
 from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP, INVALID_COLOUR
@@ -145,11 +145,14 @@ class MainImageIndexPanel(QLabel):
         base_color: QColor,
         value_str: str,
         is_invalid: bool,
+        min_x: int | None = None,
     ) -> None:
         """
         Draw field value to the right of the field rect.
         Black text on 70% opaque white background.
         Truncates to 30 characters.
+        If min_x is provided, the value is placed at least at min_x (avoids overlap with
+        other fields in the same horizontal band).
         """
         if not value_str:
             return
@@ -164,12 +167,12 @@ class MainImageIndexPanel(QLabel):
         text_h = metrics.height()
         pad_h = 8
         pad_v = 4
-        value_rect = QRect(
-            scaled_rect.right() + offset,
-            scaled_rect.y(),
-            text_w + pad_h * 2,
-            text_h + pad_v * 2,
-        )
+        value_w = text_w + pad_h * 2
+        value_h = text_h + pad_v * 2
+        left = scaled_rect.right() + offset
+        if min_x is not None and left < min_x:
+            left = min_x
+        value_rect = QRect(left, scaled_rect.y(), value_w, value_h)
         bg_color = QColor(255, 255, 255)
         bg_color.setAlpha(int(255 * 0.8))
         painter.fillRect(value_rect, bg_color)
@@ -181,6 +184,89 @@ class MainImageIndexPanel(QLabel):
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             display_text,
         )
+
+    def _compute_value_placements(
+        self,
+        logo_offset: tuple[int, int],
+    ) -> dict:
+        """
+        Compute min_x for each field that will show a value, so values in the same
+        horizontal band (overlapping y range) don't overlap. Fields in a band are
+        ordered left-to-right; the first value starts at the right edge of the
+        rightmost field in the band, subsequent values are placed 1px after the
+        previous value.
+        Returns dict mapping field name -> min_x (widget coords).
+        """
+        if not self.show_field_values:
+            return {}
+        VALUE_OFFSET = 8
+        BAND_MARGIN = 1
+        font = QFont()
+        font.setPointSize(8)
+        font.setBold(True)
+        metrics = QFontMetrics(font)
+        pad_h = 8
+        pad_v = 4
+
+        # Collect (field, abs_rect, value_str, scaled_rect) for fields that show values
+        entries: list[tuple] = []
+        for field in self.field_data:
+            value_str = None
+            abs_x = field.x + logo_offset[0]
+            abs_y = field.y + logo_offset[1]
+            abs_w = field.width
+            abs_h = field.height
+            if isinstance(field, RadioGroup):
+                selected = self.field_values.get(field.name, None)
+                if selected:
+                    value_str = selected
+            elif isinstance(field, TextField):
+                val = self.field_values.get(field.name, "")
+                if val:
+                    value_str = str(val)
+            if value_str is None:
+                continue
+            display_text = (value_str[:30] + "…") if len(value_str) > 30 else value_str
+            text_w = metrics.horizontalAdvance(display_text)
+            value_w = text_w + pad_h * 2
+            scaled_rect = QRect(
+                self.image_offset_x + int(abs_x * self.scale_x),
+                self.image_offset_y + int(abs_y * self.scale_y),
+                int(abs_w * self.scale_x),
+                int(abs_h * self.scale_y),
+            )
+            entries.append((field, abs_x, abs_y, abs_h, scaled_rect, value_w))
+
+        def vertical_overlap(y1: int, h1: int, y2: int, h2: int) -> bool:
+            return y1 < y2 + h2 and y2 < y1 + h1
+
+        # Group into bands (fields with overlapping y ranges)
+        bands: list[list[tuple]] = []
+        for field, ax, ay, ah, srect, vw in entries:
+            placed = False
+            for band in bands:
+                # Check if this field overlaps any in the band
+                for _, bx, by, bh, *_ in band:
+                    if vertical_overlap(ay, ah, by, bh):
+                        band.append((field, ax, ay, ah, srect, vw))
+                        placed = True
+                        break
+                if placed:
+                    break
+            if not placed:
+                bands.append([(field, ax, ay, ah, srect, vw)])
+
+        # For each band: sort by x, compute min_x for each field
+        result: dict[str, int] = {}
+        for band in bands:
+            band.sort(key=lambda e: e[1])  # by abs_x
+            rightmost_right = max(srect.right() for (_, _, _, _, srect, _) in band)
+            running_x = rightmost_right + VALUE_OFFSET
+            for field, _ax, _ay, _ah, srect, value_w in band:
+                min_x = max(srect.right() + VALUE_OFFSET, running_x)
+                result[field.name] = min_x
+                running_x = min_x + value_w + BAND_MARGIN
+        return result
 
     def set_image(self, pixmap, bbox=None, field_data=None, field_values=None, field_comments=None):
         """Set the image, bounding box, fields, and field values/comments to display."""
@@ -245,7 +331,8 @@ class MainImageIndexPanel(QLabel):
         
         # Draw fields
         logo_offset = self.bbox[0] if self.bbox else (0, 0)
-        
+        value_placements = self._compute_value_placements(logo_offset)
+
         for field in self.field_data:
             if isinstance(field, RadioGroup):
                 # RadioGroup: invalid selection (no option chosen) shows INVALID_COLOUR
@@ -303,8 +390,10 @@ class MainImageIndexPanel(QLabel):
                         self._draw_tick_to_right(painter, rb_scaled_rect, QColor(0, 255, 0), TICK_CHAR)
                 # Show RadioGroup selected value to the right when Show Value is on
                 if self.show_field_values and selected_rb_name:
+                    min_x = value_placements.get(field.name)
                     self._draw_value_to_right(
-                        painter, scaled_rect, base_color, selected_rb_name, is_invalid
+                        painter, scaled_rect, base_color, selected_rb_name, is_invalid,
+                        min_x=min_x,
                     )
 
             elif isinstance(field, (Tickbox, TextField)):
@@ -358,8 +447,10 @@ class MainImageIndexPanel(QLabel):
 
                     # Draw value to the right when Show Value is on
                     if self.show_field_values:
+                        min_x = value_placements.get(field.name)
                         self._draw_value_to_right(
-                            painter, scaled_rect, base_color, str(field_value), is_invalid
+                            painter, scaled_rect, base_color, str(field_value), is_invalid,
+                            min_x=min_x,
                         )
                     # QC tick/cross beside text field
                     if has_comment:
