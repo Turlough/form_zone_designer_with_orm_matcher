@@ -26,7 +26,7 @@ from util.path_utils import (
     find_file_case_insensitive,
 )
 from util.document_loader import get_document_loader_for_path
-from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField, DecimalField
+from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField
 import logging
 from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog, QcCommentDialog
 from util.gemini_ocr_client import ocr_image_region
@@ -44,6 +44,17 @@ def _sanitize_integer_ocr(text: str) -> str:
     text = text.replace(",", "")
     return "".join(c for c in text if c.isdigit())
 
+def _sanitize_email_ocr(text: str) -> str:
+    """For EmailField: remove any characters except alphanumeric and @."""
+    return "".join(c for c in text if c.isalnum() or c == "@")
+
+def _sanitize_irish_mobile_ocr(text: str) -> str:
+    """For IrishMobileField: remove any characters except digits."""
+    return "".join(c for c in text if c.isdigit())
+
+def _sanitize_eircode_ocr(text: str) -> str:
+    """For EircodeField: remove any characters except alphanumeric."""
+    return "".join(c for c in text if c.isalnum())
 
 def _sanitize_decimal_ocr(text: str) -> str:
     """For DecimalField: remove any characters except digits and period."""
@@ -158,6 +169,12 @@ class PageOcrWorker(QObject):
                 text = _sanitize_integer_ocr(text)
             elif isinstance(field, DecimalField):
                 text = _sanitize_decimal_ocr(text)
+            elif isinstance(field, EmailField):
+                text = _sanitize_email_ocr(text)
+            elif isinstance(field, IrishMobileField):
+                text = _sanitize_irish_mobile_ocr(text)
+            elif isinstance(field, EircodeField):
+                text = _sanitize_eircode_ocr(text)
             return (field.name, text)
 
         valid_fields = [
@@ -1716,6 +1733,12 @@ class Indexer(QMainWindow):
             text = _sanitize_integer_ocr(text)
         elif isinstance(self.current_field, DecimalField):
             text = _sanitize_decimal_ocr(text)
+        elif isinstance(self.current_field, EmailField):
+            text = _sanitize_email_ocr(text)
+        elif isinstance(self.current_field, IrishMobileField):
+            text = _sanitize_irish_mobile_ocr(text)
+        elif isinstance(self.current_field, EircodeField):
+            text = _sanitize_eircode_ocr(text)
 
         # Apply OCR result to the current TextField value, reusing existing plumbing
         field_name = self.current_field.name or ""
