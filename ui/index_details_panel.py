@@ -15,7 +15,7 @@ from PyQt6.QtGui import QPixmap, QImage, QFont, QIcon, QTextCursor
 from PIL import Image
 import numpy as np
 from datetime import datetime
-from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, DateField, IntegerField, DecimalField
+from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, DateField, IntegerField, DecimalField, IrishMobileField, EircodeField
 from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP, INVALID_COLOUR
 import logging
 
@@ -56,6 +56,31 @@ def _format_number_for_display(s: str) -> str:
 def _strip_thousands_separators(s: str) -> str:
     """Remove thousands separators. Keeps decimal point."""
     return s.replace(" ", "").replace(_THOUSANDS_SEP, "").replace(",", "")
+
+
+def _format_irish_mobile_for_display(s: str) -> str:
+    """Add gaps after 3rd and 6th digits for display. Returns s unchanged if not digits only."""
+    s = s.strip().replace(" ", "").replace(_THOUSANDS_SEP, "")
+    if not s or not s.isdigit():
+        return s
+    if len(s) <= 3:
+        return s
+    if len(s) <= 6:
+        return s[:3] + _THOUSANDS_SEP + s[3:]
+    return s[:3] + _THOUSANDS_SEP + s[3:6] + _THOUSANDS_SEP + s[6:]
+
+
+def _format_eircode_for_display(s: str) -> str:
+    """Add gap after 3rd character for display. Uppercases. Returns s unchanged if empty."""
+    s = s.strip().replace(" ", "").replace(_THOUSANDS_SEP, "").upper()
+    if not s or len(s) <= 3:
+        return s
+    return s[:3] + _THOUSANDS_SEP + s[3:]
+
+
+def _strip_field_separators(s: str) -> str:
+    """Remove gaps/spaces used for Irish mobile and Eircode display."""
+    return s.replace(" ", "").replace(_THOUSANDS_SEP, "")
 
 
 class IndexDetailPanel(QWidget):
@@ -262,6 +287,10 @@ class IndexDetailPanel(QWidget):
                 value_str = str(current_value) if current_value else ""
             if isinstance(self.current_field, (IntegerField, DecimalField)):
                 value_str = _format_number_for_display(value_str)
+            elif isinstance(self.current_field, IrishMobileField):
+                value_str = _format_irish_mobile_for_display(value_str)
+            elif isinstance(self.current_field, EircodeField):
+                value_str = _format_eircode_for_display(value_str)
             
             # Block signals to avoid triggering change event while updating
             self.value_text_edit.blockSignals(True)
@@ -391,6 +420,10 @@ class IndexDetailPanel(QWidget):
                 value_str = str(value) if value else ""
             if isinstance(field, (IntegerField, DecimalField)):
                 value_str = _format_number_for_display(value_str)
+            elif isinstance(field, IrishMobileField):
+                value_str = _format_irish_mobile_for_display(value_str)
+            elif isinstance(field, EircodeField):
+                value_str = _format_eircode_for_display(value_str)
             
             # Truncate if too long
             max_length = 50
@@ -441,6 +474,26 @@ class IndexDetailPanel(QWidget):
         if isinstance(self.current_field, (IntegerField, DecimalField)):
             new_value = _strip_thousands_separators(new_value)
             formatted = _format_number_for_display(new_value)
+            if formatted != self.value_text_edit.toPlainText():
+                self.value_text_edit.blockSignals(True)
+                self.value_text_edit.setPlainText(formatted)
+                cursor = self.value_text_edit.textCursor()
+                cursor.movePosition(QTextCursor.MoveOperation.End)
+                self.value_text_edit.setTextCursor(cursor)
+                self.value_text_edit.blockSignals(False)
+        elif isinstance(self.current_field, IrishMobileField):
+            new_value = _strip_field_separators(new_value)
+            formatted = _format_irish_mobile_for_display(new_value)
+            if formatted != self.value_text_edit.toPlainText():
+                self.value_text_edit.blockSignals(True)
+                self.value_text_edit.setPlainText(formatted)
+                cursor = self.value_text_edit.textCursor()
+                cursor.movePosition(QTextCursor.MoveOperation.End)
+                self.value_text_edit.setTextCursor(cursor)
+                self.value_text_edit.blockSignals(False)
+        elif isinstance(self.current_field, EircodeField):
+            new_value = _strip_field_separators(new_value).upper()
+            formatted = _format_eircode_for_display(new_value)
             if formatted != self.value_text_edit.toPlainText():
                 self.value_text_edit.blockSignals(True)
                 self.value_text_edit.setPlainText(formatted)
