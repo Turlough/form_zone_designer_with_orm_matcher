@@ -44,7 +44,7 @@ def is_eircode(value: str) -> bool:
     if value is None or value.strip() == "":
         return False # is empty has already been tested
     else:
-        return re.match(EIRCODE_REGEX, str(value).strip(), re.IGNORECASE)
+        return re.match(EIRCODE_REGEX, str(value), re.IGNORECASE)
 
 class Validator:
     tests: list[callable]
