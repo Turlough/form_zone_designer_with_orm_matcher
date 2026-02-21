@@ -155,6 +155,27 @@ class DateField(TextField):
         self.colour = (0, 150, 150)
 
 
+@dataclass
+class EmailField(TextField):
+    def __post_init__(self):
+        super().__post_init__()
+        self.colour = (0, 150, 150)
+
+
+@dataclass
+class IrishMobileField(TextField):
+    def __post_init__(self):
+        super().__post_init__()
+        self.colour = (0, 150, 150)
+
+
+@dataclass
+class EircodeField(TextField):
+    def __post_init__(self):
+        super().__post_init__()
+        self.colour = (0, 150, 150)
+
+
 FIELD_TYPE_MAP = {
     "Tickbox": Tickbox,
     "RadioButton": RadioButton,
@@ -163,5 +184,8 @@ FIELD_TYPE_MAP = {
     "IntegerField": IntegerField,
     "DecimalField": DecimalField,
     "DateField": DateField,
+    "EmailField": EmailField,
+    "IrishMobileField": IrishMobileField,
+    "EircodeField": EircodeField,
     "NumericRadioGroup": NumericRadioGroup,
 }

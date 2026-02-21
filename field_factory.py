@@ -7,9 +7,13 @@ from fields import IntegerField
 from fields import DecimalField
 from fields import NumericRadioGroup
 from fields import DateField
+from fields import EmailField
+from fields import IrishMobileField
+from fields import EircodeField
 from PyQt6.QtGui import QColor
 
 from util.validation import TextValidator, IntegerValidator, DecimalValidator, DateValidator
+from util.validation import EmailValidator, IrishMobileValidator, EircodeValidator
 
 # Class, Display colour, Validation class
 FIELD_TYPE_MAP = {
@@ -21,6 +25,9 @@ FIELD_TYPE_MAP = {
     "DecimalField": (DecimalField, QColor(0, 0, 150), DecimalValidator),
     "DateField": (DateField, QColor(0, 100, 250), DateValidator),
     "NumericRadioGroup": (NumericRadioGroup, QColor(0, 150, 150), IntegerValidator()),
+    "EmailField": (EmailField, QColor(0, 150, 150), EmailValidator()),
+    "IrishMobileField": (IrishMobileField, QColor(0, 150, 150), IrishMobileValidator()),
+    "EircodeField": (EircodeField, QColor(0, 150, 150), EircodeValidator()),
 }
 INVALID_COLOUR = QColor(255, 0, 0)
 

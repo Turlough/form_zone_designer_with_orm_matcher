@@ -1,5 +1,7 @@
 from typing import Any
 import datetime
+import re
+from util.validation.strategies import EIRCODE_REGEX
 
 def contains_text(value: str) -> bool:
     return value is not None and value.strip() != ""
@@ -25,6 +27,24 @@ def is_date(value: str) -> bool:
             return True
         except ValueError:
             return False
+
+def is_email(value: str) -> bool:
+    if value is None or value.strip() == "":
+        return False # is empty has already been tested
+    else:
+        return re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", value)
+
+def is_irish_mobile(value: str) -> bool:
+    if value is None or value.strip() == "":
+        return False # is empty has already been tested
+    else:
+        return re.match(r"^08[35678]\d{7}$", value)
+
+def is_eircode(value: str) -> bool:
+    if value is None or value.strip() == "":
+        return False # is empty has already been tested
+    else:
+        return re.match(EIRCODE_REGEX, str(value).strip(), re.IGNORECASE)
 
 class Validator:
     tests: list[callable]
@@ -57,3 +77,18 @@ class DateValidator(Validator):
     def __init__(self):
         super().__init__(str)
         self.tests = [contains_text, is_date]
+
+class EmailValidator(Validator):
+    def __init__(self):
+        super().__init__(str)
+        self.tests = [contains_text, is_email]
+
+class IrishMobileValidator(Validator):
+    def __init__(self):
+        super().__init__(str)
+        self.tests = [contains_text, is_irish_mobile]
+
+class EircodeValidator(Validator):
+    def __init__(self):
+        super().__init__(str)
+        self.tests = [contains_text, is_eircode]
