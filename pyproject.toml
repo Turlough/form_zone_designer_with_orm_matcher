@@ -5,6 +5,7 @@ description = "PyQt6 app for registering and indexing scanned survey forms"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "google-genai>=1.64.0",
     "numpy>=1.24.0",
     "opencv-python>=4.8.0",
     "pillow>=10.0.0",
