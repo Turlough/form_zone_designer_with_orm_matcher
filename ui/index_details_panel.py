@@ -230,10 +230,22 @@ class IndexDetailPanel(QWidget):
             return False
 
     def _update_value_edit_style(self):
-        """Set value_text_edit background to INVALID_COLOUR when current field is invalid."""
-        if self.current_field and self._is_field_invalid(self.current_field):
+        """Invalid (non-empty): translucent red background. Empty: red border rectangle."""
+        if not self.current_field:
+            self.value_text_edit.setStyleSheet("")
+            return
+        value = self._get_value_for_validation(self.current_field)
+        is_empty = not (value and str(value).strip())
+        is_invalid = self._is_field_invalid(self.current_field)
+        r, g, b = INVALID_COLOUR.red(), INVALID_COLOUR.green(), INVALID_COLOUR.blue()
+        if is_empty and is_invalid:
             self.value_text_edit.setStyleSheet(
-                f"QTextEdit {{ background-color: rgba({INVALID_COLOUR.red()}, {INVALID_COLOUR.green()}, {INVALID_COLOUR.blue()}, 0.10); }}"
+                # f"QTextEdit {{ border: 2px solid rgb({r}, {g}, {b}); }}"
+                self.value_text_edit.setStyleSheet("")
+            )
+        elif not is_empty and is_invalid:
+            self.value_text_edit.setStyleSheet(
+                f"QTextEdit {{ background-color: rgba({r}, {g}, {b}, 0.10); }}"
             )
         else:
             self.value_text_edit.setStyleSheet("")
