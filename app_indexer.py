@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QDialog, QLineEdit, QDialogButtonBox, QFileDialog, QMessageBox,
     QStyledItemDelegate, QStyle, QFrame, QCheckBox,
 )
-from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QObject, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QObject, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent, QFont, QIcon
 from PIL import Image
 from dotenv import load_dotenv
@@ -30,6 +30,7 @@ from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerFi
 import logging
 from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog, QcCommentDialog
 from util.gemini_ocr_client import ocr_image_region
+from util.csv_save_queue import CsvSaveQueue
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -218,6 +219,10 @@ class Indexer(QMainWindow):
         
         # CSV manager
         self.csv_manager = CSVManager()
+        self._csv_save_queue = CsvSaveQueue()
+        self._save_csv_timer = QTimer(self)
+        self._save_csv_timer.setSingleShot(True)
+        self._save_csv_timer.timeout.connect(self._do_deferred_save_csv)
 
         # Project validations (created when batch loads; one per batch)
         self.project_validations: ProjectValidations | None = None
@@ -442,6 +447,7 @@ class Indexer(QMainWindow):
         self.detail_panel.field_value_changed.connect(self.on_detail_panel_value_changed)
         # Enter in the detail panel's value editor completes the current TextField
         self.detail_panel.field_edit_completed.connect(self.on_detail_panel_edit_completed)
+        self.detail_panel.field_focus_lost.connect(self._flush_csv_saves)
         self.detail_panel.ocr_requested.connect(self._on_ocr_requested)
         # Double-clicking a row in the detail panel's fields table opens the QC comment dialog
         self.detail_panel.field_comment_requested.connect(self._on_field_comment_requested)
@@ -506,6 +512,7 @@ class Indexer(QMainWindow):
         self._index_text_dialog.text_changed.connect(self.on_index_text_dialog_value_changed)
         # Enter in the floating dialog also completes the current TextField
         self._index_text_dialog.field_edit_completed.connect(self.on_index_text_dialog_edit_completed)
+        self._index_text_dialog.dialog_hidden.connect(self._flush_csv_saves)
 
         # QC comments dialog (shown to the left of the selected field)
         self._comment_dialog = IndexCommentDialog(self)
@@ -673,7 +680,9 @@ class Indexer(QMainWindow):
         """Handle document selection from the list widget."""
         if index < 0 or index >= len(self.document_paths):
             return
-        
+
+        self._flush_csv_saves()
+
         self.current_document_index = index
         self.current_page_index = 0
         
@@ -918,7 +927,7 @@ class Indexer(QMainWindow):
             row_comments.remove_comment(Comment(page_num, field_name, "").identity)
         new_str = row_comments.to_csv_string()
         self.csv_manager.set_field_value(self.current_document_index, "Comments", new_str)
-        self.csv_manager.save_csv()
+        self._enqueue_save_now()
         self._load_comments_for_current_page()
 
     def _find_next_page_with_fields(self, start_index: int) -> int | None:
@@ -943,6 +952,7 @@ class Indexer(QMainWindow):
 
     def previous_page(self):
         """Navigate to previous page that has fields (skipping blank pages)."""
+        self._flush_csv_saves()
         prev_idx = self._find_previous_page_with_fields(self.current_page_index)
         if prev_idx is None:
             return
@@ -954,6 +964,7 @@ class Indexer(QMainWindow):
         """Navigate directly to the given page (0-based index)."""
         if not self.current_page_images or page_index < 0 or page_index >= len(self.current_page_images):
             return
+        self._flush_csv_saves()
         self.current_page_index = page_index
         self.display_current_page()
         save_state(
@@ -997,6 +1008,7 @@ class Indexer(QMainWindow):
         - If the current form is the last file in the batch, show "Batch completed"
           dialog with Yes/No buttons (Yes action will be defined later).
         """
+        self._flush_csv_saves()
         next_idx = self._find_next_page_with_fields(self.current_page_index)
 
         # Case 1: there *is* another page with fields in this document – go there.
@@ -1072,8 +1084,7 @@ class Indexer(QMainWindow):
                 field.name,
                 'Ticked' if new_value else ''
             )
-            self.csv_manager.save_csv()
-            self._refresh_document_completion_bar(self.current_document_index)
+            self._enqueue_save_now()
             
             # Update display
             self.image_label.update_display()
@@ -1107,8 +1118,7 @@ class Indexer(QMainWindow):
                 field.name,
                 sub_field.name
             )
-            self.csv_manager.save_csv()
-            self._refresh_document_completion_bar(self.current_document_index)
+            self._enqueue_save_now()
             
             # Update display
             self.image_label.update_display()
@@ -1154,6 +1164,44 @@ class Indexer(QMainWindow):
 
             logger.info(f"TextField '{field.name}' clicked, value='{self.field_values.get(field.name, '')}'")
     
+    def _schedule_save_csv(self) -> None:
+        """Debounce: reset timer on each call; save runs after 400ms idle."""
+        self._save_csv_timer.stop()
+        self._save_csv_timer.start(400)
+
+    def _do_deferred_save_csv(self) -> None:
+        """Enqueue current CSV state for background write."""
+        if not self.csv_manager.csv_path or not self.csv_manager.rows:
+            return
+        self._csv_save_queue.enqueue_save(
+            self.csv_manager.csv_path,
+            self.csv_manager.rows,
+        )
+        self._refresh_document_completion_bar(self.current_document_index)
+
+    def _flush_csv_saves(self) -> None:
+        """Stop debounce timer and wait for write queue to drain."""
+        self._save_csv_timer.stop()
+        if self.csv_manager.csv_path and self.csv_manager.rows:
+            self._csv_save_queue.flush(
+                self.csv_manager.csv_path,
+                self.csv_manager.rows,
+            )
+        else:
+            self._csv_save_queue.flush(None, None)
+
+    def _enqueue_save_now(self, refresh_index: int | None = None) -> None:
+        """Enqueue CSV save immediately (no debounce). For tickbox, radio, comments."""
+        if not self.csv_manager.csv_path or not self.csv_manager.rows:
+            return
+        self._csv_save_queue.enqueue_save(
+            self.csv_manager.csv_path,
+            self.csv_manager.rows,
+        )
+        idx = refresh_index if refresh_index is not None else self.current_document_index
+        if idx >= 0:
+            self._refresh_document_completion_bar(idx)
+
     def on_detail_panel_value_changed(self, field_name: str, new_value: str):
         """Handle value changes from the detail panel."""
         # Update field_values
@@ -1166,14 +1214,13 @@ class Indexer(QMainWindow):
         # Update ImageLabel's field_values
         self.image_label.field_values = self.field_values.copy()
 
-        # Save to CSV
+        # Update in-memory CSV and schedule debounced save
         self.csv_manager.set_field_value(
             self.current_document_index,
             field_name,
             new_value
         )
-        self.csv_manager.save_csv()
-        self._refresh_document_completion_bar(self.current_document_index)
+        self._schedule_save_csv()
 
         # Update display
         self.image_label.update_display()
@@ -1197,8 +1244,7 @@ class Indexer(QMainWindow):
 
         self.image_label.field_values = self.field_values.copy()
         self.csv_manager.set_field_value(self.current_document_index, field_name, new_value)
-        self.csv_manager.save_csv()
-        self._refresh_document_completion_bar(self.current_document_index)
+        self._schedule_save_csv()
         self.image_label.update_display()
         logger.info(f"Field '{field_name}' value changed to '{new_value}' via text dialog")
 
@@ -1457,7 +1503,7 @@ class Indexer(QMainWindow):
             self.csv_manager.set_field_value(
                 row_index, "Comments", row_comments.to_csv_string()
             )
-            self.csv_manager.save_csv()
+            self._enqueue_save_now(row_index)
 
         msg = (
             f"Validated 1 document. {len(failures)} validation failure(s) added as comments."
@@ -1516,7 +1562,7 @@ class Indexer(QMainWindow):
                 total_failures += len(failures)
 
         if total_failures > 0:
-            self.csv_manager.save_csv()
+            self._enqueue_save_now()
 
         n_docs = len(self.document_paths)
         msg = (
@@ -1642,7 +1688,7 @@ class Indexer(QMainWindow):
         row_comments.remove_comment(comment.identity)
         new_str = row_comments.to_csv_string()
         self.csv_manager.set_field_value(row_idx, "Comments", new_str)
-        self.csv_manager.save_csv()
+        self._enqueue_save_now(row_idx)
         self._qc_review_index += 1
         self._show_current_qc_review_comment()
 
@@ -1667,7 +1713,7 @@ class Indexer(QMainWindow):
         row_comments = Comments.from_string(existing)
         row_comments.add_comment(comment)
         self.csv_manager.set_field_value(row_idx, "Comments", row_comments.to_csv_string())
-        self.csv_manager.save_csv()
+        self._enqueue_save_now(row_idx)
 
     def _on_qc_review_next(self) -> None:
         """Advance to the next comment without removing."""
@@ -1772,8 +1818,7 @@ class Indexer(QMainWindow):
 
         def on_result(doc_idx: int, field_name: str, text: str) -> None:
             self.csv_manager.set_field_value(doc_idx, field_name, text)
-            self.csv_manager.save_csv()
-            self._refresh_document_completion_bar(doc_idx)
+            self._enqueue_save_now(doc_idx)
             if doc_idx == self.current_document_index:
                 self.field_values[field_name] = text
                 if hasattr(self, "detail_panel") and self.detail_panel.current_field and self.detail_panel.current_field.name == field_name:
@@ -1907,6 +1952,11 @@ class Indexer(QMainWindow):
             self._clear_batch()
         except Exception as e:
             logger.warning("Could not move batch folder %s to %s: %s", source_dir, dest_dir, e)
+
+    def closeEvent(self, event):
+        """Flush pending CSV saves before closing."""
+        self._flush_csv_saves()
+        super().closeEvent(event)
 
 
 def main():

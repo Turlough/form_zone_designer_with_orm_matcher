@@ -100,6 +100,8 @@ class IndexDetailPanel(QWidget):
     # Emitted when the user presses Enter in the value editor to complete a TextField
     # Payload is (field_name: str)
     field_edit_completed = pyqtSignal(str)
+    # Emitted when the value editor loses focus (for flushing debounced saves)
+    field_focus_lost = pyqtSignal()
 
     ocr_requested = pyqtSignal()
     # Emitted when the user presses the OCR button
@@ -522,11 +524,14 @@ class IndexDetailPanel(QWidget):
             self._update_closeup()
 
     def eventFilter(self, obj, event):
-        """Catch Enter presses in the value editor to mark a TextField as completed."""
-        if obj is self.value_text_edit and event.type() == QEvent.Type.KeyPress:
-            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                if self.current_field and isinstance(self.current_field, TextField) and self.current_field.name:
-                    self.field_edit_completed.emit(self.current_field.name)
-                    # Swallow the event so we don't insert a newline
-                    return True
+        """Catch Enter presses and focus loss in the value editor."""
+        if obj is self.value_text_edit:
+            if event.type() == QEvent.Type.KeyPress:
+                if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                    if self.current_field and isinstance(self.current_field, TextField) and self.current_field.name:
+                        self.field_edit_completed.emit(self.current_field.name)
+                        # Swallow the event so we don't insert a newline
+                        return True
+            elif event.type() == QEvent.Type.FocusOut:
+                self.field_focus_lost.emit()
         return super().eventFilter(obj, event)
