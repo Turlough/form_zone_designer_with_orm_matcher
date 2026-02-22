@@ -2,8 +2,9 @@ from PyQt6.QtWidgets import QLabel
 from PyQt6.QtCore import Qt, QRect
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QFont, QFontMetrics
 
-from fields import Field, RadioGroup, RadioButton, Tickbox, TextField
+from fields import Field, RadioGroup, RadioButton, Tickbox, TextField, IntegerField, DecimalField
 from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP, INVALID_COLOUR
+from .index_details_panel import _format_number_for_display
 
 
 TICK_CHAR = "\u2713"  # ✓
@@ -224,6 +225,8 @@ class MainImageIndexPanel(QLabel):
                 val = self.field_values.get(field.name, "")
                 if val:
                     value_str = str(val)
+                    if isinstance(field, (IntegerField, DecimalField)):
+                        value_str = _format_number_for_display(value_str)
             if value_str is None:
                 continue
             display_text = (value_str[:30] + "…") if len(value_str) > 30 else value_str
@@ -448,8 +451,11 @@ class MainImageIndexPanel(QLabel):
                     # Draw value to the right when Show Value is on
                     if self.show_field_values:
                         min_x = value_placements.get(field.name)
+                        value_str = str(field_value)
+                        if isinstance(field, (IntegerField, DecimalField)):
+                            value_str = _format_number_for_display(value_str)
                         self._draw_value_to_right(
-                            painter, scaled_rect, base_color, str(field_value), is_invalid,
+                            painter, scaled_rect, base_color, value_str, is_invalid,
                             min_x=min_x,
                         )
                     # QC tick/cross beside text field
