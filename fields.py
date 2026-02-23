@@ -69,6 +69,8 @@ class Field:
 
 @dataclass
 class Tickbox(Field):
+    checked_value: str = "Ticked"
+
     def __post_init__(self):
         super().__post_init__()
         
@@ -175,9 +177,17 @@ class EircodeField(TextField):
         super().__post_init__()
         self.colour = (0, 150, 150)
 
+@dataclass
+class SignatureField(Tickbox):
+    checked_value: str = "Signed"
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.colour = (0, 150, 150)
 
 FIELD_TYPE_MAP = {
     "Tickbox": Tickbox,
+    "SignatureField": SignatureField,
     "RadioButton": RadioButton,
     "RadioGroup": RadioGroup,
     "TextField": TextField,

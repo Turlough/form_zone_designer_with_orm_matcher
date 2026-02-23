@@ -1,5 +1,6 @@
 from fields import Field
 from fields import Tickbox
+from fields import SignatureField
 from fields import RadioButton
 from fields import RadioGroup
 from fields import TextField
@@ -18,6 +19,7 @@ from util.validation import EmailValidator, IrishMobileValidator, EircodeValidat
 # Class, Display colour, Validation class
 FIELD_TYPE_MAP = {
     "Tickbox": (Tickbox, QColor(50, 255, 0), TextValidator),
+    "SignatureField": (SignatureField, QColor(0, 150, 150), TextValidator),
     "RadioButton": (RadioButton, QColor(100, 150, 0), TextValidator),
     "RadioGroup": (RadioGroup, QColor(100, 150, 0), TextValidator),
     "TextField": (TextField, QColor(0, 150, 50), TextValidator),

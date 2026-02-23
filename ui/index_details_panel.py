@@ -208,7 +208,7 @@ class IndexDetailPanel(QWidget):
         """Normalise the current value for validation, per field type."""
         if isinstance(field, Tickbox):
             checked = bool(self.field_values.get(field.name, False))
-            return "Ticked" if checked else ""
+            return field.checked_value if checked else ""
         if isinstance(field, RadioGroup):
             value = self.field_values.get(field.name, "")
             return value or ""
@@ -295,8 +295,8 @@ class IndexDetailPanel(QWidget):
         if self.current_field:
             current_value = self.field_values.get(self.current_field.name, "")
             # Convert value to string, handling different types
-            if isinstance(current_value, bool):
-                value_str = "Ticked" if current_value else ""
+            if isinstance(self.current_field, Tickbox) and isinstance(current_value, bool):
+                value_str = self.current_field.checked_value if current_value else ""
             else:
                 value_str = str(current_value) if current_value else ""
             if isinstance(self.current_field, (IntegerField, DecimalField)):
@@ -428,8 +428,8 @@ class IndexDetailPanel(QWidget):
             
             # Field value (truncated if long)
             value = self.field_values.get(field.name, "")
-            if isinstance(value, bool):
-                value_str = "Ticked" if value else ""
+            if isinstance(field, Tickbox) and isinstance(value, bool):
+                value_str = field.checked_value if value else ""
             else:
                 value_str = str(value) if value else ""
             if isinstance(field, (IntegerField, DecimalField)):

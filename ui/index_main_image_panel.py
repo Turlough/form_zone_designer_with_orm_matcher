@@ -93,7 +93,7 @@ class MainImageIndexPanel(QLabel):
         # TextValidator (is_empty) semantics work as expected.
         if isinstance(field, Tickbox):
             checked = bool(self.field_values.get(field.name, False))
-            return "Ticked" if checked else ""
+            return field.checked_value if checked else ""
 
         # RadioGroup (and subclasses): value is the selected radio button name.
         if isinstance(field, RadioGroup):

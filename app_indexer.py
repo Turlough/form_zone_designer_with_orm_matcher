@@ -887,7 +887,11 @@ class Indexer(QMainWindow):
             elif isinstance(field, Tickbox):
                 value = self.csv_manager.get_field_value(self.current_document_index, field.name)
                 if value:
-                    is_checked = value.lower() in ['ticked','true', '1', 'yes', 'checked', 'tick']
+                    val_lower = value.strip().lower()
+                    is_checked = (
+                        val_lower in ['ticked', 'true', '1', 'yes', 'checked', 'tick']
+                        or val_lower == field.checked_value.lower()
+                    )
                     self.field_values[field.name] = is_checked
             
             elif isinstance(field, TextField):
@@ -1082,7 +1086,7 @@ class Indexer(QMainWindow):
             self.csv_manager.set_field_value(
                 self.current_document_index,
                 field.name,
-                'Ticked' if new_value else ''
+                field.checked_value if new_value else ''
             )
             self._enqueue_save_now()
             
