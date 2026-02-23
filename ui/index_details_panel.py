@@ -133,7 +133,9 @@ class IndexDetailPanel(QWidget):
         
         # ---- 2. Close-up image of current rectangle ----
         self.closeup_label = QLabel("No field selected")
-        self.closeup_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.closeup_label.setAlignment(
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom
+        )
         self.closeup_label.setMinimumHeight(200)
         self.closeup_label.setMaximumHeight(200)
         self.closeup_label.setScaledContents(False)  # We'll handle scaling manually
@@ -142,6 +144,17 @@ class IndexDetailPanel(QWidget):
         )
         main_layout.addWidget(self.closeup_label)
         
+        
+        # ---- Editable text area for field value ----
+        self.value_text_edit = QTextEdit()
+        self.value_text_edit.setPlaceholderText("Enter field value...")
+        self.value_text_edit.setMinimumHeight(100)
+        self.value_text_edit.setFont(QFont("Arial", 12))
+        self.value_text_edit.textChanged.connect(self._on_value_changed)
+        # Catch Enter presses so we can advance to the next TextField without inserting a newline
+        self.value_text_edit.installEventFilter(self)
+        main_layout.addWidget(self.value_text_edit)
+
         # ---- 3. Field value label + OCR (Read) button in one row ----
         value_row = QHBoxLayout()
         value_label = QLabel("Field Value:")
@@ -157,15 +170,6 @@ class IndexDetailPanel(QWidget):
         self.ocr_button.clicked.connect(self.ocr_requested.emit)
         value_row.addWidget(self.ocr_button)
         main_layout.addLayout(value_row)
-        # ---- Editable text area for field value ----
-        self.value_text_edit = QTextEdit()
-        self.value_text_edit.setPlaceholderText("Enter field value...")
-        self.value_text_edit.setMinimumHeight(100)
-        self.value_text_edit.setFont(QFont("Arial", 12))
-        self.value_text_edit.textChanged.connect(self._on_value_changed)
-        # Catch Enter presses so we can advance to the next TextField without inserting a newline
-        self.value_text_edit.installEventFilter(self)
-        main_layout.addWidget(self.value_text_edit)
         
         # ---- 4. Table showing all fields ----
         table_label = QLabel("All Fields on Current Page:")
@@ -351,15 +355,14 @@ class IndexDetailPanel(QWidget):
                 abs_x += logo_top_left[0]
                 abs_y += logo_top_left[1]
             
-            # Add padding around the rectangle
+            # Add padding around the rectangle - use integer arithmetic so padding is exactly equal
             padding = 20
             img_array = np.array(self.current_page_image)
             height, width = img_array.shape[:2]
             
-            # Calculate crop region with padding
-            crop_x1 = max(0, abs_x - padding)
+            crop_x1 = max(0, abs_x)            
             crop_y1 = max(0, abs_y - padding)
-            crop_x2 = min(width, abs_x + field.width + padding)
+            crop_x2 = min(width, abs_x + field.width + padding * 2)
             crop_y2 = min(height, abs_y + field.height + padding)
             
             # Extract the region and make a contiguous copy for QImage
@@ -393,8 +396,8 @@ class IndexDetailPanel(QWidget):
                     label_size = self.closeup_label.minimumSizeHint()
             
             # Scale the image to fit the available area while preserving aspect ratio
-            # Account for any margins/padding in the label
-            available_width = max(1, label_size.width() - 4)  # Subtract small margin
+            # Account for padding (4px left + 4px right) in the label stylesheet
+            available_width = max(1, label_size.width() - 8)
             available_height = max(1, label_size.height() - 4)  # Subtract small margin
             
             scaled = pixmap.scaled(
