@@ -192,9 +192,10 @@ class MainImageIndexPanel(QLabel):
     ) -> dict:
         """
         Compute min_x for each field that will show a value, so values in the same
-        horizontal band (overlapping y range) don't overlap. Fields in a band are
-        ordered left-to-right; the first value starts at the right edge of the
-        rightmost field in the band, subsequent values are placed 1px after the
+        horizontal band (overlapping y range) don't overlap. Values start at the
+        right edge of the rightmost field in the band (all fields, not just those
+        with values). Fields with values in a band are ordered left-to-right;
+        the first value starts there, subsequent values are placed 1px after the
         previous value.
         Returns dict mapping field name -> min_x (widget coords).
         """
@@ -209,63 +210,69 @@ class MainImageIndexPanel(QLabel):
         pad_h = 8
         pad_v = 4
 
-        # Collect (field, abs_rect, value_str, scaled_rect) for fields that show values
-        entries: list[tuple] = []
+        def vertical_overlap(y1: int, h1: int, y2: int, h2: int) -> bool:
+            return y1 < y2 + h2 and y2 < y1 + h1
+
+        # Build bands from ALL fields (overlapping y ranges)
+        all_entries: list[tuple] = []
         for field in self.field_data:
-            value_str = None
             abs_x = field.x + logo_offset[0]
             abs_y = field.y + logo_offset[1]
             abs_w = field.width
             abs_h = field.height
-            if isinstance(field, RadioGroup):
-                selected = self.field_values.get(field.name, None)
-                if selected:
-                    value_str = selected
-            elif isinstance(field, TextField):
-                val = self.field_values.get(field.name, "")
-                if val:
-                    value_str = str(val)
-                    if isinstance(field, (IntegerField, DecimalField)):
-                        value_str = _format_number_for_display(value_str)
-            if value_str is None:
-                continue
-            display_text = (value_str[:30] + "…") if len(value_str) > 30 else value_str
-            text_w = metrics.horizontalAdvance(display_text)
-            value_w = text_w + pad_h * 2
             scaled_rect = QRect(
                 self.image_offset_x + int(abs_x * self.scale_x),
                 self.image_offset_y + int(abs_y * self.scale_y),
                 int(abs_w * self.scale_x),
                 int(abs_h * self.scale_y),
             )
-            entries.append((field, abs_x, abs_y, abs_h, scaled_rect, value_w))
+            all_entries.append((field, abs_x, abs_y, abs_h, scaled_rect))
 
-        def vertical_overlap(y1: int, h1: int, y2: int, h2: int) -> bool:
-            return y1 < y2 + h2 and y2 < y1 + h1
-
-        # Group into bands (fields with overlapping y ranges)
         bands: list[list[tuple]] = []
-        for field, ax, ay, ah, srect, vw in entries:
+        for entry in all_entries:
+            field, ax, ay, ah, srect = entry
             placed = False
             for band in bands:
-                # Check if this field overlaps any in the band
                 for _, bx, by, bh, *_ in band:
                     if vertical_overlap(ay, ah, by, bh):
-                        band.append((field, ax, ay, ah, srect, vw))
+                        band.append(entry)
                         placed = True
                         break
                 if placed:
                     break
             if not placed:
-                bands.append([(field, ax, ay, ah, srect, vw)])
+                bands.append([entry])
 
-        # For each band: sort by x, compute min_x for each field
+        # Collect (field, abs_x, abs_y, abs_h, scaled_rect, value_w, band_idx) for fields that show values
+        value_entries: list[tuple] = []
+        for band_idx, band in enumerate(bands):
+            for field, ax, ay, ah, srect in band:
+                value_str = None
+                if isinstance(field, RadioGroup):
+                    selected = self.field_values.get(field.name, None)
+                    if selected:
+                        value_str = selected
+                elif isinstance(field, TextField):
+                    val = self.field_values.get(field.name, "")
+                    if val:
+                        value_str = str(val)
+                        if isinstance(field, (IntegerField, DecimalField)):
+                            value_str = _format_number_for_display(value_str)
+                if value_str is None:
+                    continue
+                display_text = (value_str[:30] + "…") if len(value_str) > 30 else value_str
+                text_w = metrics.horizontalAdvance(display_text)
+                value_w = text_w + pad_h * 2
+                value_entries.append((field, ax, ay, ah, srect, value_w, band_idx))
+
+        # For each band: rightmost_right = max over ALL fields; sort value fields by x, compute min_x
         result: dict[str, int] = {}
-        for band in bands:
-            band.sort(key=lambda e: e[1])  # by abs_x
-            rightmost_right = max(srect.right() for (_, _, _, _, srect, _) in band)
+        for band_idx, band in enumerate(bands):
+            rightmost_right = max(srect.right() for (_, _, _, _, srect) in band)
+            band_value_entries = [(e[0], e[1], e[2], e[3], e[4], e[5]) for e in value_entries if e[6] == band_idx]
+            band_value_entries.sort(key=lambda e: e[1])  # by abs_x
             running_x = rightmost_right + VALUE_OFFSET
-            for field, _ax, _ay, _ah, srect, value_w in band:
+            for field, _ax, _ay, _ah, srect, value_w in band_value_entries:
                 min_x = max(srect.right() + VALUE_OFFSET, running_x)
                 result[field.name] = min_x
                 running_x = min_x + value_w + BAND_MARGIN
