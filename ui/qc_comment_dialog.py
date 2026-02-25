@@ -139,3 +139,75 @@ class QcCommentDialog(QDialog):
 
     def _on_next(self) -> None:
         self.next_clicked.emit()
+
+
+class QcSpecialFieldReviewDialog(QDialog):
+    """
+    Non-modal dialog for QC staff to review special fields (always_review) across the batch.
+
+    Displays: Field name, Document N of M, Page.
+    Buttons: Previous, Next.
+    """
+
+    previous_clicked = pyqtSignal()
+    next_clicked = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
+        self.setWindowTitle("Review Special Field")
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        self._field_label = QLabel("Field: —")
+        self._field_label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(self._field_label)
+
+        self._doc_label = QLabel("Document: —")
+        layout.addWidget(self._doc_label)
+
+        self._page_label = QLabel("Page: —")
+        layout.addWidget(self._page_label)
+
+        layout.addSpacing(8)
+
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        self._previous_btn = QPushButton("Previous")
+        self._previous_btn.clicked.connect(self._on_previous)
+        button_layout.addWidget(self._previous_btn)
+
+        self._next_btn = QPushButton("Next")
+        self._next_btn.setDefault(True)
+        self._next_btn.setStyleSheet("background-color: #27ae60; color: white;")
+        self._next_btn.clicked.connect(self._on_next)
+        button_layout.addWidget(self._next_btn)
+
+        layout.addLayout(button_layout)
+
+    def set_content(
+        self,
+        field_name: str,
+        doc_index: int,
+        doc_total: int,
+        page: int,
+    ) -> None:
+        """Set the displayed content for the current special field review item."""
+        self._field_label.setText(f"Field: {field_name or '—'}")
+        self._doc_label.setText(f"Document {doc_index + 1} of {doc_total}")
+        self._page_label.setText(f"Page: {page}")
+
+    def _on_previous(self) -> None:
+        self.previous_clicked.emit()
+
+    def _on_next(self) -> None:
+        self.next_clicked.emit()

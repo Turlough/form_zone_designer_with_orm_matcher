@@ -26,9 +26,10 @@ from util.path_utils import (
     find_file_case_insensitive,
 )
 from util.document_loader import get_document_loader_for_path
+from util.designer_persistence import load_page_fields as load_page_fields_from_json
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField
 import logging
-from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog, QcCommentDialog
+from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog, QcCommentDialog, QcSpecialFieldReviewDialog
 from util.gemini_ocr_client import ocr_image_region
 from util.csv_save_queue import CsvSaveQueue
 
@@ -88,6 +89,81 @@ class DocumentLoadWorker(QObject):
             logger.warning("Preload failed for %s: %s", self.document_path, e)
         finally:
             self.finished.emit()
+
+
+class BatchDocumentCacheWorker(QObject):
+    """Worker that loads documents and pre-prepares page images (rescale, logo detection, fields) in background."""
+
+    loaded = pyqtSignal(str, list)  # path, list of PIL Images
+    page_prepared = pyqtSignal(str, int, object, object, list)  # path, page_idx, rescaled_pil, bbox, page_fields
+    finished = pyqtSignal()
+
+    def __init__(
+        self,
+        document_paths: list[str],
+        logo_path: str | None,
+        json_folder: str,
+        template_page_dimensions: list[tuple[int, int]],
+        pages_without_fiducial: set[int],
+        config_folder: str | None,
+    ):
+        super().__init__()
+        self.document_paths = document_paths
+        self.logo_path = logo_path
+        self.json_folder = json_folder
+        self.template_page_dimensions = template_page_dimensions or []
+        self.pages_without_fiducial = pages_without_fiducial or set()
+        self.config_folder = config_folder
+
+    def run(self) -> None:
+        """Load each document, prepare each page, and emit as they complete."""
+        matcher = None
+        if self.logo_path and resolve_path_or_original(self.logo_path):
+            try:
+                matcher = ORMMatcher(self.logo_path)
+            except Exception as e:
+                logger.warning("Could not create ORMMatcher for page prep: %s", e)
+        for path in self.document_paths:
+            try:
+                loader = get_document_loader_for_path(path)
+                images = loader.load_pages(path)
+                self.loaded.emit(path, images)
+                for page_idx in range(len(images)):
+                    try:
+                        pil_image = images[page_idx]
+                        if (
+                            self.template_page_dimensions
+                            and page_idx < len(self.template_page_dimensions)
+                        ):
+                            target_w, target_h = self.template_page_dimensions[page_idx]
+                            w, h = pil_image.size
+                            if (w, h) != (target_w, target_h):
+                                pil_image = pil_image.resize(
+                                    (target_w, target_h),
+                                    Image.Resampling.LANCZOS,
+                                )
+                        if page_idx in self.pages_without_fiducial:
+                            page_bbox = None
+                        elif matcher:
+                            img_array = np.array(pil_image)
+                            img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+                            matcher.locate_from_cv2_image(img_cv)
+                            page_bbox = (
+                                (matcher.top_left, matcher.bottom_right)
+                                if matcher.top_left and matcher.bottom_right
+                                else None
+                            )
+                        else:
+                            page_bbox = None
+                        page_fields = load_page_fields_from_json(
+                            self.json_folder, page_idx, self.config_folder
+                        )
+                        self.page_prepared.emit(path, page_idx, pil_image, page_bbox, page_fields)
+                    except Exception as e:
+                        logger.warning("Page prep failed for %s page %d: %s", path, page_idx + 1, e)
+            except Exception as e:
+                logger.warning("Batch cache failed for %s: %s", path, e)
+        self.finished.emit()
 
 
 class DocumentListDelegate(QStyledItemDelegate):
@@ -250,7 +326,13 @@ class Indexer(QMainWindow):
         self._qc_preloaded: tuple[str, list[Image.Image]] | None = None
         self._qc_preload_thread: QThread | None = None
         self._qc_preload_worker: DocumentLoadWorker | None = None
-        
+        # Cache for Review special fields: absolute_path -> list of PIL Images (built in background)
+        self._qc_special_fields_cache: dict[str, list[Image.Image]] = {}
+        # Pre-prepared page data: (doc_path, page_idx) -> (rescaled_pil, page_bbox, page_fields)
+        self._qc_special_fields_page_cache: dict[tuple[str, int], tuple[Image.Image, object, list]] = {}
+        self._qc_special_fields_cache_thread: QThread | None = None
+        self._qc_special_fields_cache_worker: BatchDocumentCacheWorker | None = None
+
         # Initialize UI
         self.init_ui()
         # Restore last import file, page, and config folder if available
@@ -394,6 +476,7 @@ class Indexer(QMainWindow):
 
         self._index_menu_bar.validate_batch_requested.connect(self._on_validate_batch_requested)
         self._index_menu_bar.review_batch_comments_requested.connect(self._on_review_batch_comments_requested)
+        self._index_menu_bar.review_special_fields_requested.connect(self._on_review_special_fields_requested)
 
         self.setMenuBar(self._index_menu_bar)
 
@@ -524,6 +607,11 @@ class Indexer(QMainWindow):
         self._qc_comment_dialog.previous_clicked.connect(self._on_qc_review_previous)
         self._qc_comment_dialog.edit_saved.connect(self._on_qc_review_edit)
         self._qc_comment_dialog.next_clicked.connect(self._on_qc_review_next)
+
+        # QC special fields review dialog (non-modal, for Review special fields)
+        self._qc_special_fields_dialog = QcSpecialFieldReviewDialog(self)
+        self._qc_special_fields_dialog.previous_clicked.connect(self._on_qc_special_fields_previous)
+        self._qc_special_fields_dialog.next_clicked.connect(self._on_qc_special_fields_next)
     
     def _load_import_file_from_path(self, file_path: str, json_folder_override: str | None = None) -> bool:
         """Load import file from path (no dialog). If json_folder_override is set, use it for this load. Returns True on success."""
@@ -724,17 +812,22 @@ class Indexer(QMainWindow):
             self._document_cache.move_to_end(document_path)
             return
 
-        # 2. Check cache
+        # 2. Check special fields cache (when in Review special fields mode)
+        if self._qc_special_fields_cache and document_path in self._qc_special_fields_cache:
+            self.current_page_images = self._qc_special_fields_cache[document_path]
+            return
+
+        # 3. Check document cache
         if document_path in self._document_cache:
             self.current_page_images = self._document_cache[document_path]
             self._document_cache.move_to_end(document_path)
             return
 
-        # 3. Load from disk
+        # 4. Load from disk
         loader = get_document_loader_for_path(document_path)
         self.current_page_images = loader.load_pages(document_path)
 
-        # Add to cache (evict oldest if at capacity)
+        # Add to document cache (evict oldest if at capacity)
         if len(self._document_cache) >= _DOCUMENT_CACHE_MAX_SIZE:
             self._document_cache.popitem(last=False)
         self._document_cache[document_path] = self.current_page_images
@@ -764,40 +857,44 @@ class Indexer(QMainWindow):
         if self.next_button is not None:
             self.next_button.setEnabled(True)
         
-        # Get PIL image
-        pil_image = self.current_page_images[page_num]
+        # Check pre-prepared page cache (Review special fields)
+        doc_path = (
+            self.csv_manager.get_absolute_document_path(self.document_paths[self.current_document_index])
+            if self.current_document_index >= 0 and self.current_document_index < len(self.document_paths)
+            else None
+        )
+        cache_key = (doc_path, page_num) if doc_path else None
+        if cache_key and cache_key in self._qc_special_fields_page_cache:
+            pil_image, self.page_bbox, self.page_fields = self._qc_special_fields_page_cache[cache_key]
+        else:
+            # Synchronous path: rescale, detect logo, load fields
+            pil_image = self.current_page_images[page_num]
+            if (self.template_page_dimensions and
+                    page_num < len(self.template_page_dimensions)):
+                target_w, target_h = self.template_page_dimensions[page_num]
+                w, h = pil_image.size
+                if (w, h) != (target_w, target_h):
+                    pil_image = pil_image.resize(
+                        (target_w, target_h),
+                        Image.Resampling.LANCZOS,
+                    )
+                    logger.debug("Rescaled page %d from %dx%d to %dx%d", page_num + 1, w, h, target_w, target_h)
+            config = self._load_project_config()
+            raw = config.get("pages_without_fiducial", []) if config else []
+            pages_without_fiducial = {int(x) for x in raw}
+            if page_num in pages_without_fiducial:
+                self.page_bbox = None
+                logger.info("Page %d: Skipping fiducial (pages_without_fiducial)", page_num + 1)
+            else:
+                self.page_bbox = self.detect_logo(pil_image)
+            self.page_fields = self.load_page_fields(page_num + 1)  # JSON files are 1-indexed
         
-        # Rescale to template dimensions if they differ (survey pages may have different size)
-        if (self.template_page_dimensions and
-                page_num < len(self.template_page_dimensions)):
-            target_w, target_h = self.template_page_dimensions[page_num]
-            w, h = pil_image.size
-            if (w, h) != (target_w, target_h):
-                pil_image = pil_image.resize(
-                    (target_w, target_h),
-                    Image.Resampling.LANCZOS,
-                )
-                logger.debug("Rescaled page %d from %dx%d to %dx%d", page_num + 1, w, h, target_w, target_h)
-        
-        # Convert to QPixmap
+        # Convert to QPixmap (must be on main thread)
         img_array = np.array(pil_image)
         height, width, channel = img_array.shape
         bytes_per_line = 3 * width
         q_image = QImage(img_array.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(q_image)
-        
-        # Detect logo (skip for pages in pages_without_fiducial from project_config.json)
-        config = self._load_project_config()
-        raw = config.get("pages_without_fiducial", []) if config else []
-        pages_without_fiducial = {int(x) for x in raw}
-        if page_num in pages_without_fiducial:
-            self.page_bbox = None
-            logger.info("Page %d: Skipping fiducial (pages_without_fiducial)", page_num + 1)
-        else:
-            self.page_bbox = self.detect_logo(pil_image)
-        
-        # Load fields for this page
-        self.page_fields = self.load_page_fields(page_num + 1)  # JSON files are 1-indexed
         
         # Pre-populate field values from CSV
         self.populate_field_values()
@@ -1647,11 +1744,15 @@ class Indexer(QMainWindow):
 
     def _stop_qc_preload(self) -> None:
         """Stop any in-flight preload."""
-        if self._qc_preload_thread is not None and self._qc_preload_thread.isRunning():
-            self._qc_preload_thread.quit()
-            self._qc_preload_thread.wait(500)
-        self._qc_preload_thread = None
-        self._qc_preload_worker = None
+        try:
+            if self._qc_preload_thread is not None and self._qc_preload_thread.isRunning():
+                self._qc_preload_thread.quit()
+                self._qc_preload_thread.wait(500)
+        except RuntimeError:
+            pass  # Thread was already deleted
+        finally:
+            self._qc_preload_thread = None
+            self._qc_preload_worker = None
 
     def _start_qc_preload_next(self) -> None:
         """Preload the next document in the QC review checklist in background."""
@@ -1674,10 +1775,15 @@ class Indexer(QMainWindow):
         def on_worker_finished() -> None:
             thread.quit()
 
+        def on_thread_finished() -> None:
+            self._qc_preload_thread = None
+            self._qc_preload_worker = None
+
         worker.loaded.connect(on_loaded)
         worker.finished.connect(on_worker_finished)
+        thread.finished.connect(on_thread_finished)
+        thread.finished.connect(thread.deleteLater)
         thread.started.connect(worker.run)
-        thread.finished.connect(worker.deleteLater)
         thread.start()
         self._qc_preload_thread = thread
         self._qc_preload_worker = worker
@@ -1725,6 +1831,230 @@ class Indexer(QMainWindow):
             return
         self._qc_review_index += 1
         self._show_current_qc_review_comment()
+
+    def _on_review_special_fields_requested(self) -> None:
+        """Handle QC > QC batch > Review special fields: iterate through always_review fields across all docs."""
+        if not self.document_paths:
+            QMessageBox.information(
+                self,
+                "No batch loaded",
+                "Load a batch first (Batch menu).",
+            )
+            return
+
+        config = self._load_project_config()
+        always_review = config.get("always_review") if config else None
+        if not always_review or not isinstance(always_review, list):
+            QMessageBox.information(
+                self,
+                "No always_review",
+                "project_config.json must define 'always_review' as a list of field names.\n"
+                'Example: "always_review": ["Field3", "Another field"]',
+            )
+            return
+
+        field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
+        checklist: list[tuple[int, str]] = []
+        for field_name in always_review:
+            page_num = field_to_page.get(field_name)
+            if page_num is None:
+                continue
+            for row_idx in range(len(self.document_paths)):
+                checklist.append((row_idx, field_name))
+
+        if not checklist:
+            QMessageBox.information(
+                self,
+                "No fields to review",
+                "None of the always_review fields exist in this project's form definition.",
+            )
+            return
+
+        self._qc_preloaded = None
+        self._stop_qc_preload()
+        self._qc_comment_dialog.hide()
+        self._qc_special_fields_cache.clear()
+        self._qc_special_fields_page_cache.clear()
+        self._qc_special_fields_checklist = checklist
+        self._qc_special_fields_index = 0
+        self._qc_special_fields_dialog_positioned = False
+        self._start_qc_special_fields_cache()
+        self._show_current_qc_special_field()
+
+    def _show_current_qc_special_field(self) -> None:
+        """Navigate to the current special field's page and show the review dialog."""
+        if not hasattr(self, "_qc_special_fields_checklist") or self._qc_special_fields_index >= len(
+            self._qc_special_fields_checklist
+        ):
+            self._qc_preloaded = None
+            self._stop_qc_preload()
+            self._stop_qc_special_fields_cache()
+            self._qc_special_fields_cache.clear()
+            self._qc_special_fields_page_cache.clear()
+            self._qc_special_fields_dialog.close()
+            QMessageBox.information(self, "Review complete", "No more special fields to review.")
+            return
+
+        row_idx, field_name = self._qc_special_fields_checklist[self._qc_special_fields_index]
+        field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
+        page_num = field_to_page.get(field_name, 1)
+        page_index = page_num - 1
+
+        if self.current_document_index != row_idx:
+            self.tiff_list.setCurrentRow(row_idx)
+            self.on_document_selected(row_idx)
+        self.current_page_index = page_index
+        self.display_current_page()
+
+        field_to_show = next((f for f in self.page_fields if f.name == field_name), None)
+        if field_to_show and hasattr(self, "detail_panel") and self.current_page_images:
+            current_pil_image = self.current_page_images[self.current_page_index]
+            self.detail_panel.set_current_field(
+                field_to_show,
+                page_image=current_pil_image,
+                page_bbox=self.page_bbox,
+                page_fields=self.page_fields,
+                field_values=self.field_values,
+                field_comments=self.page_comments,
+            )
+            self._set_current_field(field_to_show)
+
+        self._qc_special_fields_dialog.set_content(
+            field_name=field_name,
+            doc_index=row_idx,
+            doc_total=len(self.document_paths),
+            page=page_num,
+        )
+
+        self._qc_special_fields_dialog.adjustSize()
+        if not getattr(self, "_qc_special_fields_dialog_positioned", True):
+            panel_top_left = self.detail_panel.mapToGlobal(QPoint(0, 0))
+            panel_height = self.detail_panel.height()
+            margin = 8
+            dx = panel_top_left.x() - self._qc_special_fields_dialog.width() - margin
+            dy = panel_top_left.y() + (panel_height - self._qc_special_fields_dialog.height()) // 2
+            if dx < 0:
+                dx = 0
+            if dy < 0:
+                dy = 0
+            self._qc_special_fields_dialog.move(dx, dy)
+            self._qc_special_fields_dialog_positioned = True
+        self._index_text_dialog.hide()
+        self._qc_special_fields_dialog.show()
+        self._qc_special_fields_dialog.raise_()
+        self._qc_special_fields_dialog.activateWindow()
+
+        self._start_qc_special_fields_preload()
+
+    def _start_qc_special_fields_cache(self) -> None:
+        """Start background loading of all batch documents and page preparation into cache."""
+        all_paths = [
+            self.csv_manager.get_absolute_document_path(self.document_paths[i])
+            for i in range(len(self.document_paths))
+        ]
+        all_paths = [p for p in all_paths if p]
+        # Pre-populate from document cache so we don't re-load already cached docs
+        for path in all_paths:
+            if path in self._document_cache and path not in self._qc_special_fields_cache:
+                self._qc_special_fields_cache[path] = self._document_cache[path]
+        paths = [p for p in all_paths if p not in self._qc_special_fields_cache]
+        if not paths:
+            return
+        self._stop_qc_special_fields_cache()
+        config = self._load_project_config()
+        raw = config.get("pages_without_fiducial", []) if config else []
+        pages_without_fiducial = {int(x) for x in raw}
+        worker = BatchDocumentCacheWorker(
+            document_paths=paths,
+            logo_path=self.logo_path,
+            json_folder=self.json_folder,
+            template_page_dimensions=self.template_page_dimensions,
+            pages_without_fiducial=pages_without_fiducial,
+            config_folder=self.config_folder,
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+
+        def on_loaded(path: str, images: list) -> None:
+            self._qc_special_fields_cache[path] = images
+
+        def on_page_prepared(path: str, page_idx: int, pil_image, bbox, page_fields: list) -> None:
+            self._qc_special_fields_page_cache[(path, page_idx)] = (pil_image, bbox, page_fields)
+
+        def on_finished() -> None:
+            self._qc_special_fields_cache_thread = None
+            self._qc_special_fields_cache_worker = None
+
+        worker.loaded.connect(on_loaded)
+        worker.page_prepared.connect(on_page_prepared)
+        worker.finished.connect(on_finished)
+        thread.started.connect(worker.run)
+        thread.finished.connect(thread.deleteLater)
+        thread.start()
+        self._qc_special_fields_cache_thread = thread
+        self._qc_special_fields_cache_worker = worker
+
+    def _stop_qc_special_fields_cache(self) -> None:
+        """Stop the background cache worker if running."""
+        if self._qc_special_fields_cache_thread is None:
+            return
+        try:
+            if self._qc_special_fields_cache_thread.isRunning():
+                self._qc_special_fields_cache_thread.quit()
+                self._qc_special_fields_cache_thread.wait(2000)
+        except RuntimeError:
+            pass
+        finally:
+            self._qc_special_fields_cache_thread = None
+            self._qc_special_fields_cache_worker = None
+
+    def _start_qc_special_fields_preload(self) -> None:
+        """Preload the next document in the special fields review checklist."""
+        if not hasattr(self, "_qc_special_fields_checklist") or self._qc_special_fields_index + 1 >= len(
+            self._qc_special_fields_checklist
+        ):
+            return
+        next_row_idx = self._qc_special_fields_checklist[self._qc_special_fields_index + 1][0]
+        next_path = self.csv_manager.get_absolute_document_path(self.document_paths[next_row_idx])
+        if not next_path or next_path in self._document_cache:
+            return
+        if self._qc_preloaded and self._qc_preloaded[0] == next_path:
+            return
+        self._stop_qc_preload()
+        worker = DocumentLoadWorker(next_path)
+        thread = QThread(self)
+        worker.moveToThread(thread)
+
+        def on_thread_finished() -> None:
+            self._qc_preload_thread = None
+            self._qc_preload_worker = None
+
+        worker.loaded.connect(lambda path, imgs: setattr(self, "_qc_preloaded", (path, imgs)))
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(on_thread_finished)
+        thread.finished.connect(thread.deleteLater)
+        thread.started.connect(worker.run)
+        thread.start()
+        self._qc_preload_thread = thread
+        self._qc_preload_worker = worker
+
+    def _on_qc_special_fields_previous(self) -> None:
+        """Go back to the previous special field."""
+        if not hasattr(self, "_qc_special_fields_checklist"):
+            return
+        if self._qc_special_fields_index <= 0:
+            return
+        self._qc_preloaded = None
+        self._stop_qc_preload()
+        self._qc_special_fields_index -= 1
+        self._show_current_qc_special_field()
+
+    def _on_qc_special_fields_next(self) -> None:
+        """Advance to the next special field."""
+        if not hasattr(self, "_qc_special_fields_checklist"):
+            return
+        self._qc_special_fields_index += 1
+        self._show_current_qc_special_field()
 
     def _on_ocr_requested(self) -> None:
         """Handle OCR menu action: open selection dialog and run Cloud Vision."""
