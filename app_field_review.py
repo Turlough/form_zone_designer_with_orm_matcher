@@ -383,10 +383,15 @@ class FieldReviewApp(QMainWindow):
         self.matcher: ORMMatcher | None = None
         self.review_items: list[ReviewItem] = []
         self._load_worker: LoadBatchWorker | None = None
+        self._cache_worker: LoadBatchWorker | None = None
         self._cell_widgets: list[ReviewCellWidget] = []  # index -> cell for thumbnail updates
         self._review_field_name = ""
         self._selected_review_field = ""  # Field chosen from Field menu
         self._field_actions: dict[str, QAction] = {}  # field_name -> action
+        self._field_cache: dict[str, list[ReviewItem]] = {}  # field_name -> items with thumbnails
+        self._cache_items: list[ReviewItem] = []  # temp during cache build
+        self._cache_field_name = ""  # which field we're currently caching
+        self._cache_batch_folder: Path | None = None  # batch we're caching for (ignore if batch changed)
 
         self._init_ui()
 
@@ -492,6 +497,11 @@ class FieldReviewApp(QMainWindow):
         if not review_field:
             return
 
+        # Use cache if available
+        if review_field in self._field_cache:
+            self._display_from_cache(review_field)
+            return
+
         self.load_action.setEnabled(False)
         self.status_label.setText(f"Loading batch '{self.batch_folder.name}' for field '{review_field}'...")
         self._load_worker = LoadBatchWorker(
@@ -506,6 +516,101 @@ class FieldReviewApp(QMainWindow):
         self._load_worker.thumbnail_ready.connect(self._on_thumbnail_ready)
         self._load_worker.finished.connect(self._on_load_finished)
         self._load_worker.start()
+
+    def _display_from_cache(self, field_name: str) -> None:
+        """Display items from cache (instant switch)."""
+        items = self._field_cache[field_name]
+        self._review_field_name = field_name
+        self.review_items = items
+        self._cell_widgets = []
+        for i in range(num_rows):
+            for j in range(num_cols):
+                existing = self.grid_layout.itemAtPosition(i, j)
+                if existing and existing.widget():
+                    existing.widget().deleteLater()
+                idx = i * num_cols + j
+                item = items[idx] if idx < len(items) else None
+                cell = ReviewCellWidget(item, item_index=idx)
+                cell.value_changed.connect(self._on_value_changed)
+                self.grid_layout.addWidget(cell, i, j)
+                self._cell_widgets.append(cell)
+        batch_name = self.batch_folder.name if self.batch_folder else "?"
+        self.status_label.setText(f"Batch: {batch_name} | Field: {field_name} | {len(items)} items (cached)")
+
+    def _start_cache_next_field(self) -> None:
+        """Start background caching of the next field in always_review."""
+        if self._cache_worker is not None:
+            return  # Already caching
+        if not self.config_folder or not self.batch_folder:
+            return
+        config = _load_project_config(self.config_folder)
+        if not config:
+            return
+        always_review = config.get("always_review")
+        if not always_review or not isinstance(always_review, list):
+            return
+        import_filename = str(config.get("import_filename", "")).strip()
+        if not import_filename:
+            return
+        raw_pages = config.get("pages_without_fiducial", [])
+        pages_without_fiducial = {int(x) for x in raw_pages}
+
+        # Find next uncached field
+        current_idx = always_review.index(self._review_field_name) if self._review_field_name in always_review else -1
+        for i in range(current_idx + 1, len(always_review)):
+            next_field = always_review[i]
+            if next_field not in self._field_cache:
+                self._cache_field_name = next_field
+                self._cache_batch_folder = self.batch_folder
+                self._cache_worker = LoadBatchWorker(
+                    config_folder=self.config_folder,
+                    batch_folder=self.batch_folder,
+                    import_filename=import_filename,
+                    review_field_name=next_field,
+                    pages_without_fiducial=pages_without_fiducial,
+                )
+                self._cache_worker.items_ready.connect(self._on_cache_items_ready)
+                self._cache_worker.thumbnail_ready.connect(self._on_cache_thumbnail_ready)
+                self._cache_worker.finished.connect(self._on_cache_finished)
+                self._cache_worker.start()
+                logger.info("Caching field '%s' in background", next_field)
+                return
+        # No more fields to cache
+
+    def _on_cache_items_ready(self, items: list[ReviewItem], field_name: str) -> None:
+        """Store items for cache build."""
+        self._cache_items = list(items)
+
+    def _on_cache_thumbnail_ready(self, index: int, arr: np.ndarray) -> None:
+        """Update cached item with thumbnail."""
+        if 0 <= index < len(self._cache_items) and arr is not None:
+            pixmap = _numpy_to_qpixmap(arr)
+            old = self._cache_items[index]
+            self._cache_items[index] = ReviewItem(
+                batch_name=old.batch_name,
+                doc_path=old.doc_path,
+                csv_path=old.csv_path,
+                row_index=old.row_index,
+                field_name=old.field_name,
+                field_value=old.field_value,
+                thumbnail=pixmap,
+            )
+
+    def _on_cache_finished(self, field_name: str) -> None:
+        """Store completed cache and start next."""
+        self._cache_worker = None
+        if self._cache_batch_folder != self.batch_folder:
+            self._cache_items = []
+            self._cache_field_name = ""
+            self._cache_batch_folder = None
+            return  # Batch changed, discard cache
+        if self._cache_items and self._cache_field_name:
+            self._field_cache[self._cache_field_name] = list(self._cache_items)
+            logger.info("Cached field '%s' (%d items)", self._cache_field_name, len(self._cache_items))
+        self._cache_items = []
+        self._cache_field_name = ""
+        self._cache_batch_folder = None
+        self._start_cache_next_field()
 
     def _on_select_project(self) -> None:
         default = os.getenv("DESIGNER_CONFIG_FOLDER", "")
@@ -580,6 +685,8 @@ class FieldReviewApp(QMainWindow):
             return
 
         self.batch_folder = resolved_batch
+        self._field_cache.clear()  # New batch, clear cache
+        self._cache_batch_folder = None  # Invalidate any in-flight cache
         self._reload_current_batch()
 
     def _on_load_progress(self, message: str) -> None:
@@ -614,10 +721,21 @@ class FieldReviewApp(QMainWindow):
         )
 
     def _on_thumbnail_ready(self, index: int, arr: np.ndarray) -> None:
-        """Update the grid cell when a thumbnail is ready."""
+        """Update the grid cell and item when a thumbnail is ready."""
         if 0 <= index < len(self._cell_widgets):
             pixmap = _numpy_to_qpixmap(arr)
             self._cell_widgets[index].set_thumbnail(pixmap)
+            if index < len(self.review_items):
+                old = self.review_items[index]
+                self.review_items[index] = ReviewItem(
+                    batch_name=old.batch_name,
+                    doc_path=old.doc_path,
+                    csv_path=old.csv_path,
+                    row_index=old.row_index,
+                    field_name=old.field_name,
+                    field_value=old.field_value,
+                    thumbnail=pixmap,
+                )
 
     def _on_value_changed(self, item_index: int, new_value: str) -> None:
         """Save edited value to CSV."""
@@ -643,6 +761,10 @@ class FieldReviewApp(QMainWindow):
         self.status_label.setText(
             f"Batch: {batch_name} | Field: {review_field} | {len(self.review_items)} items"
         )
+        # Store current field in cache (we have it loaded) and start caching next
+        if self.review_items:
+            self._field_cache[review_field] = list(self.review_items)
+        self._start_cache_next_field()
 
 
 def main() -> None:
