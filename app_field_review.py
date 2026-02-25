@@ -15,8 +15,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PIL import Image
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QAction, QActionGroup, QPixmap, QImage
+from PyQt6.QtCore import Qt, QRect, QThread, pyqtSignal
+from PyQt6.QtGui import QAction, QActionGroup, QColor, QFont, QFontMetrics, QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -38,6 +38,7 @@ from util.path_utils import find_file_case_insensitive, resolve_path_case_insens
 from util.csv_manager import CSVManager
 
 VALUE_FONT_SIZE = 14
+VALUE_OFFSET = 8  # Gap between thumbnail and value (matches index_main_image_panel)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -261,6 +262,9 @@ class LoadBatchWorker(QThread):
             self.import_filename,
             self.review_field_name,
         )
+        if self.isInterruptionRequested():
+            self.finished.emit(self.review_field_name)
+            return
         if not items:
             self.items_ready.emit([], self.review_field_name)
             self.finished.emit(self.review_field_name)
@@ -290,11 +294,28 @@ class LoadBatchWorker(QThread):
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(make_thumbnail, i): i for i in range(len(items))}
             for future in as_completed(futures):
+                if self.isInterruptionRequested():
+                    break
                 idx, arr = future.result()
                 if arr is not None:
                     self.thumbnail_ready.emit(idx, arr)
 
         self.finished.emit(self.review_field_name)
+
+
+def _cancel_and_wait_worker(worker: LoadBatchWorker | None) -> None:
+    """Request worker to stop and wait for it. Disconnects signals to avoid stale callbacks."""
+    if worker is None or not worker.isRunning():
+        return
+    try:
+        worker.progress.disconnect()
+        worker.items_ready.disconnect()
+        worker.thumbnail_ready.disconnect()
+        worker.finished.disconnect()
+    except RuntimeError:
+        pass  # Slot already destroyed
+    worker.requestInterruption()
+    worker.wait()
 
 
 def _load_page_fields_for_review(json_folder: Path, page_num: int) -> list[Field]:
@@ -315,8 +336,57 @@ def _load_page_fields_for_review(json_folder: Path, page_num: int) -> list[Field
         return []
 
 
+def _paint_value_onto_pixmap(base_pixmap: QPixmap, value_str: str) -> QPixmap:
+    """
+    Paint the field value to the right of the thumbnail, with translucent white background.
+    Matches index_main_image_panel's _draw_value_to_right style.
+    """
+    if base_pixmap.isNull():
+        return base_pixmap
+    display_text = (value_str[:30] + "…") if len(value_str) > 30 else (value_str or "(empty)")
+    offset = VALUE_OFFSET
+    pad_h, pad_v = 8, 4
+
+    font = QFont()
+    font.setPointSize(8)
+    font.setBold(True)
+    metrics = QFontMetrics(font)
+    text_w = metrics.horizontalAdvance(display_text)
+    text_h = metrics.height()
+    value_w = text_w + pad_h * 2
+    value_h = text_h + pad_v * 2
+
+    thumb_w = base_pixmap.width()
+    thumb_h = base_pixmap.height()
+    # Value aligned with top of thumbnail (like scaled_rect.y())
+    value_y = 0
+    value_left = thumb_w + offset
+
+    total_w = value_left + value_w
+    total_h = max(thumb_h, value_h)
+
+    result = QPixmap(total_w, total_h)
+    result.fill(QColor(43, 43, 43))  # Match thumb_label background
+    painter = QPainter(result)
+    painter.drawPixmap(0, 0, base_pixmap)
+    # Value rect to the right of thumbnail
+    value_rect = QRect(value_left, value_y, value_w, value_h)
+    bg_color = QColor(255, 255, 255)
+    bg_color.setAlpha(int(255 * 0.8))
+    painter.fillRect(value_rect, bg_color)
+    painter.setPen(QColor(100, 100, 100))
+    painter.setFont(font)
+    painter.drawText(
+        value_rect.adjusted(pad_h, pad_v, -pad_h, -pad_v),
+        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        display_text,
+    )
+    painter.end()
+    return result
+
+
 class ReviewCellWidget(QWidget):
-    """A single cell in the review grid: thumbnail above, editable value below."""
+    """A single cell: thumbnail with value painted onto pixmap, editable value below."""
 
     value_changed = pyqtSignal(int, str)  # item_index, new_value
 
@@ -324,6 +394,7 @@ class ReviewCellWidget(QWidget):
         super().__init__(parent)
         self.item = item
         self.item_index = item_index
+        self._base_pixmap: QPixmap | None = None  # Thumbnail without overlay
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -348,7 +419,8 @@ class ReviewCellWidget(QWidget):
 
         if item:
             if item.thumbnail:
-                self.thumb_label.setPixmap(item.thumbnail)
+                self._base_pixmap = item.thumbnail
+                self._update_thumb_with_overlay(item.field_value or "")
             else:
                 self.thumb_label.setText("(no image)")
             self.value_edit.setText(item.field_value)
@@ -358,6 +430,13 @@ class ReviewCellWidget(QWidget):
             self.value_edit.setReadOnly(True)
             self.value_edit.setPlaceholderText("—")
 
+    def _update_thumb_with_overlay(self, value_str: str) -> None:
+        """Paint value onto pixmap and update thumb_label."""
+        if self._base_pixmap is None or self._base_pixmap.isNull():
+            return
+        composite = _paint_value_onto_pixmap(self._base_pixmap, value_str)
+        self.thumb_label.setPixmap(composite)
+
     def _on_editing_finished(self) -> None:
         if self.item_index >= 0 and self.item is not None:
             new_val = self.value_edit.text().strip()
@@ -365,8 +444,14 @@ class ReviewCellWidget(QWidget):
 
     def set_thumbnail(self, pixmap: QPixmap) -> None:
         """Update the thumbnail display (for progressive loading)."""
-        self.thumb_label.setPixmap(pixmap)
+        self._base_pixmap = pixmap
+        value_str = self.item.field_value if self.item else ""
+        self._update_thumb_with_overlay(value_str or "")
         self.thumb_label.setText("")
+
+    def set_value_overlay(self, value: str) -> None:
+        """Repaint thumbnail with updated value overlay."""
+        self._update_thumb_with_overlay(value)
 
 
 class FieldReviewApp(QMainWindow):
@@ -435,6 +520,14 @@ class FieldReviewApp(QMainWindow):
 
         self._populate_placeholder_grid()
 
+    def closeEvent(self, event) -> None:
+        """Cancel background workers before closing to avoid QThread destroyed-while-running."""
+        _cancel_and_wait_worker(self._load_worker)
+        _cancel_and_wait_worker(self._cache_worker)
+        self._load_worker = None
+        self._cache_worker = None
+        super().closeEvent(event)
+
     def _populate_placeholder_grid(self) -> None:
         """Fill grid with placeholder cells."""
         for i in range(num_rows):
@@ -502,6 +595,11 @@ class FieldReviewApp(QMainWindow):
             self._display_from_cache(review_field)
             return
 
+        _cancel_and_wait_worker(self._load_worker)
+        self._load_worker = None
+        _cancel_and_wait_worker(self._cache_worker)
+        self._cache_worker = None
+
         self.load_action.setEnabled(False)
         self.status_label.setText(f"Loading batch '{self.batch_folder.name}' for field '{review_field}'...")
         self._load_worker = LoadBatchWorker(
@@ -539,8 +637,8 @@ class FieldReviewApp(QMainWindow):
 
     def _start_cache_next_field(self) -> None:
         """Start background caching of the next field in always_review."""
-        if self._cache_worker is not None:
-            return  # Already caching
+        _cancel_and_wait_worker(self._cache_worker)
+        self._cache_worker = None
         if not self.config_folder or not self.batch_folder:
             return
         config = _load_project_config(self.config_folder)
@@ -749,6 +847,8 @@ class FieldReviewApp(QMainWindow):
             csv_manager.set_field_value(item.row_index, item.field_name, new_value)
             csv_manager.save_csv()
             item.field_value = new_value
+            if item_index < len(self._cell_widgets):
+                self._cell_widgets[item_index].set_value_overlay(new_value)
             self.status_label.setText(f"Saved: {item.batch_name} / row {item.row_index + 1}")
         except Exception as e:
             logger.warning("Could not save value: %s", e)
