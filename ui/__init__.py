@@ -12,3 +12,4 @@ from .index_comment_dialog import IndexCommentDialog
 from .index_menu_bar import IndexMenuBar
 from .index_ocr_dialog import IndexOcrDialog
 from .qc_comment_dialog import QcCommentDialog, QcSpecialFieldReviewDialog
+from .qc_text_review_window import QcTextReviewWindow

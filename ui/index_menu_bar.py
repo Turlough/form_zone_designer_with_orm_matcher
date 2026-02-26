@@ -17,6 +17,7 @@ class IndexMenuBar(QMenuBar):
     ocr_page_requested = pyqtSignal()  # User chose to OCR all TextFields on the current page
     review_batch_comments_requested = pyqtSignal()  # User chose QC > Review batch comments
     review_special_fields_requested = pyqtSignal()  # User chose QC > QC batch > Review special fields
+    quick_review_special_fields_requested = pyqtSignal()  # User chose QC > QC batch > Quick review special fields
     review_document_comments_requested = pyqtSignal()  # User chose QC > Review document comments
     validate_document_requested = pyqtSignal()  # User chose QC > Validate document
     validate_batch_requested = pyqtSignal()  # User chose QC > Validate batch
@@ -266,6 +267,8 @@ class IndexMenuBar(QMenuBar):
         action.triggered.connect(self._on_review_batch_comments_triggered)
         action = qc_batch_menu.addAction("Review special fields")
         action.triggered.connect(self._on_review_special_fields_triggered)
+        action = qc_batch_menu.addAction("Quick review special fields")
+        action.triggered.connect(self._on_quick_review_special_fields_triggered)
 
     def _on_validate_document_triggered(self) -> None:
         """Emit signal when Validate document is chosen."""
@@ -282,6 +285,10 @@ class IndexMenuBar(QMenuBar):
     def _on_review_special_fields_triggered(self) -> None:
         """Emit signal when Review special fields is chosen."""
         self.review_special_fields_requested.emit()
+
+    def _on_quick_review_special_fields_triggered(self) -> None:
+        """Emit signal when Quick review special fields is chosen."""
+        self.quick_review_special_fields_requested.emit()
 
     def _on_review_document_comments_triggered(self) -> None:
         """Emit signal when Review document comments is chosen."""

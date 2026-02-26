@@ -29,7 +29,7 @@ from util.document_loader import get_document_loader_for_path
 from util.designer_persistence import load_page_fields as load_page_fields_from_json
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField
 import logging
-from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog, QcCommentDialog, QcSpecialFieldReviewDialog
+from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog, QcCommentDialog, QcSpecialFieldReviewDialog, QcTextReviewWindow
 from util.gemini_ocr_client import ocr_image_region
 from util.csv_save_queue import CsvSaveQueue
 
@@ -477,6 +477,7 @@ class Indexer(QMainWindow):
         self._index_menu_bar.validate_batch_requested.connect(self._on_validate_batch_requested)
         self._index_menu_bar.review_batch_comments_requested.connect(self._on_review_batch_comments_requested)
         self._index_menu_bar.review_special_fields_requested.connect(self._on_review_special_fields_requested)
+        self._index_menu_bar.quick_review_special_fields_requested.connect(self._on_quick_review_special_fields_requested)
 
         self.setMenuBar(self._index_menu_bar)
 
@@ -612,6 +613,9 @@ class Indexer(QMainWindow):
         self._qc_special_fields_dialog = QcSpecialFieldReviewDialog(self)
         self._qc_special_fields_dialog.previous_clicked.connect(self._on_qc_special_fields_previous)
         self._qc_special_fields_dialog.next_clicked.connect(self._on_qc_special_fields_next)
+
+        # QC quick review window (non-modal, table of always_review values)
+        self._qc_text_review_window: QcTextReviewWindow | None = None
     
     def _load_import_file_from_path(self, file_path: str, json_folder_override: str | None = None) -> bool:
         """Load import file from path (no dialog). If json_folder_override is set, use it for this load. Returns True on success."""
@@ -1880,6 +1884,80 @@ class Indexer(QMainWindow):
         self._qc_special_fields_dialog_positioned = False
         self._start_qc_special_fields_cache()
         self._show_current_qc_special_field()
+
+    def _on_quick_review_special_fields_requested(self) -> None:
+        """Handle QC > QC batch > Quick review special fields: show table of values, activate on click."""
+        if not self.document_paths:
+            QMessageBox.information(
+                self,
+                "No batch loaded",
+                "Load a batch first (Batch menu).",
+            )
+            return
+
+        config = self._load_project_config()
+        always_review = config.get("always_review") if config else None
+        if not always_review or not isinstance(always_review, list):
+            QMessageBox.information(
+                self,
+                "No always_review",
+                "project_config.json must define 'always_review' as a list of field names.\n"
+                'Example: "always_review": ["Field3", "Another field"]',
+            )
+            return
+
+        field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
+        rows: list[tuple[int, str, str]] = []
+        for field_name in always_review:
+            if field_name not in field_to_page:
+                continue
+            for row_idx in range(len(self.document_paths)):
+                value = self.csv_manager.get_field_value(row_idx, field_name)
+                rows.append((row_idx, field_name, value or ""))
+
+        if not rows:
+            QMessageBox.information(
+                self,
+                "No fields to review",
+                "None of the always_review fields exist in this project's form definition.",
+            )
+            return
+
+        if self._qc_text_review_window is None:
+            self._qc_text_review_window = QcTextReviewWindow(self)
+            self._qc_text_review_window.row_activated.connect(self._on_qc_text_review_row_activated)
+
+        self._qc_text_review_window.set_data(rows, doc_total=len(self.document_paths))
+        self._qc_text_review_window.show()
+        self._qc_text_review_window.raise_()
+        self._qc_text_review_window.activateWindow()
+
+    def _on_qc_text_review_row_activated(self, doc_index: int, field_name: str) -> None:
+        """Navigate to the document/page and activate the field in the detail panel."""
+        if doc_index < 0 or doc_index >= len(self.document_paths):
+            return
+        field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
+        page_num = field_to_page.get(field_name, 1)
+        page_index = page_num - 1
+
+        if self.current_document_index != doc_index:
+            self.tiff_list.setCurrentRow(doc_index)
+            self.on_document_selected(doc_index)
+        self.current_page_index = page_index
+        self.display_current_page()
+
+        field_to_show = next((f for f in self.page_fields if f.name == field_name), None)
+        if field_to_show and hasattr(self, "detail_panel") and self.current_page_images:
+            current_pil_image = self.current_page_images[self.current_page_index]
+            self.detail_panel.set_current_field(
+                field_to_show,
+                page_image=current_pil_image,
+                page_bbox=self.page_bbox,
+                page_fields=self.page_fields,
+                field_values=self.field_values,
+                field_comments=self.page_comments,
+            )
+            self._set_current_field(field_to_show)
 
     def _show_current_qc_special_field(self) -> None:
         """Navigate to the current special field's page and show the review dialog."""
