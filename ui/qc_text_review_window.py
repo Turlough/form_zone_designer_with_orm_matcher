@@ -1,4 +1,4 @@
-"""Window for QC staff to quickly review always_review field values across a batch."""
+"""Window for QC staff to quickly review quick_review field values across a batch."""
 
 from PyQt6.QtWidgets import (
     QMainWindow,
@@ -14,7 +14,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 
 class QcTextReviewWindow(QMainWindow):
     """
-    Non-modal window showing a sortable table of always_review field values.
+    Non-modal window showing a sortable table of quick_review field values.
 
     Columns: FieldName, Value.
     Clicking a row activates that field in the main Indexing app (navigate to doc,

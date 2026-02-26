@@ -614,7 +614,7 @@ class Indexer(QMainWindow):
         self._qc_special_fields_dialog.previous_clicked.connect(self._on_qc_special_fields_previous)
         self._qc_special_fields_dialog.next_clicked.connect(self._on_qc_special_fields_next)
 
-        # QC quick review window (non-modal, table of always_review values)
+        # QC quick review window (non-modal, table of quick_review values)
         self._qc_text_review_window: QcTextReviewWindow | None = None
     
     def _load_import_file_from_path(self, file_path: str, json_folder_override: str | None = None) -> bool:
@@ -1896,19 +1896,19 @@ class Indexer(QMainWindow):
             return
 
         config = self._load_project_config()
-        always_review = config.get("always_review") if config else None
-        if not always_review or not isinstance(always_review, list):
+        quick_review = config.get("quick_review") if config else None
+        if not quick_review or not isinstance(quick_review, list):
             QMessageBox.information(
                 self,
-                "No always_review",
-                "project_config.json must define 'always_review' as a list of field names.\n"
-                'Example: "always_review": ["Field3", "Another field"]',
+                "No quick_review",
+                "project_config.json must define 'quick_review' as a list of field names.\n"
+                'Example: "quick_review": ["Field 5", "Field 6"]',
             )
             return
 
         field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
         rows: list[tuple[int, str, str]] = []
-        for field_name in always_review:
+        for field_name in quick_review:
             if field_name not in field_to_page:
                 continue
             for row_idx in range(len(self.document_paths)):
@@ -1919,7 +1919,7 @@ class Indexer(QMainWindow):
             QMessageBox.information(
                 self,
                 "No fields to review",
-                "None of the always_review fields exist in this project's form definition.",
+                "None of the quick_review fields exist in this project's form definition.",
             )
             return
 
