@@ -35,6 +35,7 @@ def load_state() -> dict:
         "last_indexer_json_folder": "",
         "last_indexer_tiff_index": None,
         "last_indexer_page_index": None,
+        "qc_quick_review_geometry": None,
     }
     if not path.exists():
         return default
@@ -49,6 +50,7 @@ def load_state() -> dict:
             "last_indexer_json_folder": data.get("last_indexer_json_folder", ""),
             "last_indexer_tiff_index": data.get("last_indexer_tiff_index"),
             "last_indexer_page_index": data.get("last_indexer_page_index"),
+            "qc_quick_review_geometry": data.get("qc_quick_review_geometry"),
         }
     except Exception as e:
         logger.warning("Could not load app state: %s", e)
@@ -64,6 +66,7 @@ def save_state(
     last_indexer_json_folder: str | None = None,
     last_indexer_tiff_index: int | None = None,
     last_indexer_page_index: int | None = None,
+    qc_quick_review_geometry: str | None = None,
 ) -> None:
     """Save state. Pass only keys to update; others are preserved."""
     path = _app_state_dir() / STATE_FILENAME
@@ -82,6 +85,8 @@ def save_state(
         current["last_indexer_tiff_index"] = last_indexer_tiff_index
     if last_indexer_page_index is not None:
         current["last_indexer_page_index"] = last_indexer_page_index
+    if qc_quick_review_geometry is not None:
+        current["qc_quick_review_geometry"] = qc_quick_review_geometry
     try:
         with open(path, "w") as f:
             json.dump(current, f, indent=2)

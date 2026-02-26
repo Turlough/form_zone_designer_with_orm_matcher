@@ -1,5 +1,8 @@
 """Window for QC staff to quickly review quick_review field values across a batch."""
 
+import base64
+
+from PyQt6.QtCore import Qt, pyqtSignal, QByteArray
 from PyQt6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -9,7 +12,8 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QAbstractItemView,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+
+from util.app_state import load_state, save_state
 
 
 class QcTextReviewWindow(QMainWindow):
@@ -47,6 +51,26 @@ class QcTextReviewWindow(QMainWindow):
         self._table.setSortingEnabled(True)
         self._table.cellClicked.connect(self._on_cell_clicked)
         layout.addWidget(self._table)
+
+    def showEvent(self, event):
+        """Restore previous size and position when showing."""
+        super().showEvent(event)
+        state = load_state()
+        geom_b64 = state.get("qc_quick_review_geometry")
+        if geom_b64:
+            try:
+                geom = QByteArray(base64.b64decode(geom_b64))
+                if not geom.isEmpty():
+                    self.restoreGeometry(geom)
+            except Exception:
+                pass
+
+    def closeEvent(self, event):
+        """Save size and position when closing."""
+        geom = self.saveGeometry()
+        if not geom.isEmpty():
+            save_state(qc_quick_review_geometry=base64.b64encode(geom.data()).decode("ascii"))
+        super().closeEvent(event)
 
     def set_data(self, rows: list[tuple[int, str, str]], doc_total: int = 0) -> None:
         """
