@@ -1913,7 +1913,9 @@ class Indexer(QMainWindow):
                 continue
             for row_idx in range(len(self.document_paths)):
                 value = self.csv_manager.get_field_value(row_idx, field_name)
-                rows.append((row_idx, field_name, value or ""))
+                if not (value):
+                    continue
+                rows.append((row_idx, field_name, str(value)))
 
         if not rows:
             QMessageBox.information(
