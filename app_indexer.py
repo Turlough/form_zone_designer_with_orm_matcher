@@ -646,6 +646,7 @@ class Indexer(QMainWindow):
                 self.project_validations = None
 
             self._update_window_title()
+            self._refresh_qc_text_review_window_if_open()
             return True
         except Exception as e:
             logger.warning("Could not load import file from path %s: %s", file_path, e)
@@ -1884,6 +1885,29 @@ class Indexer(QMainWindow):
         self._qc_special_fields_dialog_positioned = False
         self._start_qc_special_fields_cache()
         self._show_current_qc_special_field()
+
+    def _refresh_qc_text_review_window_if_open(self) -> None:
+        """If the quick review window is open, refresh its contents for the current batch and scroll to top."""
+        if self._qc_text_review_window is None or not self._qc_text_review_window.isVisible():
+            return
+        if not self.document_paths:
+            return
+        config = self._load_project_config()
+        quick_review = config.get("quick_review") if config else None
+        if not quick_review or not isinstance(quick_review, list):
+            self._qc_text_review_window.set_data([], doc_total=len(self.document_paths))
+            return
+        field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
+        rows: list[tuple[int, str, str]] = []
+        for field_name in quick_review:
+            if field_name not in field_to_page:
+                continue
+            for row_idx in range(len(self.document_paths)):
+                value = self.csv_manager.get_field_value(row_idx, field_name)
+                if not (value and str(value).strip()):
+                    continue
+                rows.append((row_idx, field_name, str(value)))
+        self._qc_text_review_window.set_data(rows, doc_total=len(self.document_paths))
 
     def _on_quick_review_special_fields_requested(self) -> None:
         """Handle QC > QC batch > Quick review special fields: show table of values, activate on click."""

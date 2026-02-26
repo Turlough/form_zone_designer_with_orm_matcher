@@ -92,6 +92,7 @@ class QcTextReviewWindow(QMainWindow):
             self._table.setItem(row, 0, name_item)
             self._table.setItem(row, 1, value_item)
         self._table.setSortingEnabled(True)
+        self._table.scrollToTop()
 
     def _on_cell_clicked(self, row: int, column: int) -> None:
         """Emit row_activated with stored doc_index and field_name."""
