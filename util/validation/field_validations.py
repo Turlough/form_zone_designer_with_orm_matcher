@@ -38,7 +38,7 @@ def is_irish_mobile(value: str) -> bool:
     if value is None or value.strip() == "":
         return False # is empty has already been tested
     else:
-        return re.match(r"^08[35678]\d{7}$", value)
+        return re.match(r"^08[356789]\d{7}$", value)
 
 def is_eircode(value: str) -> bool:
     if value is None or value.strip() == "":
