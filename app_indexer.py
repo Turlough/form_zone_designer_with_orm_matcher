@@ -1886,6 +1886,11 @@ class Indexer(QMainWindow):
         self._start_qc_special_fields_cache()
         self._show_current_qc_special_field()
 
+    def _on_qc_text_review_refresh_requested(self) -> None:
+        """Handle File -> Refresh in QC text review window: flush CSV queue, then refresh list."""
+        self._flush_csv_saves()
+        self._refresh_qc_text_review_window_if_open()
+
     def _refresh_qc_text_review_window_if_open(self) -> None:
         """If the quick review window is open, refresh its contents for the current batch and scroll to top."""
         if self._qc_text_review_window is None or not self._qc_text_review_window.isVisible():
@@ -1898,6 +1903,7 @@ class Indexer(QMainWindow):
             self._qc_text_review_window.set_data([], doc_total=len(self.document_paths))
             return
         field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
+        field_to_type = self.csv_manager.get_field_to_type(self.json_folder)
         rows: list[tuple[int, str, str]] = []
         for field_name in quick_review:
             if field_name not in field_to_page:
@@ -1907,7 +1913,9 @@ class Indexer(QMainWindow):
                 if not (value and str(value).strip()):
                     continue
                 rows.append((row_idx, field_name, str(value)))
-        self._qc_text_review_window.set_data(rows, doc_total=len(self.document_paths))
+        self._qc_text_review_window.set_data(
+            rows, doc_total=len(self.document_paths), field_to_type=field_to_type
+        )
 
     def _on_quick_review_special_fields_requested(self) -> None:
         """Handle QC > QC batch > Quick review special fields: show table of values, activate on click."""
@@ -1952,8 +1960,12 @@ class Indexer(QMainWindow):
         if self._qc_text_review_window is None:
             self._qc_text_review_window = QcTextReviewWindow(self)
             self._qc_text_review_window.row_activated.connect(self._on_qc_text_review_row_activated)
+            self._qc_text_review_window.refresh_requested.connect(self._on_qc_text_review_refresh_requested)
 
-        self._qc_text_review_window.set_data(rows, doc_total=len(self.document_paths))
+        field_to_type = self.csv_manager.get_field_to_type(self.json_folder)
+        self._qc_text_review_window.set_data(
+            rows, doc_total=len(self.document_paths), field_to_type=field_to_type
+        )
         self._qc_text_review_window.show()
         self._qc_text_review_window.raise_()
         self._qc_text_review_window.activateWindow()

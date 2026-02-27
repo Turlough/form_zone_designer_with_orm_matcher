@@ -4,22 +4,22 @@ import re
 from util.validation.strategies import EIRCODE_REGEX
 
 def contains_text(value: str) -> bool:
-    return value is not None and value.strip() != ""
+    return value is not None
 
 def is_integer(value: str) -> bool:
-    if value is None or value.strip() == "":
+    if value is None:
         return False # is empty has already been tested
     else:
         return value.isdigit()
 
 def is_decimal(value: str) -> bool:
-    if value is  None or value.strip() == "":
+    if value is  None:
         return False # is empty has already been tested
     else:
         return value.replace(".", "", 1).isdigit()
 
 def is_date(value: str) -> bool:
-    if value is None or value.strip() == "":
+    if value is None:
         return False # is empty has already been tested
     else:
         try:
@@ -29,19 +29,19 @@ def is_date(value: str) -> bool:
             return False
 
 def is_email(value: str) -> bool:
-    if value is None or value.strip() == "":
+    if value is None:
         return False # is empty has already been tested
     else:
         return re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", value)
 
 def is_irish_mobile(value: str) -> bool:
-    if value is None or value.strip() == "":
+    if value is None:
         return False # is empty has already been tested
     else:
         return re.match(r"^08[356789]\d{7}$", value)
 
 def is_eircode(value: str) -> bool:
-    if value is None or value.strip() == "":
+    if value is None:
         return False # is empty has already been tested
     else:
         return re.match(EIRCODE_REGEX, str(value), re.IGNORECASE)

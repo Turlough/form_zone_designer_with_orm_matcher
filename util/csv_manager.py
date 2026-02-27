@@ -171,7 +171,38 @@ class CSVManager:
             page_num += 1
 
         return field_to_page
-    
+
+    def get_field_to_type(self, json_folder) -> dict[str, str]:
+        """Build mapping from field name to field type (e.g. 'IntegerField', 'EmailField').
+        Mirrors get_field_to_page logic but returns type name for validation."""
+        field_to_type: dict[str, str] = {}
+        page_num = 1
+
+        while True:
+            json_path = find_file_case_insensitive(json_folder, f"{page_num}.json")
+            if json_path is None:
+                break
+
+            try:
+                with open(json_path, "r") as f:
+                    data = json.load(f)
+
+                for item in data:
+                    field = Field.from_dict(item)
+                    if isinstance(field, RadioGroup):
+                        if field.name not in field_to_type:
+                            field_to_type[field.name] = field.__class__.__name__
+                    else:
+                        if field.name not in field_to_type:
+                            field_to_type[field.name] = field.__class__.__name__
+
+            except Exception as e:
+                logger.warning(f"Error reading {json_path!s}: {e}")
+
+            page_num += 1
+
+        return field_to_type
+
     def get_document_paths(self) -> list[str]:
         """Return list of document paths from CSV (excluding header)."""
         if len(self.rows) <= 1:
