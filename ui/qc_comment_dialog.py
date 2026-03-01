@@ -13,6 +13,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 
 
+MAX_COMMENT_LENGTH = 200
+
+
 class QcCommentDialog(QDialog):
     """
     Non-modal dialog for reviewing a single QC comment in the batch.
@@ -104,11 +107,11 @@ class QcCommentDialog(QDialog):
         comment_text: str,
     ) -> None:
         """Set the displayed content for the current comment."""
-        self._current_comment_text = comment_text or ""
+        self._current_comment_text = (comment_text or "")[:MAX_COMMENT_LENGTH]
         self._page_label.setText(f"Page: {page}")
         self._field_label.setText(f"Field: {field_name or '—'}")
         self._value_label.setText(f"Field value: {field_value or '(empty)'}")
-        self._comment_value.setText(comment_text or "(empty)")
+        self._comment_value.setText(self._current_comment_text or "(empty)")
 
     def _on_remove(self) -> None:
         self.remove_clicked.emit()
@@ -132,7 +135,7 @@ class QcCommentDialog(QDialog):
         btn_box.rejected.connect(dlg.reject)
         layout.addWidget(btn_box)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            new_text = edit.toPlainText().strip()
+            new_text = edit.toPlainText().strip()[:MAX_COMMENT_LENGTH]
             self.edit_saved.emit(new_text)
             self._current_comment_text = new_text
             self._comment_value.setText(new_text or "(empty)")
