@@ -11,9 +11,11 @@ from util.lookup_manager import LookupManager
 # Inward code: digit + 2 letters (C,I,K,M,O,V excluded per UK postcode rules).
 NI_POSTCODE_REGEX = (
     r"\bBT"
-    r"([1-9]|[1-4][0-9]|5[1-8]|6[0-9]|7[01]|7[4-9]|8[0-2]|9[2-4])"
+    r"[\d]{1,2}?"
     r"\s?\d[ABDEGHJLNPQRSTUWXYZ]{2}\b"
 )
+
+# Eircode regex from https://en.wikipedia.org/wiki/Postal_address_in_the_Republic_of_Ireland#Eircode
 EIRCODE_REGEX = r"(?:^[AC-FHKNPRTV-Y][0-9]{2}|D6W)[ -]?[0-9AC-FHKNPRTV-Y]{4}$"
 
 
