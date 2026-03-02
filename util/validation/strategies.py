@@ -12,7 +12,7 @@ from util.lookup_manager import LookupManager
 NI_POSTCODE_REGEX = (
     r"\bBT"
     r"[\d]{1,2}?"
-    r"\s?\d[ABDEGHJLNPQRSTUWXYZ]{2}\b"
+    r"\s?\d[ABDEFGHJLNPQRSTUWXYZ]{2}\b"
 )
 
 # Eircode regex from https://en.wikipedia.org/wiki/Postal_address_in_the_Republic_of_Ireland#Eircode
