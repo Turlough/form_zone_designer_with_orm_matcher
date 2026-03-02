@@ -5,6 +5,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QFrame,
     QTextEdit,
@@ -120,13 +122,30 @@ class QcCommentDialog(QDialog):
         self.previous_clicked.emit()
 
     def _on_edit(self) -> None:
+        presets = getattr(self.parent(), "_qc_comment_presets", []) if self.parent() else []
         dlg = QDialog(self)
         dlg.setWindowTitle("Edit Comment")
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(12, 12, 12, 12)
+
         edit = QTextEdit()
         edit.setPlainText(getattr(self, "_current_comment_text", ""))
         edit.setMinimumSize(300, 120)
+
+        if presets:
+            preset_list = QListWidget()
+            for preset in presets:
+                stripped = (preset or "").strip()
+                if stripped:
+                    preset_list.addItem(QListWidgetItem(stripped))
+
+            def _on_preset_clicked(item: QListWidgetItem) -> None:
+                if item:
+                    edit.setPlainText((item.text() or "").strip())
+
+            preset_list.itemClicked.connect(_on_preset_clicked)
+            layout.addWidget(preset_list)
+
         layout.addWidget(edit)
         btn_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
