@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 
 from field_factory import FIELD_TYPE_MAP
 from util.app_state import load_state, save_state
+from util.index_comments import Comments
 
 ERROR_BG = QColor(255, 200, 200)
 DIVIDER_COLOR = QColor(0x55, 0x55, 0x55)
@@ -73,6 +74,17 @@ def _is_inappropriate_value(field_name: str, value: str, field_to_type: dict[str
     v = validator() if isinstance(validator, type) else validator
     return not v.is_valid(value)
 
+def _failed_project_validations(
+    field_name: str, doc_index: int, doc_index_to_comments: dict[int, str]
+) -> bool:
+    """Return True if the field is mentioned in the Comments column for that document row."""
+    comments_str = doc_index_to_comments.get(doc_index) or ""
+    if not comments_str.strip():
+        return False
+    row_comments = Comments.from_string(comments_str)
+    return any(c.field == field_name for c in row_comments.comments.values())
+
+
 
 class QcTextReviewWindow(QMainWindow):
     """
@@ -94,6 +106,7 @@ class QcTextReviewWindow(QMainWindow):
         self.setWindowTitle("Quick Review Special Fields")
         self.setMinimumSize(400, 300)
         self._field_to_type: dict[str, str] = {}
+        self._doc_index_to_comments: dict[int, str] = {}
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -108,8 +121,8 @@ class QcTextReviewWindow(QMainWindow):
         tools_menu = menubar.addMenu("Tools")
         highlight_action = QAction("Highlight known errors", self)
         highlight_action.setToolTip(
-            "Highlight rows in red: non-ASCII characters, or values that fail field validation "
-            "(e.g. invalid email, date, integer, eircode)."
+            "Highlight rows in red: non-ASCII characters, values that fail field validation "
+            "(e.g. invalid email, date, integer, eircode), or fields mentioned in the Comments column."
         )
         highlight_action.triggered.connect(self._on_highlight_known_errors)
         tools_menu.addAction(highlight_action)
@@ -137,19 +150,22 @@ class QcTextReviewWindow(QMainWindow):
         self.refresh_requested.emit()
 
     def _on_highlight_known_errors(self) -> None:
-        """Highlight rows in red: non-ASCII characters or values that fail field validation."""
+        """Highlight rows in red: non-ASCII characters, values that fail field validation, or fields mentioned in Comments."""
         brush = QBrush(ERROR_BG)
         for row in range(self._table.rowCount()):
             name_item = self._table.item(row, 0)
             value_item = self._table.item(row, 1)
             if name_item is None or value_item is None:
                 continue
+            data = name_item.data(Qt.ItemDataRole.UserRole)
+            doc_index = data[0] if data else -1
             field_name = name_item.text() or ""
             value = value_item.text() or ""
             has_error = (
                 _has_non_ascii(field_name)
                 or _has_non_ascii(value)
                 or _is_inappropriate_value(field_name, value, self._field_to_type)
+                or _failed_project_validations(field_name, doc_index, self._doc_index_to_comments)
             )
             for col in (0, 1):
                 item = self._table.item(row, col)
@@ -181,14 +197,17 @@ class QcTextReviewWindow(QMainWindow):
         rows: list[tuple[int, str, str]],
         doc_total: int = 0,
         field_to_type: dict[str, str] | None = None,
+        doc_index_to_comments: dict[int, str] | None = None,
     ) -> None:
         """
         Populate the table with (doc_index, field_name, value) rows.
 
         doc_index and field_name are stored for activation; field_name and value are displayed.
         field_to_type maps field_name -> type name for validation (e.g. Highlight known errors).
+        doc_index_to_comments maps row index -> Comments column value for highlighting fields with QC comments.
         """
         self._field_to_type = field_to_type or {}
+        self._doc_index_to_comments = doc_index_to_comments or {}
         self._table.setSortingEnabled(False)
         self._table.setRowCount(0)
         for doc_index, field_name, value in rows:

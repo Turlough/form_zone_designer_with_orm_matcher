@@ -1913,8 +1913,15 @@ class Indexer(QMainWindow):
                 if not (value and str(value).strip()):
                     continue
                 rows.append((row_idx, field_name, str(value)))
+        doc_index_to_comments = {
+            row_idx: (self.csv_manager.get_field_value(row_idx, "Comments") or "")
+            for row_idx in range(len(self.document_paths))
+        }
         self._qc_text_review_window.set_data(
-            rows, doc_total=len(self.document_paths), field_to_type=field_to_type
+            rows,
+            doc_total=len(self.document_paths),
+            field_to_type=field_to_type,
+            doc_index_to_comments=doc_index_to_comments,
         )
 
     def _on_quick_review_special_fields_requested(self) -> None:
@@ -1963,8 +1970,15 @@ class Indexer(QMainWindow):
             self._qc_text_review_window.refresh_requested.connect(self._on_qc_text_review_refresh_requested)
 
         field_to_type = self.csv_manager.get_field_to_type(self.json_folder)
+        doc_index_to_comments = {
+            row_idx: (self.csv_manager.get_field_value(row_idx, "Comments") or "")
+            for row_idx in range(len(self.document_paths))
+        }
         self._qc_text_review_window.set_data(
-            rows, doc_total=len(self.document_paths), field_to_type=field_to_type
+            rows,
+            doc_total=len(self.document_paths),
+            field_to_type=field_to_type,
+            doc_index_to_comments=doc_index_to_comments,
         )
         self._qc_text_review_window.show()
         self._qc_text_review_window.raise_()
