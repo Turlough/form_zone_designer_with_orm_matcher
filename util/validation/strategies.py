@@ -293,6 +293,26 @@ def _strategy_numbers_nearly_equal(ctx: ValidationContext) -> list[tuple[int, st
     fault2 = (page2, field2, msg)
     return [fault1, fault2]
 
+def _strategy_between_values(ctx: ValidationContext) -> list[tuple[int, str, str]]:
+    """Check that the value is between the two values."""
+    if not ctx.field_names:
+        return []
+    faults: list[tuple[int, str, str]] = []
+    for field_name in ctx.field_names:
+        value = ctx.field_values.get(field_name)
+        if value is None or str(value) == "":
+            continue
+        try:
+            value = float(value)
+        except ValueError:
+            faults.append((ctx.field_to_page.get(field_name, 1), field_name, f"Value '{value}' is not a valid number."))
+        min_value = ctx.params.get("min")
+        max_value = ctx.params.get("max")
+        if value < min_value or value > max_value:
+            faults.append((ctx.field_to_page.get(field_name, 1), field_name, f"Value '{value}' is not between {min_value} and {max_value}."))
+
+    return faults
+
 
 PROJECT_VALIDATION_REGISTRY: dict[str, Callable[[ValidationContext], list[tuple[int, str, str]]]] = {
     "max_tickboxes": _strategy_max_tickboxes,
@@ -306,4 +326,5 @@ PROJECT_VALIDATION_REGISTRY: dict[str, Callable[[ValidationContext], list[tuple[
     "ni_postcode_valid": _strategy_ni_postcode_valid,
     "num_characters_valid": _strategy_num_characters_valid,
     "sum_should_equal_total": _strategy_sum_should_equal_total,
+    "between_values": _strategy_between_values,
 }
