@@ -25,6 +25,8 @@ OCR_PROMPT = (
     "Read all the text in this image as a single paragraph, "
     "left to right and top to bottom, as a human would read it. "
     "Output only the raw text, with no commentary."
+    "Do not include any text that is not part of the document."
+    "If no text is present, return an empty string."
 )
 
 
