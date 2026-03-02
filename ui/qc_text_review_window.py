@@ -21,7 +21,8 @@ from field_factory import FIELD_TYPE_MAP
 from util.app_state import load_state, save_state
 from util.index_comments import Comments
 
-ERROR_BG = QColor(255, 200, 200)
+ERROR_BG = QColor(255, 200, 200)  # Red for field validation failures
+PROJECT_VALIDATION_BG = QColor(255, 255, 200)  # Yellow for project validation failures (Comments)
 DIVIDER_COLOR = QColor(0x55, 0x55, 0x55)
 DIVIDER_HEIGHT = 3
 
@@ -121,8 +122,8 @@ class QcTextReviewWindow(QMainWindow):
         tools_menu = menubar.addMenu("Tools")
         highlight_action = QAction("Highlight known errors", self)
         highlight_action.setToolTip(
-            "Highlight rows in red: non-ASCII characters, values that fail field validation "
-            "(e.g. invalid email, date, integer, eircode), or fields mentioned in the Comments column."
+            "Highlight rows: red for non-ASCII or invalid field values (email, date, etc.); "
+            "yellow for fields mentioned in the Comments column (project validation failures)."
         )
         highlight_action.triggered.connect(self._on_highlight_known_errors)
         tools_menu.addAction(highlight_action)
@@ -150,8 +151,7 @@ class QcTextReviewWindow(QMainWindow):
         self.refresh_requested.emit()
 
     def _on_highlight_known_errors(self) -> None:
-        """Highlight rows in red: non-ASCII characters, values that fail field validation, or fields mentioned in Comments."""
-        brush = QBrush(ERROR_BG)
+        """Highlight rows: red for field validation failures, yellow for project validation (Comments)."""
         for row in range(self._table.rowCount()):
             name_item = self._table.item(row, 0)
             value_item = self._table.item(row, 1)
@@ -161,16 +161,24 @@ class QcTextReviewWindow(QMainWindow):
             doc_index = data[0] if data else -1
             field_name = name_item.text() or ""
             value = value_item.text() or ""
-            has_error = (
+            has_field_error = (
                 _has_non_ascii(field_name)
                 or _has_non_ascii(value)
                 or _is_inappropriate_value(field_name, value, self._field_to_type)
-                or _failed_project_validations(field_name, doc_index, self._doc_index_to_comments)
             )
+            has_project_error = _failed_project_validations(
+                field_name, doc_index, self._doc_index_to_comments
+            )
+            if has_field_error:
+                brush = QBrush(ERROR_BG)
+            elif has_project_error:
+                brush = QBrush(PROJECT_VALIDATION_BG)
+            else:
+                brush = QBrush()
             for col in (0, 1):
                 item = self._table.item(row, col)
                 if item:
-                    item.setBackground(brush if has_error else QBrush())
+                    item.setBackground(brush)
 
     def showEvent(self, event):
         """Restore previous size and position when showing."""
