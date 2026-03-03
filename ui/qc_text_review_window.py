@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.qc_comment_dialog import MAX_COMMENT_LENGTH
 from field_factory import FIELD_TYPE_MAP
 from util.app_state import load_state, save_state
 from util.index_comments import Comments
@@ -57,12 +58,43 @@ def _failed_project_validations(
     return any(c.field == field_name for c in row_comments.comments.values())
 
 
+def _get_project_comment_text(
+    field_name: str, doc_index: int, doc_index_to_comments: dict[int, str]
+) -> str:
+    """Return the comment value(s) for the field in that document's Comments, or empty string."""
+    comments_str = doc_index_to_comments.get(doc_index) or ""
+    if not comments_str.strip():
+        return ""
+    row_comments = Comments.from_string(comments_str)
+    parts = [
+        (c.comment or "(empty)")[:MAX_COMMENT_LENGTH]
+        for c in row_comments.comments.values()
+        if c.field == field_name
+    ]
+    return " | ".join(parts) if parts else ""
+
+
+def _get_validator_name(field_name: str, field_to_type: dict[str, str]) -> str:
+    """Return the validator class name for the field's type, or empty string."""
+    field_type = field_to_type.get(field_name)
+    if not field_type:
+        return ""
+    entry = FIELD_TYPE_MAP.get(field_type)
+    if not entry:
+        return ""
+    _, _, validator = entry
+    if isinstance(validator, type):
+        return validator.__name__
+    return validator.__class__.__name__
+
+
 
 class QcTextReviewWindow(QMainWindow):
     """
     Non-modal window showing a sortable table of quick_review field values.
 
-    Columns: FieldName, Value.
+    Columns: FieldName, Value, Error.
+    Error shows comment value for project validation failures, validator name for field validation failures.
     Clicking a row activates that field in the main Indexing app (navigate to doc,
     show thumbnail and value in the right-hand panel).
     """
@@ -112,10 +144,11 @@ class QcTextReviewWindow(QMainWindow):
         layout.setContentsMargins(8, 8, 8, 8)
 
         self._table = QTableWidget()
-        self._table.setColumnCount(2)
-        self._table.setHorizontalHeaderLabels(["FieldName", "Value"])
+        self._table.setColumnCount(3)
+        self._table.setHorizontalHeaderLabels(["FieldName", "Value", "Error"])
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -147,6 +180,28 @@ class QcTextReviewWindow(QMainWindow):
             field_name, doc_index, self._doc_index_to_comments
         )
         return has_field_error, has_project_error
+
+    def _get_error_description_for(
+        self, doc_index: int, field_name: str, value: str
+    ) -> str:
+        """Return the error description for the Error column."""
+        parts: list[str] = []
+        if _failed_project_validations(
+            field_name, doc_index, self._doc_index_to_comments
+        ):
+            comment = _get_project_comment_text(
+                field_name, doc_index, self._doc_index_to_comments
+            )
+            if comment:
+                parts.append(comment)
+        has_non_ascii = _has_non_ascii(field_name) or _has_non_ascii(value)
+        if has_non_ascii:
+            parts.append("Non-ASCII")
+        if _is_inappropriate_value(field_name, value, self._field_to_type):
+            validator_name = _get_validator_name(field_name, self._field_to_type)
+            if validator_name:
+                parts.append(validator_name)
+        return " | ".join(parts)
 
     def _row_has_error(self, row: int) -> bool:
         """Return True if row has field or project validation errors."""
@@ -191,7 +246,7 @@ class QcTextReviewWindow(QMainWindow):
                 brush = QBrush(PROJECT_VALIDATION_BG)
             else:
                 brush = QBrush()
-            for col in (0, 1):
+            for col in (0, 1, 2):
                 item = self._table.item(row, col)
                 if item:
                     item.setBackground(brush)
@@ -201,7 +256,7 @@ class QcTextReviewWindow(QMainWindow):
     def _clear_highlights(self) -> None:
         """Remove all row highlights."""
         for row in range(self._table.rowCount()):
-            for col in (0, 1):
+            for col in (0, 1, 2):
                 item = self._table.item(row, col)
                 if item:
                     item.setBackground(QBrush())
@@ -257,6 +312,8 @@ class QcTextReviewWindow(QMainWindow):
                 name_item.setToolTip(f"Document {doc_index + 1} of {doc_total}")
             self._table.setItem(row, 0, name_item)
             self._table.setItem(row, 1, value_item)
+            error_text = self._get_error_description_for(doc_index, field_name, value or "")
+            self._table.setItem(row, 2, QTableWidgetItem(error_text))
         self._table.setSortingEnabled(True)
         self._table.scrollToTop()
         self._clear_filter()
