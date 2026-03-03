@@ -70,6 +70,22 @@ def _strategy_max_tickboxes(ctx: ValidationContext) -> list[tuple[int, str, str]
         )
     ]
 
+def _strategy_regex(ctx: ValidationContext) -> list[tuple[int, str, str]]:
+    """Check that the value matches the regex."""
+    if not ctx.field_names:
+        return []
+    faults: list[tuple[int, str, str]] = []
+    regex = ctx.params.get("regex")
+    if not regex:
+        return []
+    for field_name in ctx.field_names:
+        value = ctx.field_values.get(field_name)
+        if value is None or str(value) == "":
+            return []
+        if not re.match(regex, value):
+            faults.append((ctx.field_to_page.get(field_name, 1), field_name, f"'{value}' does not match regex: {regex}"))
+    return faults
+
 def _strategy_email_addresses_valid(ctx: ValidationContext) -> list[tuple[int, str, str]]:
     """Check that the email addresses are valid."""
     if not ctx.field_names:
@@ -329,4 +345,5 @@ PROJECT_VALIDATION_REGISTRY: dict[str, Callable[[ValidationContext], list[tuple[
     "num_characters_valid": _strategy_num_characters_valid,
     "sum_should_equal_total": _strategy_sum_should_equal_total,
     "between_values": _strategy_between_values,
+    "regex": _strategy_regex,
 }
