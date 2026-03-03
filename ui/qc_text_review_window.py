@@ -20,40 +20,11 @@ from PyQt6.QtWidgets import (
 from field_factory import FIELD_TYPE_MAP
 from util.app_state import load_state, save_state
 from util.index_comments import Comments
+from ui.table_row_divider import RowDivider
 
 ERROR_BG = QColor(255, 200, 200)  # Red for field validation failures
 PROJECT_VALIDATION_BG = QColor(255, 255, 200)  # Yellow for project validation failures (Comments)
-DIVIDER_COLOR = QColor(0x55, 0x55, 0x55)
-DIVIDER_HEIGHT = 3
 
-
-class _FieldTransitionDelegate(QStyledItemDelegate):
-    """Draw a divider line at top of row when field_name differs from previous row."""
-
-    def __init__(self, table: QTableWidget):
-        super().__init__(table)
-        self._table = table
-
-    def paint(self, painter, option, index):
-        super().paint(painter, option, index)
-        row = index.row()
-        col = index.column()
-        if row == 0 or col != 0:
-            return
-        prev_item = self._table.item(row - 1, 0)
-        curr_item = self._table.item(row, 0)
-        if prev_item is None or curr_item is None:
-            return
-        prev_field = (prev_item.text() or "").strip()
-        curr_field = (curr_item.text() or "").strip()
-        if prev_field != curr_field:
-            painter.save()
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(DIVIDER_COLOR)
-            y = option.rect.top()
-            w = self._table.viewport().width()
-            painter.drawRect(0, y, w, DIVIDER_HEIGHT)
-            painter.restore()
 
 
 def _has_non_ascii(s: str) -> bool:
@@ -142,7 +113,7 @@ class QcTextReviewWindow(QMainWindow):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setSortingEnabled(True)
-        self._table.setItemDelegate(_FieldTransitionDelegate(self._table))
+        self._table.setItemDelegate(RowDivider(self._table))
         self._table.cellClicked.connect(self._on_cell_clicked)
         layout.addWidget(self._table)
 
