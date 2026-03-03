@@ -91,13 +91,14 @@ class QcTextReviewWindow(QMainWindow):
         file_menu.addAction(refresh_action)
 
         tools_menu = menubar.addMenu("Tools")
-        highlight_action = QAction("Highlight known errors", self)
-        highlight_action.setToolTip(
+        self._highlight_action = QAction("Highlight known errors", self)
+        self._highlight_action.setToolTip(
             "Highlight rows: red for non-ASCII or invalid field values (email, date, etc.); "
             "yellow for fields mentioned in the Comments column (project validation failures)."
         )
-        highlight_action.triggered.connect(self._on_highlight_known_errors)
-        tools_menu.addAction(highlight_action)
+        self._highlight_action.triggered.connect(self._on_toggle_highlight_errors)
+        tools_menu.addAction(self._highlight_action)
+        self._highlights_applied = False
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -121,7 +122,14 @@ class QcTextReviewWindow(QMainWindow):
         """Emit refresh_requested so parent can flush CSV queue and refresh the list."""
         self.refresh_requested.emit()
 
-    def _on_highlight_known_errors(self) -> None:
+    def _on_toggle_highlight_errors(self) -> None:
+        """Toggle highlights: apply or remove row highlighting for known errors."""
+        if self._highlights_applied:
+            self._clear_highlights()
+        else:
+            self._apply_highlights()
+
+    def _apply_highlights(self) -> None:
         """Highlight rows: red for field validation failures, yellow for project validation (Comments)."""
         for row in range(self._table.rowCount()):
             name_item = self._table.item(row, 0)
@@ -150,6 +158,18 @@ class QcTextReviewWindow(QMainWindow):
                 item = self._table.item(row, col)
                 if item:
                     item.setBackground(brush)
+        self._highlights_applied = True
+        self._highlight_action.setText("Unhighlight errors")
+
+    def _clear_highlights(self) -> None:
+        """Remove all row highlights."""
+        for row in range(self._table.rowCount()):
+            for col in (0, 1):
+                item = self._table.item(row, col)
+                if item:
+                    item.setBackground(QBrush())
+        self._highlights_applied = False
+        self._highlight_action.setText("Highlight known errors")
 
     def showEvent(self, event):
         """Restore previous size and position when showing."""
@@ -202,6 +222,7 @@ class QcTextReviewWindow(QMainWindow):
             self._table.setItem(row, 1, value_item)
         self._table.setSortingEnabled(True)
         self._table.scrollToTop()
+        self._apply_highlights()
 
     def _on_cell_clicked(self, row: int, column: int) -> None:
         """Emit row_activated with stored doc_index and field_name."""
