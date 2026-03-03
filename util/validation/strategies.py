@@ -102,7 +102,7 @@ def _strategy_email_addresses_valid(ctx: ValidationContext) -> list[tuple[int, s
     faults: list[tuple[int, str, str]] = []
     for field_name in ctx.field_names:
         value = ctx.field_values.get(field_name)
-        if value is None or str(value).strip() == "":
+        if value is None or str(value) == "":
             return []
         if not re.match(EMAIL_REGEX, value):
             faults.append((ctx.field_to_page.get(field_name, 1), field_name, f"Invalid email address: {value}"))
@@ -115,7 +115,7 @@ def _strategy_phone_numbers_valid(ctx: ValidationContext) -> list[tuple[int, str
     faults: list[tuple[int, str, str]] = []
     for field_name in ctx.field_names:
         value = ctx.field_values.get(field_name)
-        if value is None or str(value).strip() == "":
+        if value is None or str(value) == "":
             return []
         if not re.match(PHONE_NUMBER_REGEX, value):
             faults.append((ctx.field_to_page.get(field_name, 1), field_name, f"Invalid phone number: {value}"))
@@ -129,7 +129,7 @@ def _strategy_num_characters_valid(ctx: ValidationContext) -> list[tuple[int, st
     num_characters = ctx.params.get("num_characters", [1])
     for field_name in ctx.field_names:
         value = ctx.field_values.get(field_name)
-        if value is None or str(value).strip() == "":
+        if value is None or str(value) == "":
             return []
         if not len(value) in num_characters:
             faults.append((ctx.field_to_page.get(field_name, 1), field_name, f"The length of {value} is{len(value)}. Permitted lengths are: {num_characters}: "))
@@ -142,9 +142,9 @@ def _strategy_eircode_valid(ctx: ValidationContext) -> list[tuple[int, str, str]
     faults: list[tuple[int, str, str]] = []
     for field_name in ctx.field_names:
         value = ctx.field_values.get(field_name)
-        if value is None or str(value).strip() == "":
+        if value is None or str(value) == "":
             return []
-        if not re.match(EIRCODE_REGEX, str(value).strip(), re.IGNORECASE):
+        if not re.match(EIRCODE_REGEX, str(value)):
             faults.append((ctx.field_to_page.get(field_name, 1), field_name, f"Invalid eircode: {value}"))
     return faults
 
@@ -156,7 +156,7 @@ def _strategy_ni_postcode_valid(ctx: ValidationContext) -> list[tuple[int, str, 
     faults: list[tuple[int, str, str]] = []
     for field_name in ctx.field_names:
         value = ctx.field_values.get(field_name)
-        if value is None or str(value).strip() == "":
+        if value is None or str(value) == "":
             return []
         if not re.match(NI_POSTCODE_REGEX, str(value).strip(), re.IGNORECASE):
             faults.append(
