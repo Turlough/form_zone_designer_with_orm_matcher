@@ -27,7 +27,7 @@ from util.path_utils import (
 )
 from util.document_loader import get_document_loader_for_path
 from util.designer_persistence import load_page_fields as load_page_fields_from_json
-from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField
+from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField, FIELD_TYPE_MAP
 import logging
 from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog, QcCommentDialog, QcSpecialFieldReviewDialog, QcTextReviewWindow
 from util.gemini_ocr_client import ocr_image_region
@@ -478,6 +478,7 @@ class Indexer(QMainWindow):
         self._index_menu_bar.review_batch_comments_requested.connect(self._on_review_batch_comments_requested)
         self._index_menu_bar.review_special_fields_requested.connect(self._on_review_special_fields_requested)
         self._index_menu_bar.quick_review_special_fields_requested.connect(self._on_quick_review_special_fields_requested)
+        self._index_menu_bar.review_text_and_numeric_fields_requested.connect(self._on_review_text_and_numeric_fields_requested)
 
         self.setMenuBar(self._index_menu_bar)
 
@@ -618,6 +619,7 @@ class Indexer(QMainWindow):
 
         # QC quick review window (non-modal, table of quick_review values)
         self._qc_text_review_window: QcTextReviewWindow | None = None
+        self._qc_review_mode: str = "quick_review"  # "quick_review" | "text_and_numeric"
     
     def _load_import_file_from_path(self, file_path: str, json_folder_override: str | None = None) -> bool:
         """Load import file from path (no dialog). If json_folder_override is set, use it for this load. Returns True on success."""
@@ -1918,22 +1920,38 @@ class Indexer(QMainWindow):
             return
         if not self.document_paths:
             return
-        config = self._load_project_config()
-        quick_review = config.get("quick_review") if config else None
-        if not quick_review or not isinstance(quick_review, list):
-            self._qc_text_review_window.set_data([], doc_total=len(self.document_paths))
-            return
         field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
         field_to_type = self.csv_manager.get_field_to_type(self.json_folder)
         rows: list[tuple[int, str, str]] = []
-        for field_name in quick_review:
-            if field_name not in field_to_page:
-                continue
-            for row_idx in range(len(self.document_paths)):
-                value = self.csv_manager.get_field_value(row_idx, field_name)
-                if not (value and str(value).strip()):
+
+        if self._qc_review_mode == "text_and_numeric":
+            text_field_names = [
+                name for name, type_name in field_to_type.items()
+                if name in field_to_page
+                and (field_cls := FIELD_TYPE_MAP.get(type_name)) is not None
+                and issubclass(field_cls, TextField)
+            ]
+            for field_name in text_field_names:
+                for row_idx in range(len(self.document_paths)):
+                    value = self.csv_manager.get_field_value(row_idx, field_name)
+                    if not (value and str(value).strip()):
+                        continue
+                    rows.append((row_idx, field_name, str(value)))
+        else:
+            config = self._load_project_config()
+            quick_review = config.get("quick_review") if config else None
+            if not quick_review or not isinstance(quick_review, list):
+                self._qc_text_review_window.set_data([], doc_total=len(self.document_paths))
+                return
+            for field_name in quick_review:
+                if field_name not in field_to_page:
                     continue
-                rows.append((row_idx, field_name, str(value)))
+                for row_idx in range(len(self.document_paths)):
+                    value = self.csv_manager.get_field_value(row_idx, field_name)
+                    if not (value and str(value).strip()):
+                        continue
+                    rows.append((row_idx, field_name, str(value)))
+
         doc_index_to_comments = {
             row_idx: (self.csv_manager.get_field_value(row_idx, "Comments") or "")
             for row_idx in range(len(self.document_paths))
@@ -1947,6 +1965,7 @@ class Indexer(QMainWindow):
 
     def _on_quick_review_special_fields_requested(self) -> None:
         """Handle QC > QC batch > Quick review special fields: show table of values, activate on click."""
+        self._qc_review_mode = "quick_review"
         if not self.document_paths:
             QMessageBox.information(
                 self,
@@ -2001,6 +2020,63 @@ class Indexer(QMainWindow):
             field_to_type=field_to_type,
             doc_index_to_comments=doc_index_to_comments,
         )
+        self._qc_text_review_window.setWindowTitle("Quick Review Special Fields")
+        self._qc_text_review_window.show()
+        self._qc_text_review_window.raise_()
+        self._qc_text_review_window.activateWindow()
+
+    def _on_review_text_and_numeric_fields_requested(self) -> None:
+        """Handle QC > QC batch > Review text and numeric: show table of all TextField subclass values."""
+        self._qc_review_mode = "text_and_numeric"
+        if not self.document_paths:
+            QMessageBox.information(
+                self,
+                "No batch loaded",
+                "Load a batch first (Batch menu).",
+            )
+            return
+
+        field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
+        field_to_type = self.csv_manager.get_field_to_type(self.json_folder)
+        text_field_names = [
+            name for name, type_name in field_to_type.items()
+            if name in field_to_page
+            and (field_cls := FIELD_TYPE_MAP.get(type_name)) is not None
+            and issubclass(field_cls, TextField)
+        ]
+
+        rows: list[tuple[int, str, str]] = []
+        for field_name in text_field_names:
+            for row_idx in range(len(self.document_paths)):
+                value = self.csv_manager.get_field_value(row_idx, field_name)
+                if not (value and str(value).strip()):
+                    continue
+                rows.append((row_idx, field_name, str(value)))
+
+        if not rows:
+            QMessageBox.information(
+                self,
+                "No fields to review",
+                "No text or numeric fields found in this project's form definition.",
+            )
+            return
+
+        if self._qc_text_review_window is None:
+            self._qc_text_review_window = QcTextReviewWindow(self)
+            self._qc_text_review_window.row_activated.connect(self._on_qc_text_review_row_activated)
+            self._qc_text_review_window.refresh_requested.connect(self._on_qc_text_review_refresh_requested)
+
+        doc_index_to_comments = {
+            row_idx: (self.csv_manager.get_field_value(row_idx, "Comments") or "")
+            for row_idx in range(len(self.document_paths))
+        }
+        self._qc_text_review_window.set_data(
+            rows,
+            doc_total=len(self.document_paths),
+            field_to_type=field_to_type,
+            doc_index_to_comments=doc_index_to_comments,
+        )
+        self._qc_text_review_window.setWindowTitle("Review Text and Numeric")
         self._qc_text_review_window.show()
         self._qc_text_review_window.raise_()
         self._qc_text_review_window.activateWindow()
