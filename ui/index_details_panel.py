@@ -110,6 +110,9 @@ class IndexDetailPanel(QWidget):
     # Emitted when the user requests editing QC comments for a field
     # Payload is (field_name: str)
     field_comment_requested = pyqtSignal(str)
+    # Emitted when the user single-clicks a field row to activate it
+    # Payload is (field_name: str)
+    field_activated = pyqtSignal(str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -182,6 +185,8 @@ class IndexDetailPanel(QWidget):
         self.fields_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.fields_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Read-only
         self.fields_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        # Single-click activates the field (thumbnail + text editor)
+        self.fields_table.cellClicked.connect(self._on_field_row_clicked)
         # Double-clicking a row opens the QC comments editor for that field.
         self.fields_table.cellDoubleClicked.connect(self._on_field_row_double_clicked)
         main_layout.addWidget(self.fields_table, stretch=1)
@@ -326,6 +331,15 @@ class IndexDetailPanel(QWidget):
         
         # Update fields table
         self._update_fields_table()
+
+    def _on_field_row_clicked(self, row: int, column: int):
+        """Handle single-clicks on the fields table to activate the field."""
+        if row < 0 or row >= len(self.page_fields):
+            return
+        field = self.page_fields[row]
+        if not field or not getattr(field, "name", None):
+            return
+        self.field_activated.emit(field.name)
 
     def _on_field_row_double_clicked(self, row: int, column: int):
         """Handle double-clicks on the fields table to request QC comments editing."""

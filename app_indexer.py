@@ -533,6 +533,8 @@ class Indexer(QMainWindow):
         self.detail_panel.field_edit_completed.connect(self.on_detail_panel_edit_completed)
         self.detail_panel.field_focus_lost.connect(self._flush_csv_saves)
         self.detail_panel.ocr_requested.connect(self._on_ocr_requested)
+        # Single-clicking a row in the detail panel's fields table activates that field
+        self.detail_panel.field_activated.connect(self._on_detail_panel_field_activated)
         # Double-clicking a row in the detail panel's fields table opens the QC comment dialog
         self.detail_panel.field_comment_requested.connect(self._on_field_comment_requested)
         main_layout.addWidget(self.detail_panel, stretch=1)
@@ -1440,6 +1442,25 @@ class Indexer(QMainWindow):
                     if rb.name == field_name:
                         return field.name
         return field_name
+
+    def _on_detail_panel_field_activated(self, field_name: str) -> None:
+        """Handle single-click on a field row in the detail panel: activate that field."""
+        if not self.page_fields or not hasattr(self, "detail_panel") or not self.current_page_images:
+            return
+        field_to_show = next((f for f in self.page_fields if f.name == field_name), None)
+        if not field_to_show:
+            return
+        self._index_text_dialog.hide()
+        current_pil_image = self.current_page_images[self.current_page_index]
+        self.detail_panel.set_current_field(
+            field_to_show,
+            page_image=current_pil_image,
+            page_bbox=self.page_bbox,
+            page_fields=self.page_fields,
+            field_values=self.field_values,
+            field_comments=self.page_comments,
+        )
+        self._set_current_field(field_to_show)
 
     # ------------------------------------------------------------------
     # QC comments dialog handlers
