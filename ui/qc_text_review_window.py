@@ -100,6 +100,12 @@ class QcTextReviewWindow(QMainWindow):
         tools_menu.addAction(self._highlight_action)
         self._highlights_applied = False
 
+        self._filter_action = QAction("Filter errors", self)
+        self._filter_action.setToolTip("Show only rows with field or project validation errors.")
+        self._filter_action.triggered.connect(self._on_toggle_filter_errors)
+        tools_menu.addAction(self._filter_action)
+        self._filter_active = False
+
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
@@ -122,6 +128,31 @@ class QcTextReviewWindow(QMainWindow):
         """Emit refresh_requested so parent can flush CSV queue and refresh the list."""
         self.refresh_requested.emit()
 
+    def _get_row_error_info(self, row: int) -> tuple[bool, bool]:
+        """Return (has_field_error, has_project_error) for the row."""
+        name_item = self._table.item(row, 0)
+        value_item = self._table.item(row, 1)
+        if name_item is None or value_item is None:
+            return False, False
+        data = name_item.data(Qt.ItemDataRole.UserRole)
+        doc_index = data[0] if data else -1
+        field_name = name_item.text() or ""
+        value = value_item.text() or ""
+        has_field_error = (
+            _has_non_ascii(field_name)
+            or _has_non_ascii(value)
+            or _is_inappropriate_value(field_name, value, self._field_to_type)
+        )
+        has_project_error = _failed_project_validations(
+            field_name, doc_index, self._doc_index_to_comments
+        )
+        return has_field_error, has_project_error
+
+    def _row_has_error(self, row: int) -> bool:
+        """Return True if row has field or project validation errors."""
+        has_field, has_project = self._get_row_error_info(row)
+        return has_field or has_project
+
     def _on_toggle_highlight_errors(self) -> None:
         """Toggle highlights: apply or remove row highlighting for known errors."""
         if self._highlights_applied:
@@ -129,25 +160,31 @@ class QcTextReviewWindow(QMainWindow):
         else:
             self._apply_highlights()
 
+    def _on_toggle_filter_errors(self) -> None:
+        """Toggle filter: show only error rows or show all rows."""
+        if self._filter_active:
+            self._clear_filter()
+        else:
+            self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        """Hide rows that have no field or project errors."""
+        for row in range(self._table.rowCount()):
+            self._table.setRowHidden(row, not self._row_has_error(row))
+        self._filter_active = True
+        self._filter_action.setText("Unfilter")
+
+    def _clear_filter(self) -> None:
+        """Show all rows."""
+        for row in range(self._table.rowCount()):
+            self._table.setRowHidden(row, False)
+        self._filter_active = False
+        self._filter_action.setText("Filter errors")
+
     def _apply_highlights(self) -> None:
         """Highlight rows: red for field validation failures, yellow for project validation (Comments)."""
         for row in range(self._table.rowCount()):
-            name_item = self._table.item(row, 0)
-            value_item = self._table.item(row, 1)
-            if name_item is None or value_item is None:
-                continue
-            data = name_item.data(Qt.ItemDataRole.UserRole)
-            doc_index = data[0] if data else -1
-            field_name = name_item.text() or ""
-            value = value_item.text() or ""
-            has_field_error = (
-                _has_non_ascii(field_name)
-                or _has_non_ascii(value)
-                or _is_inappropriate_value(field_name, value, self._field_to_type)
-            )
-            has_project_error = _failed_project_validations(
-                field_name, doc_index, self._doc_index_to_comments
-            )
+            has_field_error, has_project_error = self._get_row_error_info(row)
             if has_field_error:
                 brush = QBrush(ERROR_BG)
             elif has_project_error:
@@ -222,6 +259,7 @@ class QcTextReviewWindow(QMainWindow):
             self._table.setItem(row, 1, value_item)
         self._table.setSortingEnabled(True)
         self._table.scrollToTop()
+        self._clear_filter()
         self._apply_highlights()
 
     def _on_cell_clicked(self, row: int, column: int) -> None:
