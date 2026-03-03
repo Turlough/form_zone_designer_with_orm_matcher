@@ -6,9 +6,9 @@ from typing import Any
 
 from util.lookup_manager import LookupManager
 
-# Northern Ireland (BT) postcodes only. Valid districts per BT postcode area:
-# BT1-BT17 (Belfast), BT18-BT49, BT51-BT57, BT58, BT60-BT71, BT74-BT82, BT92-BT94.
-# Inward code: digit + 2 letters (C,I,K,M,O,V excluded per UK postcode rules).
+# Northern Ireland (BT) postcodes only. 
+# match BT followed by 1-2 digits and then 2 letters, optionally followed by a space,
+# and then a digit followed by 2 letters.
 NI_POSTCODE_REGEX = (
     r"\bBT"
     r"[\d]{1,2}?"
@@ -17,6 +17,10 @@ NI_POSTCODE_REGEX = (
 
 # Eircode regex from https://en.wikipedia.org/wiki/Postal_address_in_the_Republic_of_Ireland#Eircode
 EIRCODE_REGEX = r"(?:^[AC-FHKNPRTV-Y][0-9]{2}|D6W)[ -]?[0-9AC-FHKNPRTV-Y]{4}$"
+
+EMAIL_REGEX = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+
+PHONE_NUMBER_REGEX = r"^\d{10}$"
 
 
 @dataclass
@@ -83,7 +87,12 @@ def _strategy_regex(ctx: ValidationContext) -> list[tuple[int, str, str]]:
         if value is None or str(value) == "":
             return []
         if not re.match(regex, value):
-            faults.append((ctx.field_to_page.get(field_name, 1), field_name, f"'{value}' does not match regex: {regex}"))
+            msg = ctx.params.get("message")
+            if not msg:
+                msg = f"'{value}' does not match regex: {regex}"
+            else:
+                msg = f"{msg}:'{value}'"
+            faults.append((ctx.field_to_page.get(field_name, 1), field_name, msg))
     return faults
 
 def _strategy_email_addresses_valid(ctx: ValidationContext) -> list[tuple[int, str, str]]:
@@ -95,7 +104,7 @@ def _strategy_email_addresses_valid(ctx: ValidationContext) -> list[tuple[int, s
         value = ctx.field_values.get(field_name)
         if value is None or str(value).strip() == "":
             return []
-        if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", value):
+        if not re.match(EMAIL_REGEX, value):
             faults.append((ctx.field_to_page.get(field_name, 1), field_name, f"Invalid email address: {value}"))
     return faults
 
@@ -108,7 +117,7 @@ def _strategy_phone_numbers_valid(ctx: ValidationContext) -> list[tuple[int, str
         value = ctx.field_values.get(field_name)
         if value is None or str(value).strip() == "":
             return []
-        if not re.match(r"^\d{10}$", value):
+        if not re.match(PHONE_NUMBER_REGEX, value):
             faults.append((ctx.field_to_page.get(field_name, 1), field_name, f"Invalid phone number: {value}"))
     return faults
 
