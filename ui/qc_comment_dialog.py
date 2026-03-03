@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 
 
-MAX_COMMENT_LENGTH = 200
+MAX_COMMENT_LENGTH = 150
 
 
 class QcCommentDialog(QDialog):
@@ -112,8 +112,8 @@ class QcCommentDialog(QDialog):
         self._current_comment_text = (comment_text or "")[:MAX_COMMENT_LENGTH]
         self._page_label.setText(f"Page: {page}")
         self._field_label.setText(f"Field: {field_name or '—'}")
-        self._value_label.setText(f"Field value: {field_value or '(empty)'}")
-        self._comment_value.setText(self._current_comment_text or "(empty)")
+        self._value_label.setText(f"Field value: {field_value or '(empty)'}"[:MAX_COMMENT_LENGTH])
+        self._comment_value.setText(self._current_comment_text or "(empty)"[:MAX_COMMENT_LENGTH])
 
     def _on_remove(self) -> None:
         self.remove_clicked.emit()
