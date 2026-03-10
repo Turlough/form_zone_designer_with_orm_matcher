@@ -34,7 +34,7 @@ class IndexMenuBar(QMenuBar):
         self._init_project_menu()
         self._init_batch_menu()
         self._init_qc_menu()
-        self._init_cloud_vision_menu()
+        # self._init_cloud_vision_menu()
 
     def _init_project_menu(self) -> None:
         """Build Project menu from top-level folders in DESIGNER_CONFIG_FOLDER."""
@@ -262,12 +262,14 @@ class IndexMenuBar(QMenuBar):
 
         # Batch QC menu 
         qc_batch_menu = self._qc_menu.addMenu("QC batch")
-        action_batch = qc_batch_menu.addAction("Validate batch")
-        action_batch.triggered.connect(self._on_validate_batch_triggered)
+        
         action = qc_batch_menu.addAction("Review batch comments")
         action.triggered.connect(self._on_review_batch_comments_triggered)
-        action = qc_batch_menu.addAction("Review special fields")
-        action.triggered.connect(self._on_review_special_fields_triggered)
+        action_batch = qc_batch_menu.addAction("Validate batch")
+        action_batch.triggered.connect(self._on_validate_batch_triggered)
+
+        # action = qc_batch_menu.addAction("Review special fields")
+        # action.triggered.connect(self._on_review_special_fields_triggered)
         action = qc_batch_menu.addAction("Quick review special fields")
         action.triggered.connect(self._on_quick_review_special_fields_triggered)
         action = qc_batch_menu.addAction("Review text and numeric")
