@@ -5,7 +5,7 @@ The format looks like:
 ```P1: Fieldname: comment | P5: Fieldname: comment``` etc. (P1 represents the page number, e.g P1 for page 1)
 
 When a field has been marked for review like this, it is highlighted red in the field list on the right hand panel. 
-Additionally, a red X is shown to the right of the field on the main image display.
+Additionally, a red X is shown to the left of the field on the main image display.
 
 Both indexing staff and qc staff are enabled to edit or remove a comment.
 QC staff are additionally allowed to escalate a flagged field.

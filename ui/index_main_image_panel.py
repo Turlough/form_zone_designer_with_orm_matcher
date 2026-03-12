@@ -139,6 +139,22 @@ class MainImageIndexPanel(QLabel):
         painter.setFont(font)
         painter.drawText(tick_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, character)
 
+    def _draw_tick_to_left(self, painter: QPainter, scaled_rect: QRect, color: QColor, character: str) -> None:
+        """Draw a tickmark slightly to the left of the left edge of scaled_rect, using color."""
+        offset = 4
+        tick_w = 16
+        tick_rect = QRect(
+            scaled_rect.left() - offset - tick_w,
+            scaled_rect.y(),
+            tick_w,
+            tick_w,
+        )
+        painter.setPen(color)
+        font = QFont()
+        font.setPointSize(16)
+        painter.setFont(font)
+        painter.drawText(tick_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, character)
+
     def _draw_value_to_right(
         self,
         painter: QPainter,
@@ -365,11 +381,9 @@ class MainImageIndexPanel(QLabel):
                 painter.drawRect(scaled_rect)
 
                 has_comment = bool(self.field_comments.get(field.name, "").strip())
-                # QC tick/cross independent of data validation
+                # QC red X to left when field has any comment
                 if has_comment:
-                    self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
-                # else:
-                #     self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
+                    self._draw_tick_to_left(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
 
                 # Draw individual radio buttons
                 selected_rb_name = self.field_values.get(field.name, None)
@@ -442,12 +456,10 @@ class MainImageIndexPanel(QLabel):
                     fill_color = INVALID_COLOUR if is_invalid else base_color
                     fill_color.setAlpha(100)
                     painter.fillRect(scaled_rect, fill_color)
-                    # QC tick/cross beside tickbox
-                    if has_comment:
-                        self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
-                    else:
+                    # Green tick when checked and no QC comment
+                    if not has_comment:
                         self._draw_tick_to_right(painter, scaled_rect, QColor(0, 255, 0), TICK_CHAR)
-                
+
                 # Fill and show text for TextField
                 if isinstance(field, TextField) and field_value:
                     # Fill with semitransparent color
@@ -465,9 +477,10 @@ class MainImageIndexPanel(QLabel):
                             painter, scaled_rect, base_color, value_str, is_invalid,
                             min_x=min_x,
                         )
-                    # QC tick/cross beside text field
-                    if has_comment:
-                        self._draw_tick_to_right(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
+
+                # QC red X to left when field has any comment (any field type)
+                if has_comment:
+                    self._draw_tick_to_left(painter, scaled_rect, QColor(255, 0, 0), CROSS_CHAR)
         
         painter.end()
         self.setPixmap(display_pixmap)
