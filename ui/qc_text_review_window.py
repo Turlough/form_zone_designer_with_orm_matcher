@@ -105,6 +105,10 @@ class QcTextReviewWindow(QMainWindow):
     # Emitted when user requests File -> Refresh (parent should flush CSV queue and refresh list)
     refresh_requested = pyqtSignal()
 
+    # Emitted when user requests Tools -> Quick review special fields / Review text and numeric
+    quick_review_special_fields_requested = pyqtSignal()
+    review_text_and_numeric_fields_requested = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Quick Review Special Fields")
@@ -137,6 +141,14 @@ class QcTextReviewWindow(QMainWindow):
         self._filter_action.triggered.connect(self._on_toggle_filter_errors)
         tools_menu.addAction(self._filter_action)
         self._filter_active = False
+
+        tools_menu.addSeparator()
+        action = QAction("Quick review special fields", self)
+        action.triggered.connect(self.quick_review_special_fields_requested.emit)
+        tools_menu.addAction(action)
+        action = QAction("Review text and numeric", self)
+        action.triggered.connect(self.review_text_and_numeric_fields_requested.emit)
+        tools_menu.addAction(action)
 
         central = QWidget()
         self.setCentralWidget(central)

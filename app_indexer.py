@@ -2008,6 +2008,12 @@ class Indexer(QMainWindow):
             self._qc_text_review_window = QcTextReviewWindow(self)
             self._qc_text_review_window.row_activated.connect(self._on_qc_text_review_row_activated)
             self._qc_text_review_window.refresh_requested.connect(self._on_qc_text_review_refresh_requested)
+            self._qc_text_review_window.quick_review_special_fields_requested.connect(
+                self._on_quick_review_special_fields_requested
+            )
+            self._qc_text_review_window.review_text_and_numeric_fields_requested.connect(
+                self._on_review_text_and_numeric_fields_requested
+            )
 
         field_to_type = self.csv_manager.get_field_to_type(self.json_folder)
         doc_index_to_comments = {
@@ -2065,6 +2071,12 @@ class Indexer(QMainWindow):
             self._qc_text_review_window = QcTextReviewWindow(self)
             self._qc_text_review_window.row_activated.connect(self._on_qc_text_review_row_activated)
             self._qc_text_review_window.refresh_requested.connect(self._on_qc_text_review_refresh_requested)
+            self._qc_text_review_window.quick_review_special_fields_requested.connect(
+                self._on_quick_review_special_fields_requested
+            )
+            self._qc_text_review_window.review_text_and_numeric_fields_requested.connect(
+                self._on_review_text_and_numeric_fields_requested
+            )
 
         doc_index_to_comments = {
             row_idx: (self.csv_manager.get_field_value(row_idx, "Comments") or "")
