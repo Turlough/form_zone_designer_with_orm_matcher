@@ -525,9 +525,12 @@ class Indexer(QMainWindow):
         
         center_panel.addWidget(scroll_area)
         
-        main_layout.addLayout(center_panel, 3)
+        main_layout.addLayout(center_panel, 4)  # Same visual width; left halved
+        # ~1 cm padding between image and detail panel
+        _cm_px = 38  # 1 cm at 96 DPI
+        main_layout.addSpacing(_cm_px)
         
-        # Right panel - Field detail panel
+        # Right panel - Field detail panel (expands to fill space from narrower left)
         self.detail_panel = IndexDetailPanel()
         self.detail_panel.field_value_changed.connect(self.on_detail_panel_value_changed)
         # Enter in the detail panel's value editor completes the current TextField
@@ -538,7 +541,7 @@ class Indexer(QMainWindow):
         self.detail_panel.field_activated.connect(self._on_detail_panel_field_activated)
         # Double-clicking a row in the detail panel's fields table opens the QC comment dialog
         self.detail_panel.field_comment_requested.connect(self._on_field_comment_requested)
-        main_layout.addWidget(self.detail_panel, stretch=1)
+        main_layout.addWidget(self.detail_panel, stretch=5)
 
                 
         # Navigation buttons

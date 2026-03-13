@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QStyle,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
-from PyQt6.QtGui import QPixmap, QImage, QFont, QIcon, QTextCursor
+from PyQt6.QtGui import QPixmap, QImage, QFont, QIcon, QTextCursor, QPainter, QPen, QColor
 from PIL import Image
 import numpy as np
 from datetime import datetime
@@ -139,8 +139,8 @@ class IndexDetailPanel(QWidget):
         self.closeup_label.setAlignment(
             Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom
         )
-        self.closeup_label.setMinimumHeight(200)
-        self.closeup_label.setMaximumHeight(200)
+        self.closeup_label.setMinimumHeight(350)
+        self.closeup_label.setMaximumHeight(350)
         self.closeup_label.setScaledContents(False)  # We'll handle scaling manually
         self.closeup_label.setStyleSheet(
             "QLabel { background-color: #3c3f41; color: #dddddd; border: 1px solid #555555; }"
@@ -152,7 +152,7 @@ class IndexDetailPanel(QWidget):
         self.value_text_edit = QTextEdit()
         self.value_text_edit.setPlaceholderText("Enter field value...")
         self.value_text_edit.setMinimumHeight(100)
-        self.value_text_edit.setFont(QFont("Arial", 12))
+        self.value_text_edit.setFont(QFont("Arial", 14))
         self.value_text_edit.textChanged.connect(self._on_value_changed)
         # Catch Enter presses so we can advance to the next TextField without inserting a newline
         self.value_text_edit.installEventFilter(self)
@@ -199,6 +199,21 @@ class IndexDetailPanel(QWidget):
         self.field_values = {}
         # Mapping of field_name -> comment string for the current page
         self.field_comments = {}
+
+    def _get_field_color(self, field: Field) -> QColor:
+        """Resolve display colour for a field from FIELD_TYPE_MAP (matches main image panel)."""
+        for field_class, color, _validator in FACTORY_FIELD_TYPE_MAP.values():
+            if type(field) is field_class:
+                return color
+        colour_attr = getattr(field, "colour", None)
+        if isinstance(colour_attr, QColor):
+            return colour_attr
+        if isinstance(colour_attr, tuple) and len(colour_attr) == 3:
+            try:
+                return QColor(*colour_attr)
+            except TypeError:
+                pass
+        return QColor(0, 255, 0)
 
     def _get_validator_for_field(self, field: Field):
         """Look up the appropriate Validator instance for a given field."""
@@ -377,7 +392,7 @@ class IndexDetailPanel(QWidget):
             crop_x1 = max(0, abs_x)            
             crop_y1 = max(0, abs_y - padding)
             crop_x2 = min(width, abs_x + field.width + padding * 2)
-            crop_y2 = min(height, abs_y + field.height + padding)
+            crop_y2 = min(height, abs_y + field.height + padding * 2)
             
             # Extract the region and make a contiguous copy for QImage
             crop_region = img_array[crop_y1:crop_y2, crop_x1:crop_x2].copy()
@@ -398,6 +413,15 @@ class IndexDetailPanel(QWidget):
                 QImage.Format.Format_RGB888
             )
             pixmap = QPixmap.fromImage(q_image)
+            
+            # Draw the original bounding box in the field's colour
+            box_x = abs_x - crop_x1 + padding
+            box_y = abs_y - crop_y1 
+            color = self._get_field_color(field)
+            painter = QPainter(pixmap)
+            painter.setPen(QPen(color, 2))
+            painter.drawRect(box_x, box_y, field.width, field.height)
+            painter.end()
             
             # Get the available size of the label (fixed height, variable width)
             label_size = self.closeup_label.size()
