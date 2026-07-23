@@ -2,16 +2,18 @@
 
 ## Purpose
 
-Always-on and requestable Cursor rule files (`.mdc`) for this project.
+Always-on and requestable Cursor rule files for this project.
 
 ## Ownership
 
-- `venv-rule.mdc`, reviewer personas (`tom`, `jess`, `architect`), `domain_terms.md`, standards variants
+- `venv-rule.mdc` — always-on Python venv and dependency file pairing
+- `domain_terms.md` — project domain vocabulary (indexing, batches, fields, QC)
+- Requestable reviewer roles: `maintainability.mdc`, `end_user.mdc`, `architect.mdc`
 
 ## Local Contracts
 
-- Durable workflow rules that must apply to every edit belong in repo `AGENTS.md` or here only when Cursor-specific
-- Python venv and `requirements.txt` / `pyproject.toml` pairing: see `venv-rule.mdc`
+- Binding agent contracts for code changes live in repo-root and subtree `AGENTS.md` (DOX)
+- Invoke reviewer rules by role name (e.g. `@maintainability`), not deprecated personal aliases
 
 ## Work Guidance
 

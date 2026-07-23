@@ -1,13 +1,20 @@
 ---
-We will 
-When working with Python projects, always check for and activate a virtual environment (.venv or venv) before running pip install commands. If no virtual environment is found, remind the user to create one first.
-
-Maintain both a requirements.txt file for pip, and a pyproject.toml for uv. Automatically update one if the other has been edited.
-
-Check the operating system for the correct activation. In Linux, assume the 'fish' console- i.e 
-```bash
-source .venv\bin\activate.fish
-```
-
+description: Python venv and keep requirements.txt in sync with pyproject.toml
 alwaysApply: true
 ---
+
+When working with Python projects, check for and activate a virtual environment (`.venv` or `venv`) before `pip install`. If none exists, remind the user to create one.
+
+Maintain both `requirements.txt` (pip) and `pyproject.toml` (uv). Update one when the other has been edited.
+
+Use the correct activation for the OS. On Linux with fish:
+
+```bash
+source .venv/bin/activate.fish
+```
+
+On Windows (PowerShell):
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
