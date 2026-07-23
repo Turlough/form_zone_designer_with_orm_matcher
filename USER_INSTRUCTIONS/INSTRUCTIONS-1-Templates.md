@@ -17,7 +17,7 @@ Create one folder per form type (project). Typical layout:
 
 ```text
 MyProject/
-  template.tif          # required — multipage blank form scan
+  template.tif          # required — multipage blank form (or template.tiff / template.pdf)
   fiducials/            # required for normal pages — fiducial image(s)
     logo.png            # see “Fiducial image” below
   json/
@@ -27,13 +27,13 @@ MyProject/
   qc_comments.txt       # optional — preset QC comment lines for Indexer
 ```
 
-Designer creates `json/` and `fiducials/` if they are missing when you load the folder. **`template.tif` must already exist** or Designer cannot open the project.
+Designer creates `json/` and `fiducials/` if they are missing when you load the folder. **A template file must already exist** (`template.tif`, `template.tiff`, or `template.pdf`) or Designer cannot open the project.
 
 File names are matched **without regard to case** (for example `Template.TIF` or `LOGO.PNG` are fine).
 
-## Template scan (`template.tif`)
+## Template file (`template.tif`, `template.tiff`, or `template.pdf`)
 
-- **Format:** Multipage TIFF is the expected format (one file, one page per frame).
+- **Format:** Multipage TIFF (`.tif` / `.tiff`) or multipage PDF (`.pdf`); one file, one page per frame or PDF page.
 - **Content:** Use a clean **unfilled** form. The same layout will be used to define zones; indexed batches use filled scans with the same page count and layout.
 - **Quality:** Scan at consistent resolution and orientation. Skew and scale differences are partly corrected via the fiducial, but poor scans make matching and OCR harder.
 - **Page count:** Every page that will appear on live forms should be present in the template. Page JSON files use **1-based** names: first page → `1.json`, second → `2.json`, and so on.
@@ -140,7 +140,7 @@ Indexer/Exporter use their own project selection (Project menu) pointing at the 
 ## Pre-design checklist
 
 1. Create the project folder and subfolders `json/` and `fiducials/` (or let Designer create them on first load).
-2. Place **`template.tif`** (multipage blank form) in the project folder.
+2. Place **`template.tif`**, **`template.tiff`**, or **`template.pdf`** (multipage blank form) in the project folder.
 3. Add a fiducial image under **`fiducials/`** using one of the supported file names; verify the app can detect that patch on each page that should use a fiducial (position may differ per page).
 4. Add **`json/project_config.json`** with at least `pages_without_fiducial` if any page lacks a mark; add `batch_folder` and `import_filename` before indexing.
 5. Confirm page count in the template matches the number of pages you will design.

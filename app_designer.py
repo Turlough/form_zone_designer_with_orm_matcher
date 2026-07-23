@@ -22,7 +22,8 @@ from dotenv import load_dotenv
 from util import ORMMatcher, DesignerConfig
 from util import detect_rectangles, load_page_fields, save_page_fields, remove_inner_rectangles
 from util.app_state import load_state, save_state
-from util.path_utils import resolve_path_case_insensitive, find_file_case_insensitive
+from util.path_utils import resolve_path_case_insensitive, find_file_case_insensitive, find_project_template
+from util.document_loader import get_document_loader_for_path
 import logging
 
 from PyQt6.QtCore import QPoint
@@ -194,7 +195,7 @@ class Designer(QMainWindow):
         if not folder or resolve_path_case_insensitive(folder) is None:
             return
         folder_resolved = resolve_path_case_insensitive(folder)
-        if find_file_case_insensitive(folder_resolved, "template.tif") is None:
+        if find_project_template(folder_resolved) is None:
             return
         try:
             if not self._load_config_from_path(folder):
@@ -256,32 +257,19 @@ class Designer(QMainWindow):
             )
             logger.error(f"Error loading config folder: {e}", exc_info=True)
     
-    def load_multipage_tiff(self, tiff_path):
-        """Load a multipage TIFF file and process each page."""
+    def load_multipage_tiff(self, document_path):
+        """Load a multipage template (TIFF or PDF) and process each page."""
         try:
-            # Open the multipage TIFF
-            with Image.open(tiff_path) as img:
-                page_num = 0
-                while True:
-                    try:
-                        img.seek(page_num)
-                        # Convert to RGB if necessary
-                        page = img.convert('RGB')
-                        self.pages.append(page.copy())
-                        page_num += 1
-                    except EOFError:
-                        break
-            
-            logger.debug(f"Loaded {len(self.pages)} pages from {tiff_path}")
-            
-            # Process each page with ORM matcher
+            loader = get_document_loader_for_path(document_path)
+            self.pages.extend(loader.load_pages(document_path))
+
+            logger.debug("Loaded %d pages from %s", len(self.pages), document_path)
+
             self.process_pages()
-            
-            # Generate thumbnails and populate list
             self.thumbnail_panel.populate_thumbnails(self.pages, self.fiducials, self.page_field_list)
-            
+
         except Exception as e:
-            print(f"Error loading TIFF: {e}")
+            logger.error("Error loading template %s: %s", document_path, e)
     
     def process_pages(self):
         """Run ORM matcher on each page to find logo bounding boxes."""

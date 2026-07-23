@@ -71,6 +71,51 @@ class PdfDocumentLoader(BaseDocumentLoader):
         return pages
 
 
+def load_page_dimensions(file_path: str) -> list[tuple[int, int]]:
+    """
+    Return (width, height) in pixels for each page of a multipage template or document.
+
+    PDF sizes match PdfDocumentLoader rasterization (default 200 DPI).
+    """
+    suffix = Path(file_path).suffix.lower()
+    if suffix == ".pdf":
+        loader = PdfDocumentLoader()
+        zoom = loader.dpi / 72.0
+        matrix = fitz.Matrix(zoom, zoom)
+        dimensions: list[tuple[int, int]] = []
+        try:
+            doc = fitz.open(file_path)
+            try:
+                for page_index in range(len(doc)):
+                    page = doc[page_index]
+                    pix = page.get_pixmap(matrix=matrix, alpha=False)
+                    dimensions.append((pix.width, pix.height))
+            finally:
+                doc.close()
+        except Exception as exc:  # noqa: BLE001
+            msg = f"Failed to read PDF page dimensions from {file_path}: {exc}"
+            logger.error(msg)
+            raise RuntimeError(msg) from exc
+        return dimensions
+
+    dimensions = []
+    try:
+        img = Image.open(file_path)
+        page_num = 0
+        while True:
+            try:
+                img.seek(page_num)
+                dimensions.append((img.width, img.height))
+                page_num += 1
+            except EOFError:
+                break
+    except Exception as exc:  # noqa: BLE001
+        msg = f"Failed to read image page dimensions from {file_path}: {exc}"
+        logger.error(msg)
+        raise RuntimeError(msg) from exc
+    return dimensions
+
+
 def get_document_loader_for_path(file_path: str) -> BaseDocumentLoader:
     """
     Return an appropriate document loader based on file extension.

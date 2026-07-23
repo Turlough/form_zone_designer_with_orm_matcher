@@ -91,6 +91,23 @@ def paths_equal_case_insensitive(a: str | Path, b: str | Path) -> bool:
     return a.lower() == b.lower()
 
 
+PROJECT_TEMPLATE_FILENAMES = ("template.tif", "template.tiff", "template.pdf")
+
+
+def find_project_template(directory: str | Path) -> Path | None:
+    """
+    Find the project blank-form template in a config folder.
+
+    Accepts template.tif, template.tiff, or template.pdf (case-insensitive).
+    If more than one candidate exists, the first name in PROJECT_TEMPLATE_FILENAMES wins.
+    """
+    for name in PROJECT_TEMPLATE_FILENAMES:
+        found = find_file_case_insensitive(directory, name)
+        if found is not None:
+            return found
+    return None
+
+
 def find_file_case_insensitive(directory: str | Path, filename: str) -> Path | None:
     """
     Find a file in the given directory, matching filename case-insensitively.

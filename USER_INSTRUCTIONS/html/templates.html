@@ -51,7 +51,7 @@
 <h2>Project folder layout</h2>
 <p>Create one folder per form type (project). Typical layout:</p>
 <pre><code class="language-text">MyProject/
-  template.tif          # required — multipage blank form scan
+  template.tif          # required — multipage blank form (or template.tiff / template.pdf)
   fiducials/            # required for normal pages — fiducial image(s)
     logo.png            # see “Fiducial image” below
   json/
@@ -60,11 +60,11 @@
     2.json              # page 2, etc.
   qc_comments.txt       # optional — preset QC comment lines for Indexer
 </code></pre>
-<p>Designer creates <code>json/</code> and <code>fiducials/</code> if they are missing when you load the folder. <strong><code>template.tif</code> must already exist</strong> or Designer cannot open the project.</p>
+<p>Designer creates <code>json/</code> and <code>fiducials/</code> if they are missing when you load the folder. <strong>A template file must already exist</strong> (<code>template.tif</code>, <code>template.tiff</code>, or <code>template.pdf</code>) or Designer cannot open the project.</p>
 <p>File names are matched <strong>without regard to case</strong> (for example <code>Template.TIF</code> or <code>LOGO.PNG</code> are fine).</p>
-<h2>Template scan (<code>template.tif</code>)</h2>
+<h2>Template file (<code>template.tif</code>, <code>template.tiff</code>, or <code>template.pdf</code>)</h2>
 <ul>
-<li><strong>Format:</strong> Multipage TIFF is the expected format (one file, one page per frame).</li>
+<li><strong>Format:</strong> Multipage TIFF (<code>.tif</code> / <code>.tiff</code>) or multipage PDF (<code>.pdf</code>); one file, one page per frame or PDF page.</li>
 <li><strong>Content:</strong> Use a clean <strong>unfilled</strong> form. The same layout will be used to define zones; indexed batches use filled scans with the same page count and layout.</li>
 <li><strong>Quality:</strong> Scan at consistent resolution and orientation. Skew and scale differences are partly corrected via the fiducial, but poor scans make matching and OCR harder.</li>
 <li><strong>Page count:</strong> Every page that will appear on live forms should be present in the template. Page JSON files use <strong>1-based</strong> names: first page → <code>1.json</code>, second → <code>2.json</code>, and so on.</li>
@@ -179,7 +179,7 @@
 <h2>Pre-design checklist</h2>
 <ol>
 <li>Create the project folder and subfolders <code>json/</code> and <code>fiducials/</code> (or let Designer create them on first load).</li>
-<li>Place <strong><code>template.tif</code></strong> (multipage blank form) in the project folder.</li>
+<li>Place <strong><code>template.tif</code></strong>, <strong><code>template.tiff</code></strong>, or <strong><code>template.pdf</code></strong> (multipage blank form) in the project folder.</li>
 <li>Add a fiducial image under <strong><code>fiducials/</code></strong> using one of the supported file names; verify the app can detect that patch on each page that should use a fiducial (position may differ per page).</li>
 <li>Add <strong><code>json/project_config.json</code></strong> with at least <code>pages_without_fiducial</code> if any page lacks a mark; add <code>batch_folder</code> and <code>import_filename</code> before indexing.</li>
 <li>Confirm page count in the template matches the number of pages you will design.</li>

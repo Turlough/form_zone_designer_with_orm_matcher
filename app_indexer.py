@@ -24,8 +24,9 @@ from util.path_utils import (
     resolve_path_case_insensitive,
     resolve_path_or_original,
     find_file_case_insensitive,
+    find_project_template,
 )
-from util.document_loader import get_document_loader_for_path
+from util.document_loader import get_document_loader_for_path, load_page_dimensions
 from util.designer_persistence import load_page_fields as load_page_fields_from_json
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField, FIELD_TYPE_MAP
 import logging
@@ -415,20 +416,12 @@ class Indexer(QMainWindow):
     def _load_template_page_dimensions(self, config_path: Path) -> None:
         """Load (width, height) for each page of the project template. Clears on failure."""
         self.template_page_dimensions = []
-        template_path = find_file_case_insensitive(config_path, "template.tif")
+        template_path = find_project_template(config_path)
         if template_path is None or not template_path.is_file():
             logger.warning("Template not found in %s, rescaling disabled", config_path)
             return
         try:
-            with Image.open(template_path) as img:
-                page_num = 0
-                while True:
-                    try:
-                        img.seek(page_num)
-                        self.template_page_dimensions.append((img.width, img.height))
-                        page_num += 1
-                    except EOFError:
-                        break
+            self.template_page_dimensions = load_page_dimensions(str(template_path))
             logger.info("Loaded template dimensions for %d pages", len(self.template_page_dimensions))
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not read template dimensions from %s: %s", template_path, exc)

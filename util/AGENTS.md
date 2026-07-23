@@ -14,6 +14,7 @@ Non-UI services: ORM logo matching, document loading, persistence, CSV/index I/O
 - Apps import shared capabilities via `util` (e.g. `ORMMatcher`, `CSVManager`, `ProjectValidations`, designer persistence helpers)
 - Validation rules and strategies live in `util/validation/` (see child DOX)
 - Environment and project paths: respect `util/path_utils.py` and `util/app_state.py` conventions
+- Project blank-form template: `find_project_template()` in `path_utils.py` resolves `template.tif`, `template.tiff`, or `template.pdf` (case-insensitive; first listed wins if several exist)
 
 ## Work Guidance
 
