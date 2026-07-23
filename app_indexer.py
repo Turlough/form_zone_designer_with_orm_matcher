@@ -28,6 +28,7 @@ from util.path_utils import (
 )
 from util.document_loader import get_document_loader_for_path, load_page_dimensions
 from util.designer_persistence import load_page_fields as load_page_fields_from_json
+from util.fiducial_paths import find_fiducial_for_page
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField, FIELD_TYPE_MAP
 import logging
 from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog, QcCommentDialog, QcSpecialFieldReviewDialog, QcTextReviewWindow
@@ -118,12 +119,9 @@ class BatchDocumentCacheWorker(QObject):
 
     def run(self) -> None:
         """Load each document, prepare each page, and emit as they complete."""
-        matcher = None
-        if self.logo_path and resolve_path_or_original(self.logo_path):
-            try:
-                matcher = ORMMatcher(self.logo_path)
-            except Exception as e:
-                logger.warning("Could not create ORMMatcher for page prep: %s", e)
+        fiducials_folder = None
+        if self.config_folder:
+            fiducials_folder = Path(self.config_folder) / "fiducials"
         for path in self.document_paths:
             try:
                 loader = get_document_loader_for_path(path)
@@ -145,15 +143,26 @@ class BatchDocumentCacheWorker(QObject):
                                 )
                         if page_idx in self.pages_without_fiducial:
                             page_bbox = None
-                        elif matcher:
-                            img_array = np.array(pil_image)
-                            img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-                            matcher.locate_from_cv2_image(img_cv)
-                            page_bbox = (
-                                (matcher.top_left, matcher.bottom_right)
-                                if matcher.top_left and matcher.bottom_right
-                                else None
-                            )
+                        elif fiducials_folder is not None:
+                            logo_path = find_fiducial_for_page(fiducials_folder, page_idx)
+                            if logo_path is None:
+                                page_bbox = None
+                            else:
+                                try:
+                                    matcher = ORMMatcher(str(logo_path))
+                                    img_array = np.array(pil_image)
+                                    img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+                                    matcher.locate_from_cv2_image(img_cv)
+                                    page_bbox = (
+                                        (matcher.top_left, matcher.bottom_right)
+                                        if matcher.top_left and matcher.bottom_right
+                                        else None
+                                    )
+                                except Exception as e:
+                                    logger.warning(
+                                        "Fiducial match failed for page %d: %s", page_idx + 1, e
+                                    )
+                                    page_bbox = None
                         else:
                             page_bbox = None
                         page_fields = load_page_fields_from_json(
@@ -460,7 +469,6 @@ class Indexer(QMainWindow):
         self._index_menu_bar = IndexMenuBar(self)
         self._index_menu_bar.project_selected.connect(self._apply_config_folder)
         self._index_menu_bar.batch_import_selected.connect(self._on_batch_import_selected)
-        self._index_menu_bar.ocr_page_requested.connect(self._on_ocr_page_requested)
         # QC menu
         self._index_menu_bar.validate_document_requested.connect(self._on_validate_document_requested)
         self._index_menu_bar.review_document_comments_requested.connect(self._on_review_document_comments_requested)
@@ -889,7 +897,7 @@ class Indexer(QMainWindow):
                 self.page_bbox = None
                 logger.info("Page %d: Skipping fiducial (pages_without_fiducial)", page_num + 1)
             else:
-                self.page_bbox = self.detect_logo(pil_image)
+                self.page_bbox = self.detect_logo(pil_image, page_num)
             self.page_fields = self.load_page_fields(page_num + 1)  # JSON files are 1-indexed
         
         # Convert to QPixmap (must be on main thread)
@@ -920,26 +928,27 @@ class Indexer(QMainWindow):
         # No current field selected on new page
         self._set_current_field(None)
     
-    def detect_logo(self, pil_image):
-        """Detect logo in the image, return bounding box or None."""
-        if not self.matcher:
+    def detect_logo(self, pil_image, page_num: int = 0):
+        """Detect logo in the image for the given template page index; return bounding box or None."""
+        if not self.config_folder:
             return None
-        
+        fiducials_folder = Path(self.config_folder) / "fiducials"
+        logo_path = find_fiducial_for_page(fiducials_folder, page_num)
+        if logo_path is None:
+            return None
+
         try:
-            # Convert PIL to OpenCV
             img_array = np.array(pil_image)
             img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-            
-            # Detect logo
-            self.matcher.locate_from_cv2_image(img_cv)
-            
-            if self.matcher.top_left and self.matcher.bottom_right:
-                logger.info(f"Logo detected at {self.matcher.top_left}")
-                return (self.matcher.top_left, self.matcher.bottom_right)
-            else:
-                logger.warning("Logo detection failed, using (0,0)")
-                return None
-        
+            matcher = ORMMatcher(str(logo_path))
+            matcher.locate_from_cv2_image(img_cv)
+
+            if matcher.top_left and matcher.bottom_right:
+                logger.info(f"Logo detected at {matcher.top_left} (page {page_num + 1})")
+                return (matcher.top_left, matcher.bottom_right)
+            logger.warning("Logo detection failed for page %d", page_num + 1)
+            return None
+
         except Exception as e:
             logger.error(f"Error detecting logo: {e}")
             return None
@@ -1414,12 +1423,10 @@ class Indexer(QMainWindow):
     # ------------------------------------------------------------------
 
     def _set_current_field(self, field: Field | None) -> None:
-        """Track the currently selected field and update OCR menu state."""
+        """Track the currently selected field and update OCR button state."""
         self.current_field = field
         has_text_fields = any(isinstance(f, TextField) for f in self.page_fields)
         can_ocr_page = bool(self.current_page_images) and has_text_fields
-        if hasattr(self, "_index_menu_bar"):
-            self._index_menu_bar.set_ocr_enabled(can_ocr_page)
         if hasattr(self, "ocr_page_button"):
             self.ocr_page_button.setEnabled(can_ocr_page)
 
@@ -2290,7 +2297,7 @@ class Indexer(QMainWindow):
         self._show_current_qc_special_field()
 
     def _on_ocr_requested(self) -> None:
-        """Handle OCR menu action: open selection dialog and run Cloud Vision."""
+        """Handle OCR for the current text field: region dialog, then Gemini OCR."""
         if not isinstance(self.current_field, TextField):
             QMessageBox.warning(self, "OCR", "OCR is only available for text fields.")
             return

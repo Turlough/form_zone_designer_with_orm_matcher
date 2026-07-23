@@ -54,6 +54,10 @@ class ImageDisplayWidget(QLabel):
         # drawn_rect_rel / inner_rects_rel are (x,y,w,h) relative to logo
         self.on_rect_drawn = None
 
+        # When True, drawing a rectangle invokes on_fiducial_rect_drawn (page coords) instead of field flow.
+        self.fiducial_select_mode = False
+        self.on_fiducial_rect_drawn = None  # (x, y, w, h) in absolute page pixels
+
         # When True, show first 20 chars of field name to the right of each field (set by main window from toggle)
         self.show_field_names = False
     
@@ -431,6 +435,13 @@ class ImageDisplayWidget(QLabel):
         self.update_display()
 
         if width <= 5 or height <= 5:
+            return
+
+        if self.fiducial_select_mode:
+            if self.on_fiducial_rect_drawn:
+                self.on_fiducial_rect_drawn(
+                    (int(left_abs), int(top_abs), int(width), int(height))
+                )
             return
 
         # Rectangles fully within the drawn rect (from detected_rects, in absolute coords)

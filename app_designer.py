@@ -21,6 +21,7 @@ from PIL import Image
 from dotenv import load_dotenv
 from util import ORMMatcher, DesignerConfig
 from util import detect_rectangles, load_page_fields, save_page_fields, remove_inner_rectangles
+from util.fiducial_paths import find_default_logo, find_fiducial_for_page, per_page_logo_filename
 from util.app_state import load_state, save_state
 from util.path_utils import resolve_path_case_insensitive, find_file_case_insensitive, find_project_template
 from util.document_loader import get_document_loader_for_path
@@ -67,8 +68,9 @@ class Designer(QMainWindow):
         self.selected_field_obj = None  # The currently selected Field object
         self.selected_field_index = None  # Index of selected field in page_field_list
         
-        # ORM matcher (initialized when config is loaded)
+        # ORM matcher (initialized when config is loaded; default logo only — per-page logos resolved in process_pages)
         self.matcher = None
+        self.fiducial_select_mode = False
         
         # Last field type chosen when converting a detected rect (for default in dialog)
         self._last_field_type = "Tickbox"
@@ -91,6 +93,17 @@ class Designer(QMainWindow):
         load_config_action.setShortcut('Ctrl+O')
         load_config_action.triggered.connect(self.load_config_folder)
         file_menu.addAction(load_config_action)
+
+        fiducials_menu = menubar.addMenu("Fiducials")
+        self.fiducial_select_action = QAction("Select rectangle", self)
+        self.fiducial_select_action.setCheckable(True)
+        self.fiducial_select_action.setEnabled(False)
+        self.fiducial_select_action.setToolTip(
+            "Draw a rectangle on the current page to save fiducials/logo-pN.png "
+            "(overrides logo.png for that page when matching)."
+        )
+        self.fiducial_select_action.triggered.connect(self._on_fiducial_select_toggled)
+        fiducials_menu.addAction(self.fiducial_select_action)
         
         # Create central widget and main layout
         central_widget = QWidget()
@@ -137,6 +150,10 @@ class Designer(QMainWindow):
         self.page_field_list.clear()
         self.page_detected_rects.clear()
         self.current_page_idx = None
+        self.fiducial_select_mode = False
+        if hasattr(self, "fiducial_select_action"):
+            self.fiducial_select_action.setChecked(False)
+            self.fiducial_select_action.setEnabled(False)
 
         config_resolved = resolve_path_case_insensitive(folder_path)
         if config_resolved is None or not config_resolved.is_dir():
@@ -146,20 +163,16 @@ class Designer(QMainWindow):
 
         logger.info(f"Loaded config folder: {config_folder}")
 
-        logo_candidates = ['logo.png', 'logo.tif', 'fiducial.png', 'fiducial.jpg']
-        logo_path = None
-        for candidate in logo_candidates:
-            found = find_file_case_insensitive(self.config.fiducials_folder, candidate)
-            if found is not None:
-                logo_path = str(found)
-                break
+        logo_path = find_default_logo(self.config.fiducials_folder)
 
         if logo_path:
-            self.matcher = ORMMatcher(logo_path)
-            logger.info(f"Initialized ORM matcher with logo: {logo_path}")
+            self.matcher = ORMMatcher(str(logo_path))
+            logger.info(f"Initialized ORM matcher with default logo: {logo_path}")
         else:
             self.matcher = None
-            logger.warning("No logo found in fiducials folder, ORM matcher not initialized")
+            logger.warning(
+                "No default logo in fiducials folder; per-page logo-pN.png files may still be used"
+            )
 
         if not self.config.template_path.exists():
             return False
@@ -279,42 +292,41 @@ class Designer(QMainWindow):
             if config:
                 pages_without_fiducial = list(config.get("pages_without_fiducial", []))
 
-        if not self.matcher:
-            logger.warning("No matcher available, skipping logo detection")
-            self.fiducials = [None] * len(self.pages)
-            self.page_field_list = [[] for _ in range(len(self.pages))]
-            self.page_detected_rects = [[] for _ in range(len(self.pages))]
-            return
-
+        self.fiducials = []
         for idx, page in enumerate(self.pages):
             if idx in pages_without_fiducial:
                 self.fiducials.append(None)
                 logger.info(f"Page {idx + 1}: Skipping fiducial (pages_without_fiducial)")
             else:
-                # Convert PIL Image to OpenCV format
-                page_array = np.array(page)
-                page_cv = cv2.cvtColor(page_array, cv2.COLOR_RGB2BGR)
-
-                # Run the matcher
-                self.matcher.locate_from_cv2_image(page_cv)
-
-                # Store the bounding box
-                if self.matcher.top_left and self.matcher.bottom_right:
-                    self.fiducials.append((self.matcher.top_left, self.matcher.bottom_right))
-                    logger.info(f"Page {idx + 1}: Logo found at {self.matcher.top_left}")
+                bbox = self._detect_fiducial_on_page(idx, page)
+                self.fiducials.append(bbox)
+                if bbox:
+                    logger.info(f"Page {idx + 1}: Logo found at {bbox[0]}")
                 else:
-                    self.fiducials.append(None)
                     logger.warning(f"Page {idx + 1}: No logo found")
 
-            # Initialize empty field list for this page
             self.page_field_list.append([])
             self.page_detected_rects.append([])
-        
-        # Load fields from JSON for each page
+
         if self.config:
             for idx in range(len(self.pages)):
                 fields = load_page_fields(str(self.config.json_folder), idx, self.config.config_folder)
                 self.page_field_list[idx] = fields
+
+    def _detect_fiducial_on_page(self, page_idx: int, page: Image.Image):
+        """Return (top_left, bottom_right) for page_idx or None."""
+        if not self.config:
+            return None
+        logo_path = find_fiducial_for_page(self.config.fiducials_folder, page_idx)
+        if logo_path is None:
+            return None
+        page_array = np.array(page)
+        page_cv = cv2.cvtColor(page_array, cv2.COLOR_RGB2BGR)
+        matcher = ORMMatcher(str(logo_path))
+        matcher.locate_from_cv2_image(page_cv)
+        if matcher.top_left and matcher.bottom_right:
+            return (matcher.top_left, matcher.bottom_right)
+        return None
     
     def on_thumbnail_clicked(self, page_idx):
         """Handle thumbnail click event to display full-size page."""
@@ -354,6 +366,10 @@ class Designer(QMainWindow):
             self.image_display.on_rect_added = on_rect_added_handler
             self.image_display.on_detected_rect_clicked = self._on_detected_rect_clicked
             self.image_display.on_rect_drawn = self._on_rect_drawn
+            self.image_display.fiducial_select_mode = self.fiducial_select_mode
+            self.image_display.on_fiducial_rect_drawn = self._on_fiducial_rect_drawn
+
+            self.fiducial_select_action.setEnabled(True)
 
             # Update JSON editor for the current page
             self._update_edit_panel_json(page_idx)
@@ -420,6 +436,55 @@ class Designer(QMainWindow):
             self.current_page_idx + 1,
             len(groups),
         )
+
+    def _on_fiducial_select_toggled(self, checked: bool) -> None:
+        self.fiducial_select_mode = checked
+        if hasattr(self, "image_display"):
+            self.image_display.fiducial_select_mode = checked
+        if checked:
+            self.statusBar().showMessage(
+                "Fiducial mode: draw a rectangle on the template to define this page's logo patch.",
+                8000,
+            )
+        else:
+            self.statusBar().clearMessage()
+
+    def _on_fiducial_rect_drawn(self, rect: tuple[int, int, int, int]) -> None:
+        """Save cropped template region as fiducials/logo-pN.png and refresh fiducial on this page."""
+        if self.current_page_idx is None or not self.config:
+            return
+        x, y, w, h = rect
+        page = self.pages[self.current_page_idx]
+        pw, ph = page.size
+        x = max(0, min(x, pw - 1))
+        y = max(0, min(y, ph - 1))
+        w = max(1, min(w, pw - x))
+        h = max(1, min(h, ph - y))
+
+        out_name = per_page_logo_filename(self.current_page_idx)
+        out_path = self.config.fiducials_folder / out_name
+        try:
+            crop = page.crop((x, y, x + w, y + h))
+            crop.save(out_path, "PNG")
+        except OSError as e:
+            QMessageBox.warning(self, "Save fiducial", f"Could not save {out_name}:\n{e}")
+            return
+
+        bbox = self._detect_fiducial_on_page(self.current_page_idx, page)
+        self.fiducials[self.current_page_idx] = bbox
+        self.image_display.bbox = bbox
+        self.image_display.update_display()
+        self.update_thumbnail(self.current_page_idx)
+        self.grid_designer_button.setEnabled(bbox is not None)
+
+        if self.fiducial_select_action.isChecked():
+            self.fiducial_select_action.setChecked(False)
+
+        self.statusBar().showMessage(
+            f"Saved {out_name} and updated fiducial for page {self.current_page_idx + 1}.",
+            6000,
+        )
+        logger.info("Saved per-page fiducial %s (%dx%d at %d,%d)", out_path, w, h, x, y)
 
     def on_page_json_changed(self, field_order: list):
         """

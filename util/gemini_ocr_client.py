@@ -2,7 +2,7 @@
 
 Uses a vision LLM (Gemini) to read the selected image region as a single
 paragraph (left to right, top to bottom). This is often more robust for
-handwriting and form layouts than Cloud Vision's DOCUMENT_TEXT_DETECTION.
+handwriting and form layouts on scanned forms.
 
 API key:
     - Set GOOGLE_API_KEY or GEMINI_API_KEY in your environment or .env file.
@@ -17,7 +17,7 @@ from typing import Tuple
 
 from PIL import Image
 
-from util.cloud_vision_client import _normalize_ocr_text
+from util.ocr_text_utils import normalize_ocr_text
 
 Rect = Tuple[int, int, int, int]
 
@@ -84,5 +84,5 @@ def ocr_image_region(pil_image: Image.Image, rect: Rect) -> str:
         client.close()
 
     text = (getattr(response, "text", "") or "").strip().upper()
-    return _normalize_ocr_text(text)
+    return normalize_ocr_text(text)
 

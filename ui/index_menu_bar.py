@@ -14,7 +14,6 @@ class IndexMenuBar(QMenuBar):
 
     project_selected = pyqtSignal(str)  # Emits the selected project config folder path
     batch_import_selected = pyqtSignal(str)  # Emits full path to selected batch import file
-    ocr_page_requested = pyqtSignal()  # User chose to OCR all TextFields on the current page
     review_batch_comments_requested = pyqtSignal()  # User chose QC > Review batch comments
     review_special_fields_requested = pyqtSignal()  # User chose QC > QC batch > Review special fields
     quick_review_special_fields_requested = pyqtSignal()  # User chose QC > QC batch > Quick review special fields
@@ -34,7 +33,6 @@ class IndexMenuBar(QMenuBar):
         self._init_project_menu()
         self._init_batch_menu()
         self._init_qc_menu()
-        # self._init_cloud_vision_menu()
 
     def _init_project_menu(self) -> None:
         """Build Project menu from top-level folders in DESIGNER_CONFIG_FOLDER."""
@@ -302,26 +300,3 @@ class IndexMenuBar(QMenuBar):
     def _on_review_document_comments_triggered(self) -> None:
         """Emit signal when Review document comments is chosen."""
         self.review_document_comments_requested.emit()
-
-    def _init_cloud_vision_menu(self) -> None:
-        """Build Cloud Vision menu."""
-        self._cloud_vision_menu = QMenu("OCR", self)
-        self.addMenu(self._cloud_vision_menu)
-        self._refresh_cloud_vision_menu()
-
-    def _refresh_cloud_vision_menu(self) -> None:
-        """Refresh the Cloud Vision submenu."""
-        self._cloud_vision_menu.clear()
-        # Single OCR action; enabled/disabled by main window depending on field type
-        self._ocr_action = self._cloud_vision_menu.addAction("OCR current page")
-        self._ocr_action.setEnabled(False)
-        self._ocr_action.triggered.connect(self._on_ocr_triggered)
-
-    def _on_ocr_triggered(self) -> None:
-        """Emit signal when OCR current page menu item is chosen."""
-        self.ocr_page_requested.emit()
-
-    def set_ocr_enabled(self, enabled: bool) -> None:
-        """Enable or disable the OCR menu item."""
-        if hasattr(self, "_ocr_action") and self._ocr_action is not None:
-            self._ocr_action.setEnabled(enabled)

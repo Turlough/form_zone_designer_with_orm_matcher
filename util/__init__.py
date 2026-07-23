@@ -8,3 +8,9 @@ from .designer_config import DesignerConfig
 from .csv_manager import CSVManager
 from .lookup_manager import LookupManager
 from .validation import ProjectValidations
+from .fiducial_paths import (
+    DEFAULT_LOGO_CANDIDATES,
+    find_default_logo,
+    find_fiducial_for_page,
+    per_page_logo_filename,
+)

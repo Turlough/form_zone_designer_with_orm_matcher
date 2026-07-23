@@ -4,10 +4,7 @@ python-dotenv>=1.0.0
 Pillow>=10.0.0
 numpy>=1.24.0
 
-# For Google Cloud Vision OCR integration in the Field Indexer (optional)
-google-cloud-vision>=3.7.0
-
-# For Gemini vision OCR integration (recommended for handwriting / free text)
+# Gemini vision OCR (Indexer text fields)
 google-genai>=1.0.0
 
 # For PDF document rendering in the Field Indexer

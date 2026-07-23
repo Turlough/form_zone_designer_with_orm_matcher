@@ -17,7 +17,7 @@ class IndexOcrDialog(QDialog):
     Modal dialog for selecting an OCR region on the current index page.
 
     Shows the current page image, allows the user to zoom (autofit / fit width /
-    fit height) and draw a single rectangle to be sent to Google Cloud Vision.
+    fit height) and draw a single rectangle to be sent to Gemini OCR.
 
     The selected rectangle is stored in page image coordinates (x, y, width, height).
     """

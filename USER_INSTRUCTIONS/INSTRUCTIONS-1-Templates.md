@@ -71,6 +71,10 @@ Place **one** fiducial image in the `fiducials/` subfolder. The apps look for th
 3. `fiducial.png`
 4. `fiducial.jpg`
 
+**Per-page fiducials (optional)**
+
+When a page needs a **different** patch than the default logo, add `logo-pN.png` under `fiducials/` where **N** is the **1-based** template page number (page 1 → `logo-p1.png`). That file **overrides** the default logo for matching on that page only. In Form Zone Designer, use **Fiducials → Select rectangle** on the template page to draw and save the patch.
+
 **How to choose the crop**
 
 - Cut a tight image from the **template** of a mark that **appears on every page** that uses a fiducial (logo, printed heading, fixed graphic). That mark may sit in **different positions on different pages**; the apps search each page separately and align fields to wherever it is found.
@@ -158,7 +162,7 @@ Plain text, one preset comment per line. If present in the project folder, Index
 Copy `env.example` to `.env` in the repo root when you use shared defaults (see **Where to put project folders** above for `DESIGNER_CONFIG_FOLDER`).
 
 - **`DESIGNER_CONFIG_FOLDER`** — Parent directory that contains project folders (required for convenient project discovery in Designer, Indexer, and Exporter).
-- OCR and cloud credential variables — see `env.example` if Indexer OCR features are enabled.
+- **`GEMINI_API_KEY`** or **`GOOGLE_API_KEY`** — Gemini API key for Indexer text-field OCR (see `env.example`).
 
 Per-project paths such as **`batch_folder`** belong in `json/project_config.json`, not in `.env`.
 

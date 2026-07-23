@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
 from dotenv import load_dotenv
 from fields import Field
 from util.document_loader import get_document_loader_for_path
+from util.fiducial_paths import find_default_logo, find_fiducial_for_page
 from util.orm_matcher import ORMMatcher
 from util.path_utils import find_file_case_insensitive, resolve_path_case_insensitive
 from util.csv_manager import CSVManager
@@ -74,13 +75,9 @@ def _load_project_config(config_folder: Path) -> dict | None:
 
 
 def _find_logo_path(config_folder: Path) -> str | None:
-    """Find logo/fiducial image in project fiducials folder."""
-    fiducials = config_folder / "fiducials"
-    for candidate in ["logo.png", "logo.tif", "fiducial.png", "fiducial.jpg"]:
-        found = find_file_case_insensitive(fiducials, candidate)
-        if found is not None:
-            return str(found)
-    return None
+    """Default logo/fiducial path (per-page logo-pN.png is resolved at match time)."""
+    found = find_default_logo(config_folder / "fiducials")
+    return str(found) if found else None
 
 
 def _crop_field_thumbnail(
@@ -130,7 +127,7 @@ def _generate_one_thumbnail(
     doc_path: str,
     field_obj: Field,
     page_idx: int,
-    logo_path: str | None,
+    config_folder: Path | None,
     pages_without_fiducial: set[int],
 ) -> np.ndarray | None:
     """
@@ -145,8 +142,10 @@ def _generate_one_thumbnail(
 
         pil_page = pages[page_idx]
         bbox = None
-        if logo_path and page_idx not in pages_without_fiducial:
-            matcher = ORMMatcher(logo_path)
+        if config_folder is not None and page_idx not in pages_without_fiducial:
+            logo_path = find_fiducial_for_page(config_folder / "fiducials", page_idx)
+            if logo_path is not None:
+                matcher = ORMMatcher(str(logo_path))
             img_cv = cv2.cvtColor(np.array(pil_page), cv2.COLOR_RGB2BGR)
             matcher.locate_from_cv2_image(img_cv)
             if matcher.top_left and matcher.bottom_right:
@@ -286,7 +285,7 @@ class LoadBatchWorker(QThread):
                 doc_path=item.doc_path,
                 field_obj=field_obj,
                 page_idx=page_idx,
-                logo_path=logo_path,
+                config_folder=self.config_folder,
                 pages_without_fiducial=pages_without,
             )
             return (idx, arr)
@@ -722,12 +721,8 @@ class FieldReviewApp(QMainWindow):
             QMessageBox.warning(self, "Invalid path", f"Folder not found: {folder}")
             return
         self.config_folder = resolved
-        logo_path = _find_logo_path(self.config_folder)
-        if logo_path:
-            self.matcher = ORMMatcher(logo_path)
-        else:
-            self.matcher = None
-            logger.warning("No logo found in project fiducials; thumbnails may be misaligned.")
+        if find_default_logo(self.config_folder / "fiducials") is None:
+            logger.warning("No default logo in project fiducials; per-page or missing logos may misalign thumbnails.")
         self._refresh_field_menu()
         self.status_label.setText(f"Project: {self.config_folder.name}. Select a field, then load a batch folder.")
 
