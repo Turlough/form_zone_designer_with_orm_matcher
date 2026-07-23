@@ -16,7 +16,8 @@ Automated checks for validation and other testable project logic.
 
 ## Verification
 
-- `pytest tests/`
+- `pytest tests/` (install dev deps: `uv pip install pytest` or `uv pip install -e ".[dev]"`)
+- Headless Indexer smoke: `QT_QPA_PLATFORM=offscreen python scripts/smoke_indexer.py`
 
 ## Child DOX Index
 

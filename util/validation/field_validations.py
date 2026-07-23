@@ -4,7 +4,9 @@ import re
 from util.validation.strategies import EIRCODE_REGEX
 
 def contains_text(value: str) -> bool:
-    return value is not None
+    if value is None:
+        return False
+    return bool(str(value).strip())
 
 def is_integer(value: str) -> bool:
     if value is None:

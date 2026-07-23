@@ -831,6 +831,12 @@ class Indexer(QMainWindow):
 
     def _try_restore_last_session(self) -> None:
         """Restore last import file, config folder (project), and page from persisted state if valid."""
+        if os.getenv("INDEXER_SKIP_SESSION_RESTORE", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            return
         state = load_state()
         last_import = (state.get("last_import_file") or "").strip()
         if not last_import or resolve_path_case_insensitive(last_import) is None:
