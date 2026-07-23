@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>User instructions — Form indexing suite</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <nav class="sidebar" aria-label="Instructions">
+    <div class="sidebar-brand">User instructions</div>
+    <ul class="nav-list">
+        <li><a href="templates.html" class="">1. Templates &amp; setup</a></li>
+        <li><a href="designer.html" class="">2. Designer</a></li>
+        <li><a href="indexer.html" class="">3. Indexer</a></li>
+        <li><a href="exporter.html" class="">4. Exporter</a></li>
+        <li><a href="agents.html" class="active">Documentation index</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <article class="doc">
+<h1>User instructions</h1>
+<h2>Purpose</h2>
+<p>End-user and operator documentation for template setup, Designer, Indexer, and Exporter (separate from agent DOX and <code>.cursor/</code> notes).</p>
+<h2>Ownership</h2>
+<ul>
+<li><code>INSTRUCTIONS-1-Templates.md</code> — project folder, template TIFF, fiducials, <code>project_config.json</code> (read before Designer)</li>
+<li><code>INSTRUCTIONS-2-Designer.md</code> — Form Zone Designer</li>
+<li><code>INSTRUCTIONS-3-Indexer.md</code> — Indexer and QC workflows</li>
+<li><code>INSTRUCTIONS-4-Exporter.md</code> — Exporter</li>
+</ul>
+<h2>Local Contracts</h2>
+<ul>
+<li>Numbered instruction files follow setup order: templates → design → indexing → export</li>
+<li>One major topic per file; keep tone and structure consistent across the set</li>
+<li>Do not duplicate binding agent contracts from root or child <code>AGENTS.md</code> files here—this folder is for human operators</li>
+<li>When app behaviour or on-disk layout changes, update the nearest instruction file and this index</li>
+</ul>
+<h2>Work Guidance</h2>
+<ul>
+<li>Derive folder and JSON contracts from <code>util/designer_config.py</code>, <code>util/designer_persistence.py</code>, and <code>env.example</code> when documenting templates</li>
+<li>Use domain terms from <code>.cursor/rules/domain_terms.md</code> for operator-facing wording</li>
+<li>After editing operator <code>.md</code> files, regenerate static HTML: <code>python USER_INSTRUCTIONS/build_html.py</code> (requires <code>markdown</code> package). Output lives in <code>USER_INSTRUCTIONS/html/</code>; open <code>index.html</code> or <code>templates.html</code> in a browser.</li>
+</ul>
+<h2>Verification</h2>
+<h2>Child DOX Index</h2>
+    </article>
+  </main>
+</body>
+</html>

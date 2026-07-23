@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Templates and project setup (before Designer) — Form indexing suite</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <nav class="sidebar" aria-label="Instructions">
+    <div class="sidebar-brand">User instructions</div>
+    <ul class="nav-list">
+        <li><a href="templates.html" class="active">1. Templates &amp; setup</a></li>
+        <li><a href="designer.html" class="">2. Designer</a></li>
+        <li><a href="indexer.html" class="">3. Indexer</a></li>
+        <li><a href="exporter.html" class="">4. Exporter</a></li>
+        <li><a href="agents.html" class="">Documentation index</a></li>
+    </ul>
+  </nav>
+  <main class="content">
+    <article class="doc">
+<h1>Templates and project setup (before Designer)</h1>
+<p>Complete this setup <strong>before</strong> you open Form Zone Designer. Designer, Indexer, and Exporter all use the same <strong>project folder</strong> (sometimes called the config folder). A project defines one form type: blank template scan, fiducial, field layouts, and settings for indexing and export.</p>
+<h2>What you are building</h2>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Project</strong></td>
+<td>One form design: folder on disk with template, fiducial, JSON field definitions, and <code>project_config.json</code>.</td>
+</tr>
+<tr>
+<td><strong>Template</strong></td>
+<td>Multipage scan of a <strong>blank</strong> form (no respondent data). Used only for design and as the size reference when indexing.</td>
+</tr>
+<tr>
+<td><strong>Fiducial</strong></td>
+<td>A small, stable image patch (often a logo or heading) that the app finds on each page so field zones stay aligned when scans shift slightly.</td>
+</tr>
+<tr>
+<td><strong>Zone</strong></td>
+<td>A rectangle where data is read. Coordinates are stored <strong>relative to the top-left corner of the fiducial</strong>, not the page corner.</td>
+</tr>
+</tbody>
+</table>
+<h2>Project folder layout</h2>
+<p>Create one folder per form type (project). Typical layout:</p>
+<pre><code class="language-text">MyProject/
+  template.tif          # required — multipage blank form scan
+  fiducials/            # required for normal pages — fiducial image(s)
+    logo.png            # see “Fiducial image” below
+  json/
+    project_config.json # strongly recommended before indexing; partial keys used in Designer
+    1.json              # page 1 field definitions (created/updated in Designer)
+    2.json              # page 2, etc.
+  qc_comments.txt       # optional — preset QC comment lines for Indexer
+</code></pre>
+<p>Designer creates <code>json/</code> and <code>fiducials/</code> if they are missing when you load the folder. <strong><code>template.tif</code> must already exist</strong> or Designer cannot open the project.</p>
+<p>File names are matched <strong>without regard to case</strong> (for example <code>Template.TIF</code> or <code>LOGO.PNG</code> are fine).</p>
+<h2>Template scan (<code>template.tif</code>)</h2>
+<ul>
+<li><strong>Format:</strong> Multipage TIFF is the expected format (one file, one page per frame).</li>
+<li><strong>Content:</strong> Use a clean <strong>unfilled</strong> form. The same layout will be used to define zones; indexed batches use filled scans with the same page count and layout.</li>
+<li><strong>Quality:</strong> Scan at consistent resolution and orientation. Skew and scale differences are partly corrected via the fiducial, but poor scans make matching and OCR harder.</li>
+<li><strong>Page count:</strong> Every page that will appear on live forms should be present in the template. Page JSON files use <strong>1-based</strong> names: first page → <code>1.json</code>, second → <code>2.json</code>, and so on.</li>
+</ul>
+<h2>Fiducial image</h2>
+<p>Place <strong>one</strong> fiducial image in the <code>fiducials/</code> subfolder. The apps look for the first existing file among (in order):</p>
+<ol>
+<li><code>logo.png</code></li>
+<li><code>logo.tif</code></li>
+<li><code>fiducial.png</code></li>
+<li><code>fiducial.jpg</code></li>
+</ol>
+<p><strong>How to choose the crop</strong></p>
+<ul>
+<li>Cut a tight image from the <strong>template</strong> of a mark that <strong>appears on every page</strong> that uses a fiducial (logo, printed heading, fixed graphic). That mark may sit in <strong>different positions on different pages</strong>; the apps search each page separately and align fields to wherever it is found.</li>
+<li>Use a region that is <strong>unique</strong> on the page (avoid generic lines or empty margins).</li>
+<li>Prefer sharp, high-contrast artwork; avoid heavy JPEG compression on the fiducial file.</li>
+<li>The patch should match what appears on <strong>production scans</strong> (same form revision).</li>
+</ul>
+<p><strong>In the apps</strong></p>
+<ul>
+<li>Designer and Indexer run template matching <strong>on each page</strong> to locate the fiducial. Position can differ from page to page; field zones are still stored relative to that page’s detected top-left corner. When found, the fiducial is highlighted (green in Designer).</li>
+<li>Field <code>x</code>, <code>y</code>, <code>width</code>, and <code>height</code> in JSON are <strong>offsets from the fiducial top-left</strong>. If no fiducial is found on a page, zones are treated as relative to the page origin <code>(0, 0)</code>, which is fragile for indexing—fix the fiducial or scan rather than relying on that fallback.</li>
+</ul>
+<p><strong>Pages without a fiducial</strong></p>
+<p>Some pages (covers, instructions) may have no repeatable mark. List their <strong>zero-based page indices</strong> in <code>project_config.json</code>:</p>
+<pre><code class="language-json">&quot;pages_without_fiducial&quot;: [0]
+</code></pre>
+<p>Here <code>0</code> is the <strong>first</strong> page of the template. Omit the key or use <code>[]</code> if every page uses a fiducial.</p>
+<p>Create or edit <code>project_config.json</code> <strong>before</strong> loading the project in Designer if you need this list; Designer reads it when detecting fiducials.</p>
+<h2><code>json/project_config.json</code></h2>
+<p>Single JSON file per project for paths, review rules, and validations. Indexer and Exporter require several keys; Designer uses it mainly for <code>pages_without_fiducial</code> (and loads the same file later for other apps).</p>
+<p>Example (adjust paths and field names for your job):</p>
+<pre><code class="language-json">{
+  &quot;batch_folder&quot;: &quot;c:\\Jobs\\MyForm\\batches&quot;,
+  &quot;import_filename&quot;: &quot;EXPORT.TXT&quot;,
+  &quot;always_review&quot;: [&quot;Field3&quot;, &quot;Another field&quot;],
+  &quot;quick_review&quot;: [&quot;Field 5&quot;, &quot;Field 6&quot;],
+  &quot;lookup_list&quot;: &quot;optional/path/to/lookup.csv&quot;,
+  &quot;pages_without_fiducial&quot;: [0],
+  &quot;validations&quot;: [
+    {
+      &quot;strategy&quot;: &quot;max_tickboxes&quot;,
+      &quot;field_names&quot;: [&quot;q1_a&quot;, &quot;q1_b&quot;],
+      &quot;params&quot;: { &quot;max&quot;: 1 }
+    },
+    {
+      &quot;strategy&quot;: &quot;value_exists_in_lookup&quot;,
+      &quot;field_names&quot;: [&quot;herd_number&quot;],
+      &quot;params&quot;: { &quot;lookup_column&quot;: 0 }
+    }
+  ]
+}
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>batch_folder</code></td>
+<td>Root folder for batch directories (Indexer batch menu, Exporter). <strong>Required</strong> for Indexer/Exporter workflows.</td>
+</tr>
+<tr>
+<td><code>import_filename</code></td>
+<td>Name of each batch’s import/list file (for example <code>EXPORT.TXT</code>). <strong>Required</strong> for Indexer/Exporter.</td>
+</tr>
+<tr>
+<td><code>always_review</code></td>
+<td>Field names that QC should always review (Field Review / QC flows).</td>
+</tr>
+<tr>
+<td><code>quick_review</code></td>
+<td>Field names for quick review lists in Indexer.</td>
+</tr>
+<tr>
+<td><code>lookup_list</code></td>
+<td>Optional CSV path for lookup-backed validations.</td>
+</tr>
+<tr>
+<td><code>pages_without_fiducial</code></td>
+<td>Zero-based page indices with no fiducial search.</td>
+</tr>
+<tr>
+<td><code>validations</code></td>
+<td>Optional project-level rules (see validation docs / Indexer behaviour).</td>
+</tr>
+</tbody>
+</table>
+<p>You can add <code>project_config.json</code> early with only the keys you need and expand it before indexing starts. <strong><code>batch_folder</code> and <code>import_filename</code> must be valid before operators use Indexer or Exporter.</strong></p>
+<p>Paths may be absolute or relative; use valid JSON escaping for Windows paths (<code>\\</code>).</p>
+<h2>Page field JSON (<code>json/1.json</code>, <code>json/2.json</code>, …)</h2>
+<p>Designer creates and updates these files when you save field work. You normally <strong>do not</strong> hand-author them, but the structure matters for downstream apps:</p>
+<ul>
+<li>One file per template page, named by <strong>page number</strong> (<code>1.json</code> = first page).</li>
+<li>Content is a <strong>JSON array</strong> of field objects.</li>
+<li>Each object includes <code>_type</code> (for example <code>Tickbox</code>, <code>TextField</code>, <code>RadioGroup</code>, <code>IntegerField</code>, <code>SignatureField</code>, …), <code>name</code>, <code>x</code>, <code>y</code>, <code>width</code>, <code>height</code>, and type-specific properties (for example tickbox <code>checked_value</code>, radio group <code>radio_buttons</code>).</li>
+<li><strong>Names</strong> become column headings in batch import/export files; choose stable, unique names before indexing goes live.</li>
+</ul>
+<p>If a page file is missing, Designer starts with an empty page; Indexer expects definitions for every page that has fields to capture.</p>
+<h2>Optional: <code>qc_comments.txt</code></h2>
+<p>Plain text, one preset comment per line. If present in the project folder, Indexer loads these as QC comment shortcuts. Not required for design.</p>
+<h2>Environment (optional)</h2>
+<p>Copy <code>env.example</code> to <code>.env</code> in the repo root if you use shared defaults:</p>
+<ul>
+<li><strong><code>DESIGNER_CONFIG_FOLDER</code></strong> — Parent directory that contains project folders. Designer’s <strong>File → Load Config Folder</strong> dialog opens here by default; you still select the <strong>project</strong> subfolder, not the parent.</li>
+</ul>
+<p>Indexer/Exporter use their own project selection (Project menu) pointing at the same project folder layout.</p>
+<h2>Pre-design checklist</h2>
+<ol>
+<li>Create the project folder and subfolders <code>json/</code> and <code>fiducials/</code> (or let Designer create them on first load).</li>
+<li>Place <strong><code>template.tif</code></strong> (multipage blank form) in the project folder.</li>
+<li>Add a fiducial image under <strong><code>fiducials/</code></strong> using one of the supported file names; verify the app can detect that patch on each page that should use a fiducial (position may differ per page).</li>
+<li>Add <strong><code>json/project_config.json</code></strong> with at least <code>pages_without_fiducial</code> if any page lacks a mark; add <code>batch_folder</code> and <code>import_filename</code> before indexing.</li>
+<li>Confirm page count in the template matches the number of pages you will design.</li>
+<li>Open <strong><code>INSTRUCTIONS-2-Designer.md</code></strong> and start Form Zone Designer (<strong>File → Load Config Folder</strong> → select the project folder).</li>
+</ol>
+<p>After setup, design staff define zones on each page in Designer; indexing staff then use the same project folder in Indexer with batch files under <code>batch_folder</code>.</p>
+    </article>
+  </main>
+</body>
+</html>

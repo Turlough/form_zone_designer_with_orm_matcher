@@ -90,7 +90,7 @@ When the user requests a durable behavior change, record it here or in the relev
   - `util/validation/AGENTS.md` — project and field validation
 - `tests/AGENTS.md` — automated tests
   - `tests/validations/AGENTS.md` — validation pytest modules
-- `USER_INSTRUCTIONS/AGENTS.md` — operator docs (Designer, Indexer, Exporter); content pending
+- `USER_INSTRUCTIONS/AGENTS.md` — operator docs (templates setup, Designer, Indexer, Exporter); static HTML in `USER_INSTRUCTIONS/html/`
 - `.cursor/AGENTS.md` — Cursor rules, notes, samples (non-runtime)
   - `.cursor/rules/AGENTS.md` — `.mdc` rule modules
   - `.cursor/mIsc/AGENTS.md` — misc design notes
