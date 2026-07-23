@@ -11,10 +11,10 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QListWidget, QListWidgetItem, QLabel, QScrollArea, QPushButton,
     QDialog, QLineEdit, QDialogButtonBox, QFileDialog, QMessageBox,
-    QStyledItemDelegate, QStyle, QFrame, QCheckBox,
+    QStyledItemDelegate, QStyle, QFrame, QCheckBox, QTextEdit,
 )
 from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QObject, QThread, pyqtSignal, QTimer
-from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent, QFont, QIcon
+from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent, QFont, QIcon, QShortcut, QKeySequence
 from PIL import Image
 from dotenv import load_dotenv
 from util import ORMMatcher, CSVManager, ProjectValidations
@@ -577,6 +577,8 @@ class Indexer(QMainWindow):
 
         center_panel.addWidget(nav_widget)
 
+        self._init_page_navigation_shortcuts()
+
         # Page numbers bar (narrow, under nav buttons)
         page_numbers_height = 28
         self.page_numbers_scroll = QScrollArea()
@@ -619,6 +621,32 @@ class Indexer(QMainWindow):
         # QC quick review window (non-modal, table of quick_review values)
         self._qc_text_review_window: QcTextReviewWindow | None = None
         self._qc_review_mode: str = "quick_review"  # "quick_review" | "text_and_numeric"
+
+    def _page_navigation_shortcuts_allowed(self) -> bool:
+        """Return False when focus is in a text editor (so arrow keys edit text)."""
+        focus = QApplication.focusWidget()
+        if focus is None:
+            return True
+        return not isinstance(focus, (QLineEdit, QTextEdit))
+
+    def _init_page_navigation_shortcuts(self) -> None:
+        """Keyboard shortcuts for previous/next page (←/PgUp and →/PgDn)."""
+        bindings = (
+            (QKeySequence(Qt.Key.Key_Left), self.previous_page),
+            (QKeySequence(Qt.Key.Key_PageUp), self.previous_page),
+            (QKeySequence(Qt.Key.Key_Right), self.next_page),
+            (QKeySequence(Qt.Key.Key_PageDown), self.next_page),
+        )
+        for sequence, handler in bindings:
+            shortcut = QShortcut(sequence, self)
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.activated.connect(
+                lambda h=handler: self._activate_page_navigation(h)
+            )
+
+    def _activate_page_navigation(self, handler) -> None:
+        if self._page_navigation_shortcuts_allowed():
+            handler()
     
     def _load_import_file_from_path(self, file_path: str, json_folder_override: str | None = None) -> bool:
         """Load import file from path (no dialog). If json_folder_override is set, use it for this load. Returns True on success."""
