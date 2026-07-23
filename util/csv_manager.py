@@ -4,6 +4,7 @@ import logging
 from fields import Field, RadioGroup
 import json
 
+from util.field_metadata import column_header
 from util.path_utils import (
     resolve_path_or_original,
     paths_equal_case_insensitive,
@@ -125,14 +126,12 @@ class CSVManager:
                 # Iterate through top-level elements
                 for item in data:
                     field = Field.from_dict(item)
-                    if isinstance(field, RadioGroup):
-                        # RadioGroup gets one column
-                        if field.name not in field_names:
-                            field_names.append(field.name)
-                    else:
-                        # Regular field
-                        if field.name not in field_names:
-                            field_names.append(field.name)
+                    header = column_header(field)
+                    if not header:
+                        continue
+                    # RadioGroup gets one column; regular fields likewise
+                    if header not in field_names:
+                        field_names.append(header)
                 
             except Exception as e:
                 logger.warning(f"Error reading {json_path!s}: {e}")
@@ -158,12 +157,9 @@ class CSVManager:
 
                 for item in data:
                     field = Field.from_dict(item)
-                    if isinstance(field, RadioGroup):
-                        if field.name not in field_to_page:
-                            field_to_page[field.name] = page_num
-                    else:
-                        if field.name not in field_to_page:
-                            field_to_page[field.name] = page_num
+                    header = column_header(field)
+                    if header and header not in field_to_page:
+                        field_to_page[header] = page_num
 
             except Exception as e:
                 logger.warning(f"Error reading {json_path!s}: {e}")
@@ -189,12 +185,9 @@ class CSVManager:
 
                 for item in data:
                     field = Field.from_dict(item)
-                    if isinstance(field, RadioGroup):
-                        if field.name not in field_to_type:
-                            field_to_type[field.name] = field.__class__.__name__
-                    else:
-                        if field.name not in field_to_type:
-                            field_to_type[field.name] = field.__class__.__name__
+                    header = column_header(field)
+                    if header and header not in field_to_type:
+                        field_to_type[header] = field.__class__.__name__
 
             except Exception as e:
                 logger.warning(f"Error reading {json_path!s}: {e}")

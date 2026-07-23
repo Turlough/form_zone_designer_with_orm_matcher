@@ -11,6 +11,7 @@ Automated checks for validation and other testable project logic.
 ## Local Contracts
 
 - Prefer tests that assert real validation and business rules, not PyQt widget smoke unless explicitly requested
+- Design assistant: schema/match tests only — no live VLM API in CI (`test_design_assistant_*.py`)
 
 ## Work Guidance
 

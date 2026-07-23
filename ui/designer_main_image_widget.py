@@ -4,6 +4,7 @@ from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QBrush, QFont, QFontMet
 
 from PyQt6.QtWidgets import QDialog
 from fields import Field, RadioGroup, RadioButton, Tickbox, TextField, NumericRadioGroup
+from util.field_metadata import display_label
 import logging
 
 logger = logging.getLogger(__name__)
@@ -269,8 +270,9 @@ class ImageDisplayWidget(QLabel):
                             int(field.height * self.scale_y)
                         )
                         painter.drawRect(scaled_rect)
-                        if self.show_field_names and getattr(field, "name", None):
-                            self._draw_field_name_label(painter, field.name[:20], scaled_rect, color)
+                        label = display_label(field)
+                        if self.show_field_names and label:
+                            self._draw_field_name_label(painter, label, scaled_rect, color)
                         
                         # If this is a RadioGroup, also draw its RadioButtons
                         if isinstance(field, RadioGroup) or isinstance(field, NumericRadioGroup):
@@ -292,8 +294,9 @@ class ImageDisplayWidget(QLabel):
                                     int(radio_button.height * self.scale_y)
                                 )
                                 painter.drawRect(rb_scaled_rect)
-                                if self.show_field_names and getattr(radio_button, "name", None):
-                                    self._draw_field_name_label(painter, radio_button.name[:20], rb_scaled_rect, rb_color)
+                                rb_label = display_label(radio_button)
+                                if self.show_field_names and rb_label:
+                                    self._draw_field_name_label(painter, rb_label, rb_scaled_rect, rb_color)
             
             # Draw detected rectangles (red)
             if self.detected_rects:

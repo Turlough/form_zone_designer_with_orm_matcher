@@ -4,6 +4,7 @@ from .designer_main_image_widget import ImageDisplayWidget
 from .designer_button_layout import DesignerButtonLayout
 from .designer_edit_panel import DesignerEditPanel
 from .designer_rectangle_selected_dialog import RectangleSelectedDialog
+from .designer_analyse_preview_dialog import DesignerAnalysePreviewDialog
 from .grid_designer import GridDesigner
 from .index_main_image_panel import MainImageIndexPanel
 from .index_details_panel import IndexDetailPanel
