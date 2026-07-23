@@ -673,6 +673,7 @@ class Indexer(QMainWindow):
         self.prev_button.setFixedHeight(nav_widget_height)
         self.prev_button.setStyleSheet("background-color: #555555; color: white;")
         self.prev_button.clicked.connect(self.previous_page)
+        self.prev_button.setToolTip("Previous page (← or PgUp)")
         self.prev_button.setEnabled(False)
         nav_layout.addWidget(self.prev_button, 1)
         
@@ -680,6 +681,7 @@ class Indexer(QMainWindow):
         self.next_button.setFixedHeight(nav_widget_height)
         self.next_button.setStyleSheet("background-color: #555555; color: white;")
         self.next_button.clicked.connect(self.next_page)
+        self.next_button.setToolTip("Next page (→ or PgDn)")
         self.next_button.setEnabled(False)
         nav_layout.addWidget(self.next_button, 3)
 

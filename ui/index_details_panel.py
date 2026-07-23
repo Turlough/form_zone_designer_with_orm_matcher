@@ -169,7 +169,7 @@ class IndexDetailPanel(QWidget):
                 self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView),
             )
         )
-        self.ocr_button.setToolTip("OCR")
+        self.ocr_button.setToolTip("Run OCR on the selected text field region.")
         self.ocr_button.clicked.connect(self.ocr_requested.emit)
         value_row.addWidget(self.ocr_button)
         main_layout.addLayout(value_row)
