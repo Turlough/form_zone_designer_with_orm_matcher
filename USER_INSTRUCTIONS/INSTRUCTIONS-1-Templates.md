@@ -2,6 +2,30 @@
 
 Complete this setup **before** you open Form Zone Designer. Designer, Indexer, and Exporter all use the same **project folder** (sometimes called the config folder). A project defines one form type: blank template scan, fiducial, field layouts, and settings for indexing and export.
 
+## Where to put project folders (`DESIGNER_CONFIG_FOLDER`)
+
+Every project is its own folder on disk. Those folders must live together under one **parent directory** — the super folder that holds all your form designs for this installation.
+
+In the repo root `.env` file (copy from `env.example`), set **`DESIGNER_CONFIG_FOLDER`** to that parent path. Do **not** point it at a single project folder.
+
+```text
+DESIGNER_CONFIG_FOLDER/     ← path you set in .env (parent / super folder)
+  IFAC Lakeland NI/         ← one project (config folder)
+    template.tif
+    fiducials/
+    json/
+  Another Form/             ← another project
+    template.tif
+    ...
+```
+
+| Level | What it is |
+|-------|------------|
+| **`DESIGNER_CONFIG_FOLDER`** | Shared parent containing **many** project subfolders. |
+| **Project folder** | One form type — create and maintain the layout in the next sections; this is what you open in Designer and select in Indexer/Exporter **Project** menus. |
+
+When creating a new form, add a **new subfolder** under `DESIGNER_CONFIG_FOLDER`. Designer’s **File → Load Config Folder** dialog opens at the parent by default; you then pick the **project** subfolder. Indexer and Exporter list the same subfolders on the **Project** menu.
+
 ## What you are building
 
 | Term | Meaning |
@@ -129,21 +153,23 @@ If a page file is missing, Designer starts with an empty page; Indexer expects d
 
 Plain text, one preset comment per line. If present in the project folder, Indexer loads these as QC comment shortcuts. Not required for design.
 
-## Environment (optional)
+## Environment (`.env`)
 
-Copy `env.example` to `.env` in the repo root if you use shared defaults:
+Copy `env.example` to `.env` in the repo root when you use shared defaults (see **Where to put project folders** above for `DESIGNER_CONFIG_FOLDER`).
 
-- **`DESIGNER_CONFIG_FOLDER`** — Parent directory that contains project folders. Designer’s **File → Load Config Folder** dialog opens here by default; you still select the **project** subfolder, not the parent.
+- **`DESIGNER_CONFIG_FOLDER`** — Parent directory that contains project folders (required for convenient project discovery in Designer, Indexer, and Exporter).
+- OCR and cloud credential variables — see `env.example` if Indexer OCR features are enabled.
 
-Indexer/Exporter use their own project selection (Project menu) pointing at the same project folder layout.
+Per-project paths such as **`batch_folder`** belong in `json/project_config.json`, not in `.env`.
 
 ## Pre-design checklist
 
-1. Create the project folder and subfolders `json/` and `fiducials/` (or let Designer create them on first load).
-2. Place **`template.tif`**, **`template.tiff`**, or **`template.pdf`** (multipage blank form) in the project folder.
-3. Add a fiducial image under **`fiducials/`** using one of the supported file names; verify the app can detect that patch on each page that should use a fiducial (position may differ per page).
-4. Add **`json/project_config.json`** with at least `pages_without_fiducial` if any page lacks a mark; add `batch_folder` and `import_filename` before indexing.
-5. Confirm page count in the template matches the number of pages you will design.
-6. Open **`INSTRUCTIONS-2-Designer.md`** and start Form Zone Designer (**File → Load Config Folder** → select the project folder).
+1. Set **`DESIGNER_CONFIG_FOLDER`** in `.env` and create the new **project folder** as a subfolder under that parent (see **Where to put project folders**).
+2. Create the project folder and subfolders `json/` and `fiducials/` (or let Designer create them on first load).
+3. Place **`template.tif`**, **`template.tiff`**, or **`template.pdf`** (multipage blank form) in the project folder.
+4. Add a fiducial image under **`fiducials/`** using one of the supported file names; verify the app can detect that patch on each page that should use a fiducial (position may differ per page).
+5. Add **`json/project_config.json`** with at least `pages_without_fiducial` if any page lacks a mark; add `batch_folder` and `import_filename` before indexing.
+6. Confirm page count in the template matches the number of pages you will design.
+7. Open **`INSTRUCTIONS-2-Designer.md`** and start Form Zone Designer (**File → Load Config Folder** → select the project folder).
 
 After setup, design staff define zones on each page in Designer; indexing staff then use the same project folder in Indexer with batch files under `batch_folder`.

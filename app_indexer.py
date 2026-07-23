@@ -286,13 +286,11 @@ class Indexer(QMainWindow):
         # Load environment variables
         load_dotenv()
 
-        # Config folder (project folder under DESIGNER_CONFIG_FOLDER). When set, json_folder and logo_path are derived from it.
-        # TODO: Deprecate LOGO_PATH and JSON_FOLDER env vars; use Project menu selection instead.
+        # Project folder under DESIGNER_CONFIG_FOLDER; json_folder and logo_path derived when set.
         self.config_folder: str | None = None
-        self.json_folder = os.getenv('JSON_FOLDER', './json_data')  # Fallback until project selected
-        self.logo_path = os.getenv('LOGO_PATH')  # Fallback until project selected
+        self.json_folder = ""
+        self.logo_path: str | None = None
         self.matcher = None
-        self._init_matcher_from_fallbacks()
         
         # CSV manager
         self.csv_manager = CSVManager()
@@ -353,14 +351,14 @@ class Indexer(QMainWindow):
             title += " - " + " - ".join(parts)
         self.setWindowTitle(title)
 
-    def _init_matcher_from_fallbacks(self) -> None:
-        """Initialize ORM matcher from logo_path (env or config_folder)."""
+    def _init_matcher_from_logo_path(self) -> None:
+        """Initialize ORM matcher from the current project's logo_path."""
         if self.logo_path and resolve_path_case_insensitive(self.logo_path) is not None:
             self.matcher = ORMMatcher(self.logo_path)
         else:
             self.matcher = None
             if not self.logo_path:
-                logger.warning("No logo path set. Select a project from Project menu or set LOGO_PATH.")
+                logger.warning("No logo path set. Select a project from the Project menu.")
 
     def _apply_config_folder(self, config_folder_path: str) -> None:
         """Set current project config folder, derive json_folder and logo_path, reinit matcher."""
@@ -387,7 +385,7 @@ class Indexer(QMainWindow):
                 self.logo_path = str(found)
                 break
 
-        self._init_matcher_from_fallbacks()
+        self._init_matcher_from_logo_path()
         # Load QC comment presets for this project (if available)
         self._load_qc_comment_presets(config_path)
         if hasattr(self, '_index_menu_bar'):

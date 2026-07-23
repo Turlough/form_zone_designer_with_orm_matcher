@@ -16,10 +16,10 @@ as a template. Multipage tiff is the expected format.
 
 ## Usage
 
-1. Set up a `.env` file with:
-   - `LOGO_PATH`: Path to the logo image file for ORM matching
-   - `MULTIPAGE_TIFF`: Path to the multipage TIFF file to load
-2. Run the application: `python form_zone_designer.py`
+1. Set up a `.env` file (see `env.example`):
+   - `DESIGNER_CONFIG_FOLDER`: Parent directory containing project config subfolders
+   - OCR/credential variables as needed for Indexer
+2. Run Designer: `python app_designer.py` — load a project config folder from under `DESIGNER_CONFIG_FOLDER`
 3. Click on a page thumbnail to view and edit it
 4. Click and drag on the page to draw rectangles around fields
 5. Use the control buttons to undo or clear field rectangles as needed

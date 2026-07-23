@@ -26,8 +26,8 @@ The user navigates through pages using navigation buttons (use icons for these) 
 # Pages
 When the user navigates to a new page, the fiducial/logo is detected, then the fields are drawn relative to its top left corner. 
 The fields have already been defined in the json files for each page. 
-The location for the json definition files is defined by the .env value JSON_FOLDER, 
-and they are named 1.json, 2.json etc; one for each page of the form.
+Page JSON definitions live in the selected project's `json/` folder (chosen via **Project** menu under `DESIGNER_CONFIG_FOLDER`); 
+they are named 1.json, 2.json etc; one for each page of the form.
 
 On each page, the user may:
 Qt6 Widgets are not shown on the form- the user interacts directly with the overlaid rectangles instead.

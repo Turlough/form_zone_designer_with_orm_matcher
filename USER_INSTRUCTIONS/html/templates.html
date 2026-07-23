@@ -21,6 +21,37 @@
     <article class="doc">
 <h1>Templates and project setup (before Designer)</h1>
 <p>Complete this setup <strong>before</strong> you open Form Zone Designer. Designer, Indexer, and Exporter all use the same <strong>project folder</strong> (sometimes called the config folder). A project defines one form type: blank template scan, fiducial, field layouts, and settings for indexing and export.</p>
+<h2>Where to put project folders (<code>DESIGNER_CONFIG_FOLDER</code>)</h2>
+<p>Every project is its own folder on disk. Those folders must live together under one <strong>parent directory</strong> — the super folder that holds all your form designs for this installation.</p>
+<p>In the repo root <code>.env</code> file (copy from <code>env.example</code>), set <strong><code>DESIGNER_CONFIG_FOLDER</code></strong> to that parent path. Do <strong>not</strong> point it at a single project folder.</p>
+<pre><code class="language-text">DESIGNER_CONFIG_FOLDER/     ← path you set in .env (parent / super folder)
+  IFAC Lakeland NI/         ← one project (config folder)
+    template.tif
+    fiducials/
+    json/
+  Another Form/             ← another project
+    template.tif
+    ...
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>DESIGNER_CONFIG_FOLDER</code></strong></td>
+<td>Shared parent containing <strong>many</strong> project subfolders.</td>
+</tr>
+<tr>
+<td><strong>Project folder</strong></td>
+<td>One form type — create and maintain the layout in the next sections; this is what you open in Designer and select in Indexer/Exporter <strong>Project</strong> menus.</td>
+</tr>
+</tbody>
+</table>
+<p>When creating a new form, add a <strong>new subfolder</strong> under <code>DESIGNER_CONFIG_FOLDER</code>. Designer’s <strong>File → Load Config Folder</strong> dialog opens at the parent by default; you then pick the <strong>project</strong> subfolder. Indexer and Exporter list the same subfolders on the <strong>Project</strong> menu.</p>
 <h2>What you are building</h2>
 <table>
 <thead>
@@ -170,14 +201,16 @@
 <p>If a page file is missing, Designer starts with an empty page; Indexer expects definitions for every page that has fields to capture.</p>
 <h2>Optional: <code>qc_comments.txt</code></h2>
 <p>Plain text, one preset comment per line. If present in the project folder, Indexer loads these as QC comment shortcuts. Not required for design.</p>
-<h2>Environment (optional)</h2>
-<p>Copy <code>env.example</code> to <code>.env</code> in the repo root if you use shared defaults:</p>
+<h2>Environment (<code>.env</code>)</h2>
+<p>Copy <code>env.example</code> to <code>.env</code> in the repo root when you use shared defaults (see <strong>Where to put project folders</strong> above for <code>DESIGNER_CONFIG_FOLDER</code>).</p>
 <ul>
-<li><strong><code>DESIGNER_CONFIG_FOLDER</code></strong> — Parent directory that contains project folders. Designer’s <strong>File → Load Config Folder</strong> dialog opens here by default; you still select the <strong>project</strong> subfolder, not the parent.</li>
+<li><strong><code>DESIGNER_CONFIG_FOLDER</code></strong> — Parent directory that contains project folders (required for convenient project discovery in Designer, Indexer, and Exporter).</li>
+<li>OCR and cloud credential variables — see <code>env.example</code> if Indexer OCR features are enabled.</li>
 </ul>
-<p>Indexer/Exporter use their own project selection (Project menu) pointing at the same project folder layout.</p>
+<p>Per-project paths such as <strong><code>batch_folder</code></strong> belong in <code>json/project_config.json</code>, not in <code>.env</code>.</p>
 <h2>Pre-design checklist</h2>
 <ol>
+<li>Set <strong><code>DESIGNER_CONFIG_FOLDER</code></strong> in <code>.env</code> and create the new <strong>project folder</strong> as a subfolder under that parent (see <strong>Where to put project folders</strong>).</li>
 <li>Create the project folder and subfolders <code>json/</code> and <code>fiducials/</code> (or let Designer create them on first load).</li>
 <li>Place <strong><code>template.tif</code></strong>, <strong><code>template.tiff</code></strong>, or <strong><code>template.pdf</code></strong> (multipage blank form) in the project folder.</li>
 <li>Add a fiducial image under <strong><code>fiducials/</code></strong> using one of the supported file names; verify the app can detect that patch on each page that should use a fiducial (position may differ per page).</li>
