@@ -21,7 +21,7 @@ class IndexTextDialog(QDialog):
     # Emitted when the user presses Enter to complete editing this TextField
     # Payload is (field_name: str)
     field_edit_completed = pyqtSignal(str)
-    # Emitted when the dialog is hidden (for flushing debounced saves)
+    # Emitted when the dialog is hidden (for flushing pending text-field saves)
     dialog_hidden = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -80,7 +80,7 @@ class IndexTextDialog(QDialog):
             self.field_edit_completed.emit(self._field_name)
 
     def hideEvent(self, event):
-        """Emit when dialog is hidden so indexer can flush debounced saves."""
+        """Emit when dialog is hidden so indexer can flush pending text-field saves."""
         self.dialog_hidden.emit()
         super().hideEvent(event)
 

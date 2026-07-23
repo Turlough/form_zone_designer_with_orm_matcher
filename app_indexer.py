@@ -304,9 +304,6 @@ class Indexer(QMainWindow):
         # CSV manager
         self.csv_manager = CSVManager()
         self._csv_save_queue = CsvSaveQueue()
-        self._save_csv_timer = QTimer(self)
-        self._save_csv_timer.setSingleShot(True)
-        self._save_csv_timer.timeout.connect(self._do_deferred_save_csv)
 
         # Project validations (created when batch loads; one per batch)
         self.project_validations: ProjectValidations | None = None
@@ -1277,29 +1274,15 @@ class Indexer(QMainWindow):
 
             logger.info(f"TextField '{field.name}' clicked, value='{self.field_values.get(field.name, '')}'")
     
-    def _schedule_save_csv(self) -> None:
-        """Debounce: reset timer on each call; save runs after 400ms idle."""
-        self._save_csv_timer.stop()
-        self._save_csv_timer.start(400)
-
-    def _do_deferred_save_csv(self) -> None:
-        """Enqueue current CSV state for background write."""
-        if not self.csv_manager.csv_path or not self.csv_manager.rows:
-            return
-        self._csv_save_queue.enqueue_save(
-            self.csv_manager.csv_path,
-            self.csv_manager.rows,
-        )
-        self._refresh_document_completion_bar(self.current_document_index)
-
     def _flush_csv_saves(self) -> None:
-        """Stop debounce timer and wait for write queue to drain."""
-        self._save_csv_timer.stop()
+        """Write pending in-memory CSV changes and wait for the write queue to drain."""
         if self.csv_manager.csv_path and self.csv_manager.rows:
             self._csv_save_queue.flush(
                 self.csv_manager.csv_path,
                 self.csv_manager.rows,
             )
+            if self.current_document_index >= 0:
+                self._refresh_document_completion_bar(self.current_document_index)
         else:
             self._csv_save_queue.flush(None, None)
 
@@ -1327,13 +1310,12 @@ class Indexer(QMainWindow):
         # Update ImageLabel's field_values
         self.image_label.field_values = self.field_values.copy()
 
-        # Update in-memory CSV and schedule debounced save
+        # Update in-memory CSV; persisted on Enter, blur, or navigation
         self.csv_manager.set_field_value(
             self.current_document_index,
             field_name,
             new_value
         )
-        self._schedule_save_csv()
 
         # Update display
         self.image_label.update_display()
@@ -1357,7 +1339,6 @@ class Indexer(QMainWindow):
 
         self.image_label.field_values = self.field_values.copy()
         self.csv_manager.set_field_value(self.current_document_index, field_name, new_value)
-        self._schedule_save_csv()
         self.image_label.update_display()
         logger.info(f"Field '{field_name}' value changed to '{new_value}' via text dialog")
 
@@ -1412,10 +1393,12 @@ class Indexer(QMainWindow):
 
     def on_detail_panel_edit_completed(self, field_name: str):
         """User pressed Enter in the detail panel for this field."""
+        self._flush_csv_saves()
         self._focus_next_text_field(field_name)
 
     def on_index_text_dialog_edit_completed(self, field_name: str):
         """User pressed Enter in the floating text dialog for this field."""
+        self._flush_csv_saves()
         self._focus_next_text_field(field_name)
 
     # ------------------------------------------------------------------
