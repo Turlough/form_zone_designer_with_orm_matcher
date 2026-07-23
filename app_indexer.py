@@ -27,6 +27,7 @@ from util.path_utils import (
     find_project_template,
 )
 from util.document_loader import get_document_loader_for_path, load_page_dimensions
+from util.lazy_document_pages import LazyDocumentPages
 from util.designer_persistence import load_page_fields as load_page_fields_from_json
 from util.fiducial_paths import find_fiducial_for_page
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField, FIELD_TYPE_MAP
@@ -285,6 +286,33 @@ class PageOcrWorker(QObject):
             self.finished.emit()
 
 
+class PagePrefetchWorker(QObject):
+    """Load a single document page in the background (+1 ahead prefetch)."""
+
+    loaded = pyqtSignal(str, int, object)  # document_path, page_index, PIL Image
+    finished = pyqtSignal()
+
+    def __init__(self, document_path: str, page_index: int):
+        super().__init__()
+        self.document_path = document_path
+        self.page_index = page_index
+
+    def run(self) -> None:
+        try:
+            loader = get_document_loader_for_path(self.document_path)
+            image = loader.load_page(self.document_path, self.page_index)
+            self.loaded.emit(self.document_path, self.page_index, image)
+        except Exception as e:
+            logger.warning(
+                "Prefetch failed for %s page %d: %s",
+                self.document_path,
+                self.page_index + 1,
+                e,
+            )
+        finally:
+            self.finished.emit()
+
+
 def _detect_logo_bbox_for_page(
     pil_image: Image.Image,
     page_num: int,
@@ -404,7 +432,7 @@ class Indexer(QMainWindow):
         self.document_paths: list[str] = []  # List of relative document paths
         self.current_document_index: int = -1
         self.current_page_index: int = 0
-        self.current_page_images: list[Image.Image] = []  # PIL Images for current document
+        self.current_page_images: LazyDocumentPages | None = None
         self.page_fields = []  # Fields for current page
         self.page_bbox = None  # Logo bbox for current page
         self.field_values = {}  # Dictionary mapping field names to values for current page
@@ -412,8 +440,8 @@ class Indexer(QMainWindow):
         self.page_comments: dict[str, str] = {}
         self.current_field: Field | None = None  # Currently selected field on this page
 
-        # Document cache (LRU) for recently visited documents; path -> list of PIL Images
-        self._document_cache: OrderedDict[str, list[Image.Image]] = OrderedDict()
+        # Document cache (LRU) for recently visited documents
+        self._document_cache: OrderedDict[str, LazyDocumentPages] = OrderedDict()
         # Preloaded next document for QC batch review; (path, images) or None
         self._qc_preloaded: tuple[str, list[Image.Image]] | None = None
         self._qc_preload_thread: QThread | None = None
@@ -428,6 +456,8 @@ class Indexer(QMainWindow):
         self._logo_worker: LogoDetectWorker | None = None
         self._validation_thread: QThread | None = None
         self._validation_worker: BatchValidationWorker | None = None
+        self._page_prefetch_thread: QThread | None = None
+        self._page_prefetch_worker: PagePrefetchWorker | None = None
 
         # Initialize UI
         self.init_ui()
@@ -528,10 +558,11 @@ class Indexer(QMainWindow):
         self._qc_preloaded = None
         self._stop_qc_preload()
         self._stop_logo_detection()
+        self._stop_page_prefetch()
         self.document_paths = []
         self.current_document_index = -1
         self.current_page_index = 0
-        self.current_page_images = []
+        self.current_page_images = None
         self.page_fields = []
         self.page_bbox = None
         self.field_values = {}
@@ -899,6 +930,7 @@ class Indexer(QMainWindow):
 
         self._flush_csv_saves()
         self._stop_logo_detection()
+        self._stop_page_prefetch()
 
         self.current_document_index = index
         self.current_page_index = 0
@@ -924,18 +956,22 @@ class Indexer(QMainWindow):
         self.image_label.show_field_values = checked
         self.image_label.update_display()
 
-    def load_document(self, document_path: str) -> None:
-        """Load a multipage document (TIFF, PDF, etc.) into memory.
+    def _get_page_image(self, page_index: int) -> Image.Image:
+        if self.current_page_images is None:
+            raise RuntimeError("No document loaded")
+        return self.current_page_images.get_page(page_index)
 
-        Uses preload (QC review) or cache (recently visited) when available.
-        """
+    def load_document(self, document_path: str) -> None:
+        """Load a multipage document (lazy pages; cache and preload when available)."""
         # Clear stale preload if we're loading a different document
         if self._qc_preloaded and self._qc_preloaded[0] != document_path:
             self._qc_preloaded = None
 
         # 1. Check preload (next document in QC review)
         if self._qc_preloaded and self._qc_preloaded[0] == document_path:
-            self.current_page_images = self._qc_preloaded[1]
+            self.current_page_images = LazyDocumentPages.from_preloaded(
+                document_path, self._qc_preloaded[1]
+            )
             self._qc_preloaded = None
             self._document_cache[document_path] = self.current_page_images
             self._document_cache.move_to_end(document_path)
@@ -943,7 +979,9 @@ class Indexer(QMainWindow):
 
         # 2. Check special fields cache (when in Review special fields mode)
         if self._qc_special_fields_cache and document_path in self._qc_special_fields_cache:
-            self.current_page_images = self._qc_special_fields_cache[document_path]
+            self.current_page_images = LazyDocumentPages.from_preloaded(
+                document_path, self._qc_special_fields_cache[document_path]
+            )
             return
 
         # 3. Check document cache
@@ -952,9 +990,8 @@ class Indexer(QMainWindow):
             self._document_cache.move_to_end(document_path)
             return
 
-        # 4. Load from disk
-        loader = get_document_loader_for_path(document_path)
-        self.current_page_images = loader.load_pages(document_path)
+        # 4. Lazy open (pages loaded on demand)
+        self.current_page_images = LazyDocumentPages(document_path)
 
         # Add to document cache (evict oldest if at capacity)
         if len(self._document_cache) >= _DOCUMENT_CACHE_MAX_SIZE:
@@ -997,7 +1034,7 @@ class Indexer(QMainWindow):
             pil_image, self.page_bbox, self.page_fields = self._qc_special_fields_page_cache[cache_key]
         else:
             # Synchronous path: rescale, detect logo, load fields
-            pil_image = self.current_page_images[page_num]
+            pil_image = self._get_page_image(page_num)
             if (self.template_page_dimensions and
                     page_num < len(self.template_page_dimensions)):
                 target_w, target_h = self.template_page_dimensions[page_num]
@@ -1050,6 +1087,39 @@ class Indexer(QMainWindow):
             )
         # No current field selected on new page
         self._set_current_field(None)
+        self._prefetch_page_ahead(page_num + 1)
+    
+    def _stop_page_prefetch(self) -> None:
+        if self._page_prefetch_thread is not None and self._page_prefetch_thread.isRunning():
+            self._page_prefetch_thread.quit()
+            self._page_prefetch_thread.wait(500)
+        self._page_prefetch_thread = None
+        self._page_prefetch_worker = None
+
+    def _prefetch_page_ahead(self, page_index: int) -> None:
+        if self.current_page_images is None:
+            return
+        if not self.current_page_images.has_page(page_index):
+            return
+        if self.current_page_images.is_loaded(page_index):
+            return
+        self._stop_page_prefetch()
+        document_path = self.current_page_images.document_path
+        self._page_prefetch_thread = QThread(self)
+        self._page_prefetch_worker = PagePrefetchWorker(document_path, page_index)
+        self._page_prefetch_worker.moveToThread(self._page_prefetch_thread)
+        self._page_prefetch_thread.started.connect(self._page_prefetch_worker.run)
+        self._page_prefetch_worker.loaded.connect(self._on_page_prefetched)
+        self._page_prefetch_worker.finished.connect(self._page_prefetch_thread.quit)
+        self._page_prefetch_thread.start()
+
+    def _on_page_prefetched(self, document_path: str, page_index: int, image: object) -> None:
+        if self.current_page_images is None:
+            return
+        if self.current_page_images.document_path != document_path:
+            return
+        if isinstance(image, Image.Image):
+            self.current_page_images.store_page(page_index, image)
     
     def _stop_logo_detection(self) -> None:
         if self._logo_thread is not None and self._logo_thread.isRunning():
@@ -1090,7 +1160,7 @@ class Indexer(QMainWindow):
         self.image_label.bbox = bbox
         self.image_label.update_display()
         if hasattr(self, "detail_panel") and self.current_page_images:
-            pil_image = self.current_page_images[page_index]
+            pil_image = self._get_page_image(page_index)
             self.detail_panel.page_bbox = bbox
             if self.detail_panel.current_field is not None:
                 self.detail_panel.set_current_field(
@@ -1324,7 +1394,7 @@ class Indexer(QMainWindow):
         """Handle field click events."""
         # Update detail panel to show the clicked field
         if hasattr(self, 'detail_panel') and self.current_page_images:
-            current_pil_image = self.current_page_images[self.current_page_index]
+            current_pil_image = self._get_page_image(self.current_page_index)
             # For RadioGroups, show the group itself, not the individual button
             field_to_show = field
             self.detail_panel.set_current_field(
@@ -1360,7 +1430,7 @@ class Indexer(QMainWindow):
             
             # Update detail panel
             if hasattr(self, 'detail_panel') and self.current_page_images:
-                current_pil_image = self.current_page_images[self.current_page_index]
+                current_pil_image = self._get_page_image(self.current_page_index)
                 self.detail_panel.set_current_field(
                     field,
                     page_image=current_pil_image,
@@ -1394,7 +1464,7 @@ class Indexer(QMainWindow):
             
             # Update detail panel
             if hasattr(self, 'detail_panel') and self.current_page_images:
-                current_pil_image = self.current_page_images[self.current_page_index]
+                current_pil_image = self._get_page_image(self.current_page_index)
                 self.detail_panel.set_current_field(
                     field,
                     page_image=current_pil_image,
@@ -1421,7 +1491,7 @@ class Indexer(QMainWindow):
                 self._index_text_dialog.show_under_rect(global_bottom_left, rect.width())
 
             if hasattr(self, 'detail_panel') and self.current_page_images:
-                current_pil_image = self.current_page_images[self.current_page_index]
+                current_pil_image = self._get_page_image(self.current_page_index)
                 self.detail_panel.set_current_field(
                     field,
                     page_image=current_pil_image,
@@ -1528,7 +1598,7 @@ class Indexer(QMainWindow):
             self._index_text_dialog.hide()
             return
 
-        current_pil_image = self.current_page_images[self.current_page_index]
+        current_pil_image = self._get_page_image(self.current_page_index)
 
         # Update detail panel selection
         if hasattr(self, 'detail_panel'):
@@ -1596,7 +1666,7 @@ class Indexer(QMainWindow):
         if not field_to_show:
             return
         self._index_text_dialog.hide()
-        current_pil_image = self.current_page_images[self.current_page_index]
+        current_pil_image = self._get_page_image(self.current_page_index)
         self.detail_panel.set_current_field(
             field_to_show,
             page_image=current_pil_image,
@@ -1657,7 +1727,7 @@ class Indexer(QMainWindow):
 
         # Refresh detail panel table to update red backgrounds
         if hasattr(self, "detail_panel") and self.current_page_images:
-            current_pil_image = self.current_page_images[self.current_page_index]
+            current_pil_image = self._get_page_image(self.current_page_index)
             self.detail_panel.set_current_field(
                 self.current_field,
                 page_image=current_pil_image,
@@ -1882,7 +1952,7 @@ class Indexer(QMainWindow):
             None,
         )
         if field_to_show and hasattr(self, "detail_panel") and self.current_page_images:
-            current_pil_image = self.current_page_images[self.current_page_index]
+            current_pil_image = self._get_page_image(self.current_page_index)
             self.detail_panel.set_current_field(
                 field_to_show,
                 page_image=current_pil_image,
@@ -2264,7 +2334,7 @@ class Indexer(QMainWindow):
 
         field_to_show = next((f for f in self.page_fields if f.name == field_name), None)
         if field_to_show and hasattr(self, "detail_panel") and self.current_page_images:
-            current_pil_image = self.current_page_images[self.current_page_index]
+            current_pil_image = self._get_page_image(self.current_page_index)
             self.detail_panel.set_current_field(
                 field_to_show,
                 page_image=current_pil_image,
@@ -2302,7 +2372,7 @@ class Indexer(QMainWindow):
 
         field_to_show = next((f for f in self.page_fields if f.name == field_name), None)
         if field_to_show and hasattr(self, "detail_panel") and self.current_page_images:
-            current_pil_image = self.current_page_images[self.current_page_index]
+            current_pil_image = self._get_page_image(self.current_page_index)
             self.detail_panel.set_current_field(
                 field_to_show,
                 page_image=current_pil_image,
@@ -2460,7 +2530,7 @@ class Indexer(QMainWindow):
             return
 
         # Use the current page image at original resolution
-        pil_image = self.current_page_images[self.current_page_index]
+        pil_image = self._get_page_image(self.current_page_index)
 
         # Convert to QPixmap (same as display_current_page)
         img_array = np.array(pil_image)
@@ -2532,7 +2602,7 @@ class Indexer(QMainWindow):
         if self.current_document_index < 0:
             return
 
-        pil_image = self.current_page_images[self.current_page_index]
+        pil_image = self._get_page_image(self.current_page_index)
         logo_tl = self.page_bbox[0] if self.page_bbox else (0, 0)
 
         worker = PageOcrWorker(
