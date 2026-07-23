@@ -11,9 +11,9 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QListWidget, QListWidgetItem, QLabel, QScrollArea, QPushButton,
     QDialog, QLineEdit, QDialogButtonBox, QFileDialog, QMessageBox,
-    QStyledItemDelegate, QStyle, QFrame, QCheckBox, QTextEdit,
+    QStyledItemDelegate, QStyle, QFrame, QCheckBox, QTextEdit, QProgressDialog,
 )
-from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QObject, QThread, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QObject, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent, QFont, QIcon, QShortcut, QKeySequence
 from PIL import Image
 from dotenv import load_dotenv
@@ -285,6 +285,93 @@ class PageOcrWorker(QObject):
             self.finished.emit()
 
 
+def _detect_logo_bbox_for_page(
+    pil_image: Image.Image,
+    page_num: int,
+    config_folder: str | None,
+) -> tuple[tuple[int, int], tuple[int, int]] | None:
+    """Detect fiducial bounding box for a template page index (worker-safe)."""
+    if not config_folder:
+        return None
+    fiducials_folder = Path(config_folder) / "fiducials"
+    logo_path = find_fiducial_for_page(fiducials_folder, page_num)
+    if logo_path is None:
+        return None
+    try:
+        img_array = np.array(pil_image)
+        img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+        matcher = ORMMatcher(str(logo_path))
+        matcher.locate_from_cv2_image(img_cv)
+        if matcher.top_left and matcher.bottom_right:
+            return (matcher.top_left, matcher.bottom_right)
+        logger.warning("Logo detection failed for page %d", page_num + 1)
+        return None
+    except Exception as e:
+        logger.error("Error detecting logo: %s", e)
+        return None
+
+
+class LogoDetectWorker(QObject):
+    """Run ORM logo detection off the main thread."""
+
+    finished = pyqtSignal(int, int, object)  # document_index, page_index, bbox or None
+
+    def __init__(
+        self,
+        document_index: int,
+        page_index: int,
+        pil_image: Image.Image,
+        config_folder: str | None,
+    ):
+        super().__init__()
+        self.document_index = document_index
+        self.page_index = page_index
+        self._pil_image = pil_image.copy()
+        self.config_folder = config_folder
+
+    def run(self) -> None:
+        bbox = _detect_logo_bbox_for_page(
+            self._pil_image, self.page_index, self.config_folder
+        )
+        self.finished.emit(self.document_index, self.page_index, bbox)
+
+
+class BatchValidationWorker(QObject):
+    """Run project validations for one or more CSV rows off the main thread."""
+
+    progress = pyqtSignal(int, int)  # current, total
+    finished = pyqtSignal(int, object)  # total_failures, list[(row_index, failures)]
+
+    def __init__(
+        self,
+        project_validations: ProjectValidations,
+        row_indices: list[int],
+        row_field_values: list[dict[str, str]],
+        field_to_page: dict[str, int],
+    ):
+        super().__init__()
+        self.project_validations = project_validations
+        self.row_indices = row_indices
+        self.row_field_values = row_field_values
+        self.field_to_page = field_to_page
+
+    def run(self) -> None:
+        total_failures = 0
+        results: list[tuple[int, list[tuple[int, str, str]]]] = []
+        total = len(self.row_indices)
+        for i, row_index in enumerate(self.row_indices):
+            failures = self.project_validations.run_validations(
+                row_index,
+                self.row_field_values[i],
+                self.field_to_page,
+            )
+            if failures:
+                total_failures += len(failures)
+                results.append((row_index, failures))
+            self.progress.emit(i + 1, total)
+        self.finished.emit(total_failures, results)
+
+
 class Indexer(QMainWindow):
     """Main window for the Field Indexer application."""
     
@@ -337,6 +424,10 @@ class Indexer(QMainWindow):
         self._qc_special_fields_page_cache: dict[tuple[str, int], tuple[Image.Image, object, list]] = {}
         self._qc_special_fields_cache_thread: QThread | None = None
         self._qc_special_fields_cache_worker: BatchDocumentCacheWorker | None = None
+        self._logo_thread: QThread | None = None
+        self._logo_worker: LogoDetectWorker | None = None
+        self._validation_thread: QThread | None = None
+        self._validation_worker: BatchValidationWorker | None = None
 
         # Initialize UI
         self.init_ui()
@@ -436,6 +527,7 @@ class Indexer(QMainWindow):
         self._document_cache.clear()
         self._qc_preloaded = None
         self._stop_qc_preload()
+        self._stop_logo_detection()
         self.document_paths = []
         self.current_document_index = -1
         self.current_page_index = 0
@@ -806,6 +898,7 @@ class Indexer(QMainWindow):
             return
 
         self._flush_csv_saves()
+        self._stop_logo_detection()
 
         self.current_document_index = index
         self.current_page_index = 0
@@ -922,7 +1015,12 @@ class Indexer(QMainWindow):
                 self.page_bbox = None
                 logger.info("Page %d: Skipping fiducial (pages_without_fiducial)", page_num + 1)
             else:
-                self.page_bbox = self.detect_logo(pil_image, page_num)
+                self.page_bbox = None
+                self._start_logo_detection(
+                    self.current_document_index,
+                    page_num,
+                    pil_image,
+                )
             self.page_fields = self.load_page_fields(page_num + 1)  # JSON files are 1-indexed
         
         # Convert to QPixmap (must be on main thread)
@@ -953,30 +1051,63 @@ class Indexer(QMainWindow):
         # No current field selected on new page
         self._set_current_field(None)
     
+    def _stop_logo_detection(self) -> None:
+        if self._logo_thread is not None and self._logo_thread.isRunning():
+            self._logo_thread.quit()
+            self._logo_thread.wait(500)
+        self._logo_thread = None
+        self._logo_worker = None
+
+    def _start_logo_detection(
+        self,
+        document_index: int,
+        page_index: int,
+        pil_image: Image.Image,
+    ) -> None:
+        self._stop_logo_detection()
+        self._logo_thread = QThread(self)
+        self._logo_worker = LogoDetectWorker(
+            document_index,
+            page_index,
+            pil_image,
+            self.config_folder,
+        )
+        self._logo_worker.moveToThread(self._logo_thread)
+        self._logo_thread.started.connect(self._logo_worker.run)
+        self._logo_worker.finished.connect(self._on_logo_detect_finished)
+        self._logo_worker.finished.connect(self._logo_thread.quit)
+        self._logo_thread.start()
+
+    def _on_logo_detect_finished(
+        self,
+        document_index: int,
+        page_index: int,
+        bbox: object,
+    ) -> None:
+        if document_index != self.current_document_index or page_index != self.current_page_index:
+            return
+        self.page_bbox = bbox
+        self.image_label.bbox = bbox
+        self.image_label.update_display()
+        if hasattr(self, "detail_panel") and self.current_page_images:
+            pil_image = self.current_page_images[page_index]
+            self.detail_panel.page_bbox = bbox
+            if self.detail_panel.current_field is not None:
+                self.detail_panel.set_current_field(
+                    self.detail_panel.current_field,
+                    page_image=pil_image,
+                    page_bbox=bbox,
+                    page_fields=self.page_fields,
+                    field_values=self.field_values,
+                    field_comments=self.page_comments,
+                )
+    
     def detect_logo(self, pil_image, page_num: int = 0):
         """Detect logo in the image for the given template page index; return bounding box or None."""
-        if not self.config_folder:
-            return None
-        fiducials_folder = Path(self.config_folder) / "fiducials"
-        logo_path = find_fiducial_for_page(fiducials_folder, page_num)
-        if logo_path is None:
-            return None
-
-        try:
-            img_array = np.array(pil_image)
-            img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-            matcher = ORMMatcher(str(logo_path))
-            matcher.locate_from_cv2_image(img_cv)
-
-            if matcher.top_left and matcher.bottom_right:
-                logger.info(f"Logo detected at {matcher.top_left} (page {page_num + 1})")
-                return (matcher.top_left, matcher.bottom_right)
-            logger.warning("Logo detection failed for page %d", page_num + 1)
-            return None
-
-        except Exception as e:
-            logger.error(f"Error detecting logo: {e}")
-            return None
+        bbox = _detect_logo_bbox_for_page(pil_image, page_num, self.config_folder)
+        if bbox:
+            logger.info("Logo detected at %s (page %d)", bbox[0], page_num + 1)
+        return bbox
     
     def load_page_fields(self, page_num):
         """Load field definitions from JSON file for a given page number."""
@@ -1601,42 +1732,104 @@ class Indexer(QMainWindow):
 
     def _on_validate_document_requested(self) -> None:
         """Handle QC > Validate document: run project validations on current row."""
+        if not self._validation_prechecks():
+            return
+        self._start_validation_job([self.current_document_index], single_document=True)
+
+    def _on_validate_batch_requested(self) -> None:
+        """Handle QC > Validate batch: run project validations on all rows."""
+        if not self._validation_prechecks():
+            return
+        row_indices = list(range(len(self.document_paths)))
+        self._start_validation_job(row_indices, single_document=False)
+
+    def _validation_prechecks(self) -> bool:
         if not self.document_paths:
             QMessageBox.information(
                 self,
                 "No batch loaded",
                 "Load a batch first (Batch menu).",
             )
-            return
-        if not self.project_validations:
+            return False
+        if not self.project_validations or not self.project_validations.validations:
             QMessageBox.information(
                 self,
                 "No validations",
                 "No project validations configured for this project.",
             )
-            return
-        if not self.project_validations.validations:
+            return False
+        if self._validation_thread is not None and self._validation_thread.isRunning():
             QMessageBox.information(
                 self,
-                "No validations",
-                "No project validations configured for this project.",
+                "Validation in progress",
+                "Please wait for the current validation run to finish.",
             )
-            return
+            return False
+        return True
 
+    def _start_validation_job(self, row_indices: list[int], *, single_document: bool) -> None:
         if self.project_validations.lookup_manager:
             self.project_validations.lookup_manager.load_output_csv()
-        row_index = self.current_document_index
-        field_values = {
-            name: self.csv_manager.get_field_value(row_index, name) or ""
-            for name in self.csv_manager.field_names
-        }
         field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
+        row_field_values = [
+            {
+                name: self.csv_manager.get_field_value(row_index, name) or ""
+                for name in self.csv_manager.field_names
+            }
+            for row_index in row_indices
+        ]
 
-        failures = self.project_validations.run_validations(
-            row_index, field_values, field_to_page
+        progress = QProgressDialog("Running validations...", None, 0, len(row_indices), self)
+        progress.setWindowTitle("Validation")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+
+        thread = QThread(self)
+        worker = BatchValidationWorker(
+            self.project_validations,
+            row_indices,
+            row_field_values,
+            field_to_page,
         )
+        worker.moveToThread(thread)
 
-        if failures:
+        def on_progress(current: int, total: int) -> None:
+            progress.setMaximum(total)
+            progress.setValue(current)
+
+        def on_finished(total_failures: int, results: object) -> None:
+            progress.close()
+            thread.quit()
+            thread.wait(3000)
+            self._validation_thread = None
+            self._validation_worker = None
+            self._apply_validation_results(
+                total_failures,
+                results,
+                len(row_indices),
+                single_document=single_document,
+            )
+
+        worker.progress.connect(on_progress)
+        worker.finished.connect(on_finished)
+        thread.started.connect(worker.run)
+        thread.start()
+        self._validation_thread = thread
+        self._validation_worker = worker
+
+    def _apply_validation_results(
+        self,
+        total_failures: int,
+        results: object,
+        n_docs: int,
+        *,
+        single_document: bool,
+    ) -> None:
+        if not isinstance(results, list):
+            results = []
+        for row_index, failures in results:
             existing = self.csv_manager.get_field_value(row_index, "Comments") or ""
             row_comments = Comments.from_string(existing)
             for page, field_name, message in failures:
@@ -1644,75 +1837,25 @@ class Indexer(QMainWindow):
             self.csv_manager.set_field_value(
                 row_index, "Comments", row_comments.to_csv_string()
             )
-            self._enqueue_save_now(row_index)
-
-        msg = (
-            f"Validated 1 document. {len(failures)} validation failure(s) added as comments."
-            if failures
-            else "No validation failures found."
-        )
-        if failures:
-            self._on_review_document_comments_requested()
-        QMessageBox.information(self, "Validation", msg)
-
-    def _on_validate_batch_requested(self) -> None:
-        """Handle QC > Validate batch: run project validations on all rows."""
-        if not self.document_paths:
-            QMessageBox.information(
-                self,
-                "No batch loaded",
-                "Load a batch first (Batch menu).",
-            )
-            return
-        if not self.project_validations:
-            QMessageBox.information(
-                self,
-                "No validations",
-                "No project validations configured for this project.",
-            )
-            return
-        if not self.project_validations.validations:
-            QMessageBox.information(
-                self,
-                "No validations",
-                "No project validations configured for this project.",
-            )
-            return
-
-        if self.project_validations.lookup_manager:
-            self.project_validations.lookup_manager.load_output_csv()
-        field_to_page = self.csv_manager.get_field_to_page(self.json_folder)
-        total_failures = 0
-
-        for row_index in range(len(self.document_paths)):
-            field_values = {
-                name: self.csv_manager.get_field_value(row_index, name) or ""
-                for name in self.csv_manager.field_names
-            }
-            failures = self.project_validations.run_validations(
-                row_index, field_values, field_to_page
-            )
-            if failures:
-                existing = self.csv_manager.get_field_value(row_index, "Comments") or ""
-                row_comments = Comments.from_string(existing)
-                for page, field_name, message in failures:
-                    row_comments.add_comment(Comment(page, field_name, message))
-                self.csv_manager.set_field_value(
-                    row_index, "Comments", row_comments.to_csv_string()
-                )
-                total_failures += len(failures)
-
         if total_failures > 0:
             self._enqueue_save_now()
 
-        n_docs = len(self.document_paths)
-        msg = (
-            f"Validated {n_docs} document(s). {total_failures} validation failure(s) added as comments."
-            if total_failures
-            else f"Validated {n_docs} document(s). No validation failures found."
-        )
-        if total_failures > 0:
-            self._on_review_batch_comments_requested()
+        if single_document:
+            msg = (
+                f"Validated 1 document. {total_failures} validation failure(s) added as comments."
+                if total_failures
+                else "No validation failures found."
+            )
+            if total_failures:
+                self._on_review_document_comments_requested()
+        else:
+            msg = (
+                f"Validated {n_docs} document(s). {total_failures} validation failure(s) added as comments."
+                if total_failures
+                else f"Validated {n_docs} document(s). No validation failures found."
+            )
+            if total_failures:
+                self._on_review_batch_comments_requested()
         QMessageBox.information(self, "Validation", msg)
 
     def _show_current_qc_review_comment(self) -> None:
