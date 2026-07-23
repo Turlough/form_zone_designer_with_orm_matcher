@@ -88,6 +88,8 @@ When the user requests a durable behavior change, record it here or in the relev
 - `ui/AGENTS.md` — PyQt6 widgets, panels, and dialogs
 - `util/AGENTS.md` — services, I/O, OCR, ORM matching, app state
   - `util/validation/AGENTS.md` — project and field validation
+- `runtime_assistants/AGENTS.md` — external VLM assistants invoked from apps
+  - `runtime_assistants/design_assistant/AGENTS.md` — Designer page analysis
 - `tests/AGENTS.md` — automated tests
   - `tests/validations/AGENTS.md` — validation pytest modules
 - `USER_INSTRUCTIONS/AGENTS.md` — operator docs (templates setup, Designer, Indexer, Exporter); static HTML in `USER_INSTRUCTIONS/html/`

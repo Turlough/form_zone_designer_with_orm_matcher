@@ -79,7 +79,9 @@ class DesignerButtonLayout(QHBoxLayout):
 
         # Toggle to show field names on the image
         parent.field_names_toggle = QCheckBox("Field names")
-        parent.field_names_toggle.setToolTip("Show first 20 characters of each field name next to its rectangle")
+        parent.field_names_toggle.setToolTip(
+            "Show each field summary (or name) next to its rectangle (up to 50 characters)"
+        )
         parent.field_names_toggle.stateChanged.connect(parent.on_field_names_toggled)
         self.addWidget(parent.field_names_toggle)
 

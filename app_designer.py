@@ -27,7 +27,7 @@ from util.path_utils import resolve_path_case_insensitive, find_file_case_insens
 from util.document_loader import get_document_loader_for_path
 import logging
 
-from PyQt6.QtCore import QPoint
+from PyQt6.QtCore import QPoint, QThread, pyqtSignal
 from ui import (
     ImageDisplayWidget,
     DesignerThumbnailPanel,
@@ -35,12 +35,49 @@ from ui import (
     DesignerEditPanel,
     GridDesigner,
     RectangleSelectedDialog,
+    DesignerAnalysePreviewDialog,
 )
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, FIELD_TYPE_MAP
 import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class DesignAnalyseWorker(QThread):
+    """Background worker for Assistant → Analyse (external VLM)."""
+
+    finished_ok = pyqtSignal(object)
+    finished_error = pyqtSignal(str)
+
+    def __init__(
+        self,
+        page_image,
+        page_index: int,
+        fiducial_bbox,
+        cv_rects: list,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._page_image = page_image
+        self._page_index = page_index
+        self._fiducial_bbox = fiducial_bbox
+        self._cv_rects = cv_rects
+
+    def run(self):
+        try:
+            from runtime_assistants.design_assistant import analyse_page
+
+            result = analyse_page(
+                self._page_image,
+                page_index=self._page_index,
+                fiducial_bbox=self._fiducial_bbox,
+                cv_rects=self._cv_rects,
+            )
+            self.finished_ok.emit(result)
+        except Exception as e:
+            logger.exception("Design Analyse failed")
+            self.finished_error.emit(str(e))
 
 
 class Designer(QMainWindow):
@@ -74,6 +111,8 @@ class Designer(QMainWindow):
         
         # Last field type chosen when converting a detected rect (for default in dialog)
         self._last_field_type = "Tickbox"
+
+        self._analyse_worker: DesignAnalyseWorker | None = None
         
         # Initialize UI
         self.init_ui()
@@ -104,6 +143,17 @@ class Designer(QMainWindow):
         )
         self.fiducial_select_action.triggered.connect(self._on_fiducial_select_toggled)
         fiducials_menu.addAction(self.fiducial_select_action)
+
+        assistant_menu = menubar.addMenu("Assistant")
+        self.analyse_action = QAction("Analyse", self)
+        self.analyse_action.setShortcut("Ctrl+Shift+A")
+        self.analyse_action.setEnabled(False)
+        self.analyse_action.setToolTip(
+            "Send the current page to an external vision model (Gemini) "
+            "to propose field zones and question metadata. Requires GOOGLE_API_KEY or GEMINI_API_KEY."
+        )
+        self.analyse_action.triggered.connect(self.run_design_analyse)
+        assistant_menu.addAction(self.analyse_action)
         
         # Create central widget and main layout
         central_widget = QWidget()
@@ -154,6 +204,8 @@ class Designer(QMainWindow):
         if hasattr(self, "fiducial_select_action"):
             self.fiducial_select_action.setChecked(False)
             self.fiducial_select_action.setEnabled(False)
+        if hasattr(self, "analyse_action"):
+            self.analyse_action.setEnabled(False)
 
         config_resolved = resolve_path_case_insensitive(folder_path)
         if config_resolved is None or not config_resolved.is_dir():
@@ -370,6 +422,8 @@ class Designer(QMainWindow):
             self.image_display.on_fiducial_rect_drawn = self._on_fiducial_rect_drawn
 
             self.fiducial_select_action.setEnabled(True)
+            if hasattr(self, "analyse_action"):
+                self.analyse_action.setEnabled(True)
 
             # Update JSON editor for the current page
             self._update_edit_panel_json(page_idx)
@@ -1133,6 +1187,109 @@ class Designer(QMainWindow):
         self.image_display.update_display()
 
         self._update_remove_inner_button_state()
+
+    def run_design_analyse(self):
+        """Assistant → Analyse: propose fields for the current page via external VLM."""
+        if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.pages)):
+            QMessageBox.information(self, "Analyse", "Load a project and select a page first.")
+            return
+        if self._analyse_worker is not None and self._analyse_worker.isRunning():
+            QMessageBox.information(self, "Analyse", "Analysis is already running.")
+            return
+
+        page = self.pages[self.current_page_idx]
+        bbox = (
+            self.fiducials[self.current_page_idx]
+            if self.current_page_idx < len(self.fiducials)
+            else None
+        )
+        # Ensure CV candidates exist for the matcher / prompt
+        cv_rects = self.page_detected_rects[self.current_page_idx]
+        if not cv_rects:
+            self.detect_rectangles()
+            cv_rects = self.page_detected_rects[self.current_page_idx]
+
+        self.analyse_action.setEnabled(False)
+        self.statusBar().showMessage("Analysing page with Design Assistant…", 0)
+
+        worker = DesignAnalyseWorker(
+            page.copy(),
+            self.current_page_idx,
+            bbox,
+            list(cv_rects),
+            parent=self,
+        )
+        self._analyse_worker = worker
+        worker.finished_ok.connect(self._on_analyse_finished)
+        worker.finished_error.connect(self._on_analyse_error)
+        worker.finished.connect(self._on_analyse_thread_finished)
+        worker.start()
+
+    def _on_analyse_thread_finished(self):
+        if hasattr(self, "analyse_action"):
+            self.analyse_action.setEnabled(
+                self.current_page_idx is not None and bool(self.pages)
+            )
+        self.statusBar().clearMessage()
+
+    def _on_analyse_error(self, message: str):
+        QMessageBox.warning(self, "Analyse failed", message)
+
+    def _on_analyse_finished(self, result):
+        if self.current_page_idx is None:
+            return
+        dialog = DesignerAnalysePreviewDialog(
+            self,
+            fields=result.fields,
+            warnings=result.warnings,
+            grid_suggestions=result.grid_suggestions,
+            model=result.model,
+            page_number=self.current_page_idx + 1,
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        self._apply_analyse_result(result.fields, dialog.apply_mode())
+
+    def _apply_analyse_result(self, new_fields: list, mode: str):
+        """Merge or replace page fields from Analyse, then persist."""
+        if self.current_page_idx is None:
+            return
+        page_idx = self.current_page_idx
+        if mode == DesignerAnalysePreviewDialog.MODE_REPLACE:
+            self.page_field_list[page_idx] = list(new_fields)
+        else:
+            existing = self.page_field_list[page_idx]
+            by_name = {f.name: i for i, f in enumerate(existing) if getattr(f, "name", None)}
+            for f in new_fields:
+                if f.name in by_name:
+                    existing[by_name[f.name]] = f
+                else:
+                    existing.append(f)
+                    by_name[f.name] = len(existing) - 1
+            self.page_field_list[page_idx] = existing
+
+        if self.config:
+            save_page_fields(
+                str(self.config.json_folder),
+                page_idx,
+                self.page_field_list,
+                self.config.config_folder,
+            )
+        self.image_display.field_list = self.page_field_list[page_idx]
+        self.image_display.update_display()
+        self.update_thumbnail(page_idx)
+        self._update_edit_panel_json(page_idx)
+        self.undo_button.setEnabled(len(self.page_field_list[page_idx]) > 0)
+        logger.info(
+            "Page %s: Applied Analyse (%s) — %d field(s)",
+            page_idx + 1,
+            mode,
+            len(new_fields),
+        )
+        self.statusBar().showMessage(
+            f"Applied Analyse ({mode}): {len(new_fields)} field(s)",
+            5000,
+        )
 
     def remove_inner_rectangles_clicked(self):
         """Remove detected rectangles that are entirely inside another (inner perimeters)."""
