@@ -10,9 +10,9 @@ Therefore the three RadioButtons of each RadioGroup will always be named "small"
 Assume horizontal orientation: 
 Each row is a question (i.e. RadioGroup) and colums define the answers (i.e. the names of the RadioButtons)
 
-Radio Grids are not serialized as objects in themselves; they can be repesented as a list of radio groups
-no different from any others.
-However, they are useful when designing forms, as the form template often contains such grids.
+Radio Grids are serialized as `RadioGrid` objects in page JSON (layout + labels + split fractions).
+Grid Designer creates/updates a single `RadioGrid`; Indexer and Exporter expand it to flat `RadioGroup`s at load time.
+Legacy pages with only flat `RadioGroup`s (no `RadioGrid`) continue to work.
 
 ## Implementation for form_zone_designer.py
 - Launch a new window for this, "GridDesigner".

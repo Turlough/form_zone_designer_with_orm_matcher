@@ -18,6 +18,7 @@ Non-UI services: ORM logo matching, document loading, persistence, CSV/index I/O
 - Indexer OCR: `util/gemini_ocr_client.py` (`GOOGLE_API_KEY` or `GEMINI_API_KEY` in `.env`); text normalization in `util/ocr_text_utils.py`
 - Field display/CSV metadata helpers: `util/field_metadata.py` (`summary`, `column_title`, `full_text` with `name` fallbacks)
 - Designer field reshape: `util/field_geometry_edit.py` (grid division drag, resize handles, snapshots for cancel)
+- Radio grid layout: `util/radio_grid_layout.py` — expand `RadioGrid` to `RadioGroup`s for Indexer/Exporter
 - Designer page VLM analysis lives under `runtime_assistants/design_assistant/` (not in this package)
 - Document loading: `util/document_loader.py`; lazy page access for Indexer in `util/lazy_document_pages.py`
 - Fiducials: `util/fiducial_paths.py` — default logo candidates and per-page `logo-pN.png` (1-based N) overriding default when present

@@ -329,7 +329,8 @@ def _load_page_fields_for_review(json_folder: Path, page_num: int) -> list[Field
         for item in data:
             field = Field.from_dict(item)
             fields.append(field)
-        return fields
+        from util.radio_grid_layout import expand_fields_for_runtime
+        return expand_fields_for_runtime(fields)
     except Exception as e:
         logger.warning("Could not load fields from %s: %s", json_path, e)
         return []

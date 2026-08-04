@@ -174,6 +174,10 @@ class DesignerFieldList(QTableWidget):
                 radio_buttons = item.get('radio_buttons', [])
                 button_count = len(radio_buttons)
                 display_name = f"{field_name} ({button_count})" if button_count > 0 else field_name
+            elif field_type == 'RadioGrid':
+                rows = len(item.get('row_labels', []))
+                cols = len(item.get('col_labels', []))
+                display_name = f"{field_name} ({rows}x{cols})"
             else:
                 display_name = field_name
             

@@ -7,7 +7,8 @@ import numpy as np
 import logging
 
 from .designer_thumbnail_widget import DesignerThumbnailWidget, PAGE_NUM_WIDTH
-from fields import Field
+from fields import Field, RadioGrid
+from util.radio_grid_layout import expand_fields_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +151,7 @@ class DesignerThumbnailPanel(QWidget):
         scaled_field_list = []
         scale_x = thumbnail.width / page.width
         scale_y = thumbnail.height / page.height
-        for field in field_list:
+        for field in expand_fields_for_display(field_list):
             if isinstance(field, Field):
                 # Create a scaled copy of the field for thumbnail
                 # Field coordinates are relative to logo, convert to absolute first
@@ -219,7 +220,7 @@ class DesignerThumbnailPanel(QWidget):
         scaled_field_list = []
         scale_x = thumbnail.width / page.width
         scale_y = thumbnail.height / page.height
-        for field in field_list:
+        for field in expand_fields_for_display(field_list):
             if isinstance(field, Field):
                 # Filter out base Field instances
                 if type(field) == Field:

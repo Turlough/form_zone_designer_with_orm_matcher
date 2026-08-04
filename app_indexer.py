@@ -1204,6 +1204,8 @@ class Indexer(QMainWindow):
             for item in data:
                 field = Field.from_dict(item)
                 fields.append(field)
+            from util.radio_grid_layout import expand_fields_for_runtime
+            fields = expand_fields_for_runtime(fields)
             
             logger.info(f"Loaded {len(fields)} fields from {json_path}")
             return fields

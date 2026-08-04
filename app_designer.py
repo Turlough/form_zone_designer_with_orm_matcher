@@ -52,7 +52,7 @@ from ui import (
     DesignerAnalysePreviewDialog,
     DesignerRectangleDetectDialog,
 )
-from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, FIELD_TYPE_MAP
+from fields import Field, Tickbox, RadioButton, RadioGroup, RadioGrid, TextField, FIELD_TYPE_MAP
 import json
 
 logging.basicConfig(level=logging.INFO)
@@ -132,6 +132,8 @@ class Designer(QMainWindow):
         self._rect_detect_dialog: DesignerRectangleDetectDialog | None = None
         self._field_edit_dialog: RectangleSelectedDialog | None = None
         self._field_geometry_snapshot = None
+        self._grid_designer: GridDesigner | None = None
+        self._editing_grid_index: int | None = None
         
         # Initialize UI
         self.init_ui()
@@ -211,6 +213,7 @@ class Designer(QMainWindow):
         # Wire selection callback from image widget to edit panel
         self.image_display.on_field_selected = self.on_field_selected
         self.image_display.on_geometry_changed = self._on_field_geometry_changed
+        self.image_display.on_grid_selected = self.on_grid_selected
     
     def _load_config_from_path(self, folder_path: str) -> bool:
         """Load config from a folder path (no dialog). Clears existing pages. Returns True on success."""
@@ -479,13 +482,16 @@ class Designer(QMainWindow):
             if self.config:
                 save_state(last_page_index=page_idx)
 
-    def open_grid_designer(self):
-        """Open the Grid Designer window for the current page. Enabled only when page has a fiducial."""
+    def open_grid_designer(self, existing_grid: RadioGrid | None = None):
+        """Open Grid Designer to create or edit a RadioGrid on the current page."""
+        if not isinstance(existing_grid, RadioGrid):
+            existing_grid = None
         if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.pages)):
             return
         bbox = self.fiducials[self.current_page_idx] if self.current_page_idx < len(self.fiducials) else None
         if bbox is None:
             return
+        self._close_field_edit_dialog(revert=True)
         page = self.pages[self.current_page_idx]
         page_array = np.array(page)
         h, w = page_array.shape[:2]
@@ -494,15 +500,39 @@ class Designer(QMainWindow):
         page_pixmap = QPixmap.fromImage(q_image)
         gd = GridDesigner(self)
         gd.set_page(page_pixmap, bbox)
-        gd.groups_submitted.connect(self._on_grid_designer_submitted)
+        if existing_grid is not None:
+            self._editing_grid_index = self._index_of_grid(existing_grid)
+            gd.load_grid(existing_grid)
+        else:
+            self._editing_grid_index = None
+        gd.grid_submitted.connect(self._on_grid_designer_submitted)
+        self._grid_designer = gd
         gd.showMaximized()
 
-    def _on_grid_designer_submitted(self, groups: list):
-        """Append emitted radio groups to the current page, persist, and refresh UI."""
+    def _index_of_grid(self, grid: RadioGrid) -> int | None:
+        if self.current_page_idx is None:
+            return None
+        fields = self.page_field_list[self.current_page_idx]
+        for idx, field in enumerate(fields):
+            if isinstance(field, RadioGrid) and field.grid_id == grid.grid_id:
+                return idx
+            if field is grid:
+                return idx
+        return None
+
+    def _on_grid_designer_submitted(self, grid: RadioGrid):
+        """Create or update a RadioGrid on the current page."""
         if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.page_field_list)):
             return
-        for g in groups:
-            self.page_field_list[self.current_page_idx].append(g)
+        page_fields = self.page_field_list[self.current_page_idx]
+        if self._editing_grid_index is not None and 0 <= self._editing_grid_index < len(page_fields):
+            page_fields[self._editing_grid_index] = grid
+            logger.info("Page %s: Updated RadioGrid '%s'", self.current_page_idx + 1, grid.name)
+        else:
+            page_fields.append(grid)
+            logger.info("Page %s: Added RadioGrid '%s'", self.current_page_idx + 1, grid.name)
+        self._editing_grid_index = None
+        self._grid_designer = None
         if self.config:
             save_page_fields(
                 str(self.config.json_folder),
@@ -510,16 +540,17 @@ class Designer(QMainWindow):
                 self.page_field_list,
                 self.config.config_folder,
             )
-        self.image_display.field_list = self.page_field_list[self.current_page_idx]
+        self.image_display.field_list = page_fields
         self.image_display.update_display()
         self.update_thumbnail(self.current_page_idx)
         self._update_edit_panel_json(self.current_page_idx)
         self.undo_button.setEnabled(True)
-        logger.info(
-            "Page %s: Added %d RadioGroup(s) from Grid Designer",
-            self.current_page_idx + 1,
-            len(groups),
-        )
+
+    def on_grid_selected(self, grid: RadioGrid, global_pos):
+        """User clicked a RadioGrid on the page — reopen Grid Designer to reshape."""
+        if self.edit_panel:
+            self.edit_panel.fields_table.highlight_field(grid.name, "RadioGrid")
+        self.open_grid_designer(existing_grid=grid)
 
     def _on_fiducial_select_toggled(self, checked: bool) -> None:
         self.fiducial_select_mode = checked

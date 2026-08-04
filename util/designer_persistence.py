@@ -52,13 +52,14 @@ def save_rectangle_detection_settings(
         json.dump(config, f, indent=2)
     logger.info("Saved rectangle_detection settings to %s", config_path)
 
-def load_page_fields(json_folder, page_idx, config_folder=None):
+def load_page_fields(json_folder, page_idx, config_folder=None, *, expand_grids: bool = False):
     """Load fields for a specific page from JSON file.
     
     Args:
         json_folder: Path to folder containing JSON files
         page_idx: Zero-based page index
         config_folder: Optional Path to config folder for converting relative fiducial_paths
+        expand_grids: When True, expand RadioGrid objects to RadioGroups (Indexer/Exporter)
     """
     json_folder = Path(resolve_path_or_original(json_folder))
     json_path = find_file_case_insensitive(json_folder, f"{page_idx + 1}.json")
@@ -83,6 +84,9 @@ def load_page_fields(json_folder, page_idx, config_folder=None):
                 fields.append(field_obj)
         
         logger.info(f"Loaded {len(fields)} fields from {json_path}")
+        if expand_grids:
+            from util.radio_grid_layout import expand_fields_for_runtime
+            fields = expand_fields_for_runtime(fields)
         return fields
     except Exception as e:
         logger.error(f"Error loading fields from {json_path}: {e}")

@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal, QSize, QTimer
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QShowEvent
 
-from fields import RadioGroup, RadioButton
+from fields import RadioGrid
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +105,19 @@ class GridDesignerPageWidget(QLabel):
         self.n_rows = max(1, n_rows)
         self.n_cols = max(1, n_cols)
         self._reset_splits()
+
+    def load_grid_state(self, grid: RadioGrid):
+        """Restore page widget from a saved RadioGrid."""
+        self.grid_rect = (grid.x, grid.y, grid.width, grid.height)
+        self.n_rows = max(1, len(grid.row_labels))
+        self.n_cols = max(1, len(grid.col_labels))
+        self.col_fracs = list(grid.col_fracs)
+        self.row_fracs = list(grid.row_fracs)
+        self._ensure_splits()
+        self.is_drawing = False
+        self.start_point = None
+        self.current_point = None
+        self.update_display()
 
     def _reset_splits(self):
         if self.n_cols >= 2:
@@ -369,9 +382,9 @@ class GridDesignerPageWidget(QLabel):
 
 
 class GridDesigner(QMainWindow):
-    """Window for designing a radio grid. Emits groups_submitted(list[RadioGroup]) on Submit."""
+    """Window for designing a radio grid. Emits grid_submitted(RadioGrid) on Submit."""
 
-    groups_submitted = pyqtSignal(list)
+    grid_submitted = pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -379,6 +392,7 @@ class GridDesigner(QMainWindow):
         self.setGeometry(200, 200, 900, 700)
         self.statusBar().showMessage("Add rows (questions) and columns (answers), then draw the grid on the page.")
 
+        self._editing_grid: RadioGrid | None = None
         self.page_widget = GridDesignerPageWidget(self)
         self.page_widget.setMinimumSize(400, 400)
         self.page_widget.grid_too_small.connect(self._on_grid_too_small)
@@ -389,6 +403,14 @@ class GridDesigner(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         main = QVBoxLayout(central)
+
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel("Grid name:"))
+        self.grid_name_edit = QLineEdit()
+        self.grid_name_edit.setPlaceholderText("Optional label for this grid")
+        self.grid_name_edit.setMaxLength(LABEL_MAX_LENGTH)
+        name_row.addWidget(self.grid_name_edit)
+        main.addLayout(name_row)
 
         orient_row = QHBoxLayout()
         orient_row.addWidget(QLabel("Orientation:"))
@@ -481,6 +503,54 @@ class GridDesigner(QMainWindow):
 
         self._sync_grid_shape()
         self.page_widget.set_fit_width()
+
+    def _clear_row_edits(self):
+        while self.row_edits:
+            w = self.row_edits.pop()
+            self.row_container.removeWidget(w)
+            w.deleteLater()
+
+    def _clear_col_edits(self):
+        while self.col_edits:
+            w = self.col_edits.pop()
+            self.col_container.removeWidget(w)
+            w.deleteLater()
+
+    def load_grid(self, grid: RadioGrid):
+        """Open Grid Designer to edit an existing RadioGrid."""
+        self._editing_grid = grid
+        self.setWindowTitle(f"Grid Designer — {grid.name}")
+        self.grid_name_edit.setText(grid.name or "")
+        if grid.orientation == "vertical":
+            self.orient_vertical_rb.setChecked(True)
+        else:
+            self.orient_horizontal_rb.setChecked(True)
+        self._clear_row_edits()
+        self._clear_col_edits()
+        for label in grid.row_labels:
+            e = QLineEdit()
+            e.setPlaceholderText("Row label")
+            e.setMaxLength(LABEL_MAX_LENGTH)
+            e.setText(label)
+            e.textChanged.connect(self._sync_grid_shape)
+            e.returnPressed.connect(self._on_row_edit_enter)
+            self.row_edits.append(e)
+            self.row_container.addWidget(e)
+        for label in grid.col_labels:
+            e = QLineEdit()
+            e.setPlaceholderText("Column label")
+            e.setMaxLength(LABEL_MAX_LENGTH)
+            e.setText(label)
+            e.textChanged.connect(self._sync_grid_shape)
+            e.returnPressed.connect(self._on_col_edit_enter)
+            self.col_edits.append(e)
+            self.col_container.addWidget(e)
+        if not self.row_edits:
+            self._add_row_edit()
+        if not self.col_edits:
+            self._add_col_edit()
+        self.page_widget.load_grid_state(grid)
+        self._sync_grid_shape()
 
     def _add_row_edit(self):
         e = QLineEdit()
@@ -590,54 +660,28 @@ class GridDesigner(QMainWindow):
             return
         rows = self._row_labels()
         cols = self._col_labels()
-        cells = self.page_widget.get_cell_rects()
-        if len(cells) != len(rows) or (cells and len(cells[0]) != len(cols)):
-            self.statusBar().showMessage("Grid shape mismatch.", 4000)
-            return
-        groups: list[RadioGroup] = []
-        if self._orientation_is_vertical():
-            for j, col_name in enumerate(cols):
-                buttons: list[RadioButton] = []
-                for i, row_name in enumerate(rows):
-                    x, y, w, h = cells[i][j]
-                    rb = RadioButton(
-                        colour=(100, 150, 0),
-                        name=row_name,
-                        x=x, y=y, width=w, height=h,
-                    )
-                    buttons.append(rb)
-                col_height = sum(cells[k][j][3] for k in range(len(rows)))
-                rg = RadioGroup(
-                    colour=(100, 150, 0),
-                    name=col_name,
-                    x=cells[0][j][0],
-                    y=cells[0][j][1],
-                    width=cells[0][j][2],
-                    height=col_height,
-                    radio_buttons=buttons,
-                )
-                groups.append(rg)
-        else:
-            for i, row_name in enumerate(rows):
-                buttons: list[RadioButton] = []
-                for j, col_name in enumerate(cols):
-                    x, y, w, h = cells[i][j]
-                    rb = RadioButton(
-                        colour=(100, 150, 0),
-                        name=col_name,
-                        x=x, y=y, width=w, height=h,
-                    )
-                    buttons.append(rb)
-                rg = RadioGroup(
-                    colour=(100, 150, 0),
-                    name=row_name,
-                    x=cells[i][0][0],
-                    y=cells[i][0][1],
-                    width=sum(cells[i][k][2] for k in range(len(cols))),
-                    height=cells[i][0][3],
-                    radio_buttons=buttons,
-                )
-                groups.append(rg)
-        self.groups_submitted.emit(groups)
+        gx, gy, gw, gh = self.page_widget.grid_rect
+        grid_name = self.grid_name_edit.text().strip()
+        if not grid_name:
+            grid_name = rows[0] if rows else "Grid"
+        grid = RadioGrid(
+            colour=(100, 150, 0),
+            name=grid_name,
+            x=int(gx),
+            y=int(gy),
+            width=int(gw),
+            height=int(gh),
+            orientation="vertical" if self._orientation_is_vertical() else "horizontal",
+            row_labels=rows,
+            col_labels=cols,
+            col_fracs=list(self.page_widget.col_fracs),
+            row_fracs=list(self.page_widget.row_fracs),
+        )
+        if self._editing_grid is not None:
+            grid.grid_id = self._editing_grid.grid_id
+            grid.summary = self._editing_grid.summary
+            grid.column_title = self._editing_grid.column_title
+            grid.full_text = self._editing_grid.full_text
+        self.grid_submitted.emit(grid)
         self.statusBar().showMessage("Grid submitted.")
         self.close()

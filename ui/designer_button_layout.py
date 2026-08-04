@@ -37,7 +37,7 @@ class DesignerButtonLayout(QHBoxLayout):
 
         parent.grid_designer_button = QPushButton("Grid Designer")
         parent.grid_designer_button.setToolTip("Design a radio grid (rows = questions, columns = answers)")
-        parent.grid_designer_button.clicked.connect(parent.open_grid_designer)
+        parent.grid_designer_button.clicked.connect(lambda _checked=False: parent.open_grid_designer())
         parent.grid_designer_button.setEnabled(False)
         self.addWidget(parent.grid_designer_button)
 

@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 )
 
 from fields import Field, IntegerField, DecimalField, NumericRadioGroup
+from util.radio_grid_layout import expand_fields_for_runtime
 from util.app_state import load_state
 from util.path_utils import (
     resolve_path_case_insensitive,
@@ -673,10 +674,10 @@ class Exporter(QMainWindow):
                     data = json.load(f)
 
                 for item in data:
-                    field = Field.from_dict(item)
-                    name = getattr(field, "name", None)
-                    if name and name not in field_names:
-                        field_names.append(name)
+                    for field in expand_fields_for_runtime([Field.from_dict(item)]):
+                        name = getattr(field, "name", None)
+                        if name and name not in field_names:
+                            field_names.append(name)
             except Exception:
                 pass
 
@@ -736,11 +737,11 @@ class Exporter(QMainWindow):
                     data = json.load(f)
 
                 for item in data:
-                    field = Field.from_dict(item)
-                    name = getattr(field, "name", None)
-                    if not name or name in field_types:
-                        continue
-                    field_types[name] = type(field)
+                    for field in expand_fields_for_runtime([Field.from_dict(item)]):
+                        name = getattr(field, "name", None)
+                        if not name or name in field_types:
+                            continue
+                        field_types[name] = type(field)
             except Exception:
                 # If a JSON page cannot be read, continue with others.
                 pass

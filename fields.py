@@ -1,4 +1,5 @@
 from dataclasses import dataclass, asdict, field, KW_ONLY
+import uuid
 
 
 @dataclass
@@ -79,6 +80,9 @@ class Field:
         # Resolve concrete field class from global FIELD_TYPE_MAP
         field_class = FIELD_TYPE_MAP.get(field_type, Field)
 
+        if field_type == "RadioGrid":
+            return RadioGrid.from_dict({"_type": "RadioGrid", **data})
+
         # Handle RadioGroup (and subclasses) special case
         if issubclass(field_class, RadioGroup) and "radio_buttons" in data:
             radio_buttons_data = data.pop("radio_buttons", [])
@@ -93,6 +97,55 @@ class Field:
             return field_class(radio_buttons=radio_buttons, **data)
 
         return field_class(**data)
+
+
+@dataclass
+class RadioGrid(Field):
+    """Design-time radio grid; expands to RadioGroups for Indexer/Exporter."""
+
+    orientation: str = "horizontal"  # "horizontal" | "vertical"
+    row_labels: list[str] = field(default_factory=list)
+    col_labels: list[str] = field(default_factory=list)
+    col_fracs: list[float] = field(default_factory=list)
+    row_fracs: list[float] = field(default_factory=list)
+    grid_id: str = ""
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.colour = (100, 150, 0)
+        if not self.grid_id:
+            self.grid_id = str(uuid.uuid4())
+
+    def expand_to_radio_groups(self) -> list[RadioGroup]:
+        from util.radio_grid_layout import expand_radio_grid
+
+        return expand_radio_grid(self)
+
+    def to_dict(self):
+        data = {
+            "_type": self.__class__.__name__,
+            "grid_id": self.grid_id,
+            "colour": self.colour,
+            "name": self.name,
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
+            "orientation": self.orientation,
+            "row_labels": list(self.row_labels),
+            "col_labels": list(self.col_labels),
+            "col_fracs": list(self.col_fracs),
+            "row_fracs": list(self.row_fracs),
+        }
+        data.update(self._metadata_dict())
+        return data
+
+    @staticmethod
+    def from_dict(data: dict) -> "RadioGrid":
+        d = dict(data)
+        d.pop("_type", None)
+        d.pop("_", None)
+        return RadioGrid(**d)
 
 
 @dataclass
@@ -233,4 +286,5 @@ FIELD_TYPE_MAP = {
     "IrishMobileField": IrishMobileField,
     "EircodeField": EircodeField,
     "NumericRadioGroup": NumericRadioGroup,
+    "RadioGrid": RadioGrid,
 }

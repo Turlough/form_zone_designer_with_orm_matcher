@@ -5,6 +5,7 @@ from fields import Field, RadioGroup
 import json
 
 from util.field_metadata import column_header
+from util.radio_grid_layout import expand_fields_for_runtime
 from util.path_utils import (
     resolve_path_or_original,
     paths_equal_case_insensitive,
@@ -125,13 +126,13 @@ class CSVManager:
                 
                 # Iterate through top-level elements
                 for item in data:
-                    field = Field.from_dict(item)
-                    header = column_header(field)
-                    if not header:
-                        continue
-                    # RadioGroup gets one column; regular fields likewise
-                    if header not in field_names:
-                        field_names.append(header)
+                    for field in expand_fields_for_runtime([Field.from_dict(item)]):
+                        header = column_header(field)
+                        if not header:
+                            continue
+                        # RadioGroup gets one column; regular fields likewise
+                        if header not in field_names:
+                            field_names.append(header)
                 
             except Exception as e:
                 logger.warning(f"Error reading {json_path!s}: {e}")
@@ -156,10 +157,10 @@ class CSVManager:
                     data = json.load(f)
 
                 for item in data:
-                    field = Field.from_dict(item)
-                    header = column_header(field)
-                    if header and header not in field_to_page:
-                        field_to_page[header] = page_num
+                    for field in expand_fields_for_runtime([Field.from_dict(item)]):
+                        header = column_header(field)
+                        if header and header not in field_to_page:
+                            field_to_page[header] = page_num
 
             except Exception as e:
                 logger.warning(f"Error reading {json_path!s}: {e}")
@@ -184,10 +185,10 @@ class CSVManager:
                     data = json.load(f)
 
                 for item in data:
-                    field = Field.from_dict(item)
-                    header = column_header(field)
-                    if header and header not in field_to_type:
-                        field_to_type[header] = field.__class__.__name__
+                    for field in expand_fields_for_runtime([Field.from_dict(item)]):
+                        header = column_header(field)
+                        if header and header not in field_to_type:
+                            field_to_type[header] = field.__class__.__name__
 
             except Exception as e:
                 logger.warning(f"Error reading {json_path!s}: {e}")

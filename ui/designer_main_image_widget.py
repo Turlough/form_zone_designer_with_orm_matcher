@@ -3,8 +3,9 @@ from PyQt6.QtCore import Qt, QRect, QPoint
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QBrush, QFont, QFontMetrics, QMouseEvent
 
 from PyQt6.QtWidgets import QDialog
-from fields import Field, RadioGroup, RadioButton, Tickbox, TextField, NumericRadioGroup
+from fields import Field, RadioGroup, RadioButton, RadioGrid, Tickbox, TextField, NumericRadioGroup
 from util.field_metadata import display_label
+from util.radio_grid_layout import expand_fields_for_display
 from util.field_geometry_edit import (
     geometry_edit_target,
     grid_division_lines,
@@ -71,6 +72,9 @@ class ImageDisplayWidget(QLabel):
         # Callback when user finishes drawing a rect: on_rect_drawn(drawn_rect_rel, inner_rects_rel, global_pos)
         # drawn_rect_rel / inner_rects_rel are (x,y,w,h) relative to logo
         self.on_rect_drawn = None
+
+        # Callback when user clicks a RadioGrid: on_grid_selected(grid, global_pos)
+        self.on_grid_selected = None
 
         # When True, drawing a rectangle invokes on_fiducial_rect_drawn (page coords) instead of field flow.
         self.fiducial_select_mode = False
@@ -273,9 +277,10 @@ class ImageDisplayWidget(QLabel):
                                scaled_bottom_right[0] - scaled_top_left[0], 
                                scaled_bottom_right[1] - scaled_top_left[1])
             
-            # Draw field rectangles with colors from field list
-            if self.field_list:
-                for field in self.field_list:
+            # Draw field rectangles with colors from field list (RadioGrids expand to groups)
+            draw_fields = expand_fields_for_display(self.field_list)
+            if draw_fields:
+                for field in draw_fields:
                     if isinstance(field, Field):
                         # Get color from field object
                         color = QColor(*field.colour)
@@ -325,6 +330,24 @@ class ImageDisplayWidget(QLabel):
                                 rb_label = display_label(radio_button)
                                 if self.show_field_names and rb_label:
                                     self._draw_field_name_label(painter, rb_label, rb_scaled_rect, rb_color)
+
+            # RadioGrid outer bounds (dashed) for design-time selection
+            if self.field_list:
+                for field in self.field_list:
+                    if isinstance(field, RadioGrid):
+                        logo_top_left = self.bbox[0] if self.bbox else (0, 0)
+                        abs_x = field.x + logo_top_left[0]
+                        abs_y = field.y + logo_top_left[1]
+                        scaled_rect = QRect(
+                            int(abs_x * self.scale_x),
+                            int(abs_y * self.scale_y),
+                            int(field.width * self.scale_x),
+                            int(field.height * self.scale_y),
+                        )
+                        pen = QPen(QColor(180, 100, 255), 2)
+                        pen.setStyle(Qt.PenStyle.DashLine)
+                        painter.setPen(pen)
+                        painter.drawRect(scaled_rect)
             
             # Draw detected rectangles (red)
             if self.detected_rects:
@@ -605,8 +628,23 @@ class ImageDisplayWidget(QLabel):
         click_x = (event.pos().x() - self.image_offset_x) / self.scale_x
         click_y = (event.pos().y() - self.image_offset_y) / self.scale_y
 
-        # 1) Check if the user clicked on an existing field → selection (dialog opened by main window)
+        # RadioGrid selection (before individual fields)
         logo_top_left = self.bbox[0] if self.bbox else (0, 0)
+        if self.field_list:
+            for field in reversed(self.field_list):
+                if isinstance(field, RadioGrid):
+                    abs_x = field.x + logo_top_left[0]
+                    abs_y = field.y + logo_top_left[1]
+                    if (
+                        abs_x <= click_x <= abs_x + field.width
+                        and abs_y <= click_y <= abs_y + field.height
+                    ):
+                        logger.info(f"Selected RadioGrid '{field.name}'")
+                        if self.on_grid_selected:
+                            self.on_grid_selected(field, event.globalPosition().toPoint())
+                        return
+
+        # 1) Check if the user clicked on an existing field → selection (dialog opened by main window)
         if self.field_list:
             for field in self.field_list:
                 if isinstance(field, Field):
