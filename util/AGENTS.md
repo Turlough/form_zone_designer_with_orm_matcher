@@ -12,6 +12,7 @@ Non-UI services: ORM logo matching, document loading, persistence, CSV/index I/O
 ## Local Contracts
 
 - Apps import shared capabilities via `util` (e.g. `ORMMatcher`, `CSVManager`, `ProjectValidations`, designer persistence helpers)
+- Designer rectangle detection: `RectangleDetectionSettings` in `util/rectangle_detection_settings.py`; optional per-project `rectangle_detection` key in `json/project_config.json` (load/save via `designer_persistence`)
 - Validation rules and strategies live in `util/validation/` (see child DOX)
 - Environment and project paths: respect `util/path_utils.py` and `util/app_state.py` conventions
 - Indexer OCR: `util/gemini_ocr_client.py` (`GOOGLE_API_KEY` or `GEMINI_API_KEY` in `.env`); text normalization in `util/ocr_text_utils.py`

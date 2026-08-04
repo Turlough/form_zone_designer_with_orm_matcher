@@ -5,8 +5,52 @@ from fields import Field
 import logging
 
 from util.path_utils import find_file_case_insensitive, resolve_path_or_original
+from util.rectangle_detection_settings import RectangleDetectionSettings
 
 logger = logging.getLogger(__name__)
+
+
+def _project_config_path(json_folder: Path) -> Path:
+    return json_folder / "project_config.json"
+
+
+def load_rectangle_detection_settings(json_folder: str) -> RectangleDetectionSettings:
+    """Load rectangle_detection from project_config.json, or defaults."""
+    json_folder = Path(resolve_path_or_original(json_folder))
+    config_path = find_file_case_insensitive(json_folder, "project_config.json")
+    if config_path is None:
+        return RectangleDetectionSettings()
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        return RectangleDetectionSettings.from_dict(config.get("rectangle_detection"))
+    except Exception as e:
+        logger.warning("Could not read rectangle_detection from %s: %s", config_path, e)
+        return RectangleDetectionSettings()
+
+
+def save_rectangle_detection_settings(
+    json_folder: str, settings: RectangleDetectionSettings
+) -> None:
+    """Merge rectangle_detection into project_config.json, preserving other keys."""
+    json_folder = Path(resolve_path_or_original(json_folder))
+    json_folder.mkdir(parents=True, exist_ok=True)
+    config_path = find_file_case_insensitive(json_folder, "project_config.json")
+    if config_path is None:
+        config_path = _project_config_path(json_folder)
+        config: dict = {}
+    else:
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+        except Exception as e:
+            logger.warning("Could not read %s for merge: %s", config_path, e)
+            config = {}
+    settings.normalize()
+    config["rectangle_detection"] = settings.to_dict()
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+    logger.info("Saved rectangle_detection settings to %s", config_path)
 
 def load_page_fields(json_folder, page_idx, config_folder=None):
     """Load fields for a specific page from JSON file.

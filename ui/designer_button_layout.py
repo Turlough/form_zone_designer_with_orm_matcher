@@ -15,7 +15,7 @@ class DesignerButtonLayout(QHBoxLayout):
 
         # Control buttons
         parent.detect_button = QPushButton("Detect Rectangles")
-        parent.detect_button.clicked.connect(parent.detect_rectangles)
+        parent.detect_button.clicked.connect(parent.open_rectangle_detect_dialog)
         parent.detect_button.setEnabled(False)
         self.addWidget(parent.detect_button)
 

@@ -113,6 +113,16 @@ Example (adjust paths and field names for your job):
   "quick_review": ["Field 5", "Field 6"],
   "lookup_list": "optional/path/to/lookup.csv",
   "pages_without_fiducial": [0],
+  "rectangle_detection": {
+    "canny_low_threshold": 60,
+    "canny_high_threshold": 150,
+    "dilate_iterations": 7,
+    "overlap_threshold_value": 0.7,
+    "min_area": 500,
+    "max_area": 30000,
+    "include_adaptive_method": true,
+    "auto_remove_inner": true
+  },
   "validations": [
     {
       "strategy": "max_tickboxes",
@@ -136,6 +146,7 @@ Example (adjust paths and field names for your job):
 | `quick_review` | Field names for quick review lists in Indexer. |
 | `lookup_list` | Optional CSV path for lookup-backed validations. |
 | `pages_without_fiducial` | Zero-based page indices with no fiducial search. |
+| `rectangle_detection` | Optional Designer-only OpenCV rectangle detection tuning (saved when you use **Detect Rectangles**). |
 | `validations` | Optional project-level rules (see validation docs / Indexer behaviour). |
 
 You can add `project_config.json` early with only the keys you need and expand it before indexing starts. **`batch_folder` and `import_filename` must be valid before operators use Indexer or Exporter.**

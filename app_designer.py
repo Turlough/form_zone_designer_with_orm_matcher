@@ -19,8 +19,17 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QPixmap, QImage, QAction
 from PIL import Image
 from dotenv import load_dotenv
-from util import ORMMatcher, DesignerConfig
-from util import detect_rectangles, load_page_fields, save_page_fields, remove_inner_rectangles
+from util import (
+    ORMMatcher,
+    DesignerConfig,
+    detect_rectangles,
+    load_page_fields,
+    save_page_fields,
+    remove_inner_rectangles,
+    RectangleDetectionSettings,
+    load_rectangle_detection_settings,
+    save_rectangle_detection_settings,
+)
 from util.fiducial_paths import find_default_logo, find_fiducial_for_page, per_page_logo_filename
 from util.app_state import load_state, save_state
 from util.path_utils import resolve_path_case_insensitive, find_file_case_insensitive, find_project_template
@@ -36,6 +45,7 @@ from ui import (
     GridDesigner,
     RectangleSelectedDialog,
     DesignerAnalysePreviewDialog,
+    DesignerRectangleDetectDialog,
 )
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, FIELD_TYPE_MAP
 import json
@@ -113,6 +123,8 @@ class Designer(QMainWindow):
         self._last_field_type = "Tickbox"
 
         self._analyse_worker: DesignAnalyseWorker | None = None
+        self.rectangle_detection_settings = RectangleDetectionSettings()
+        self._rect_detect_dialog: DesignerRectangleDetectDialog | None = None
         
         # Initialize UI
         self.init_ui()
@@ -206,6 +218,7 @@ class Designer(QMainWindow):
             self.fiducial_select_action.setEnabled(False)
         if hasattr(self, "analyse_action"):
             self.analyse_action.setEnabled(False)
+        self._close_rectangle_detect_dialog()
 
         config_resolved = resolve_path_case_insensitive(folder_path)
         if config_resolved is None or not config_resolved.is_dir():
@@ -228,6 +241,9 @@ class Designer(QMainWindow):
 
         if not self.config.template_path.exists():
             return False
+        self.rectangle_detection_settings = load_rectangle_detection_settings(
+            str(self.config.json_folder)
+        )
         self.load_multipage_tiff(str(self.config.template_path))
         self._update_window_title()
         return True
@@ -434,6 +450,12 @@ class Designer(QMainWindow):
             self.undo_button.setEnabled(len(field_list) > 0)
             self.grid_designer_button.setEnabled(bbox is not None)
             self._update_remove_inner_button_state()
+
+            if (
+                self._rect_detect_dialog is not None
+                and self._rect_detect_dialog.isVisible()
+            ):
+                self._run_rectangle_detection(self.rectangle_detection_settings)
 
             # Enable zoom/fit controls now that an image is available
             self.fit_width_button.setEnabled(True)
@@ -1161,32 +1183,81 @@ class Designer(QMainWindow):
             logger.debug(f"Cleared all fields on page {self.current_page_idx + 1}")
     
     def detect_rectangles(self):
-        """Detect rectangles on the current page using computer vision."""
+        """Open the rectangle detection settings dialog and run detection."""
+        self.open_rectangle_detect_dialog()
+
+    def open_rectangle_detect_dialog(self):
+        """Show non-modal sensitivity dialog and detect rectangles on the current page."""
         if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.pages)):
             logger.warning("No page selected for rectangle detection")
             return
 
-        logger.debug(f"Detecting rectangles on page {self.current_page_idx + 1}...")
+        if self._rect_detect_dialog is None:
+            dlg = DesignerRectangleDetectDialog(self)
+            dlg.settings_changed.connect(self._on_rectangle_detection_settings_changed)
+            dlg.save_requested.connect(self._on_rectangle_detection_settings_save)
+            self._rect_detect_dialog = dlg
+
+        dlg = self._rect_detect_dialog
+        dlg.set_settings(self.rectangle_detection_settings)
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        self._run_rectangle_detection(self.rectangle_detection_settings)
+
+    def _close_rectangle_detect_dialog(self) -> None:
+        if self._rect_detect_dialog is not None:
+            self._rect_detect_dialog.flush_pending()
+            self._rect_detect_dialog.close()
+            self._rect_detect_dialog.deleteLater()
+            self._rect_detect_dialog = None
+
+    def _on_rectangle_detection_settings_changed(
+        self, settings: RectangleDetectionSettings
+    ) -> None:
+        self.rectangle_detection_settings = settings
+        self._run_rectangle_detection(settings)
+
+    def _on_rectangle_detection_settings_save(
+        self, settings: RectangleDetectionSettings
+    ) -> None:
+        self.rectangle_detection_settings = settings
+        if self.config:
+            save_rectangle_detection_settings(
+                str(self.config.json_folder), settings
+            )
+
+    def _run_rectangle_detection(self, settings: RectangleDetectionSettings) -> None:
+        """Detect rectangles on the current page using the given settings."""
+        if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.pages)):
+            return
+
+        logger.debug(
+            "Detecting rectangles on page %s...", self.current_page_idx + 1
+        )
         page = self.pages[self.current_page_idx]
-        
-        # Convert PIL Image to OpenCV format
+
         page_array = np.array(page)
         page_cv = cv2.cvtColor(page_array, cv2.COLOR_RGB2BGR)
-        
-        # Run rectangle detection
-        
-        detected_rects = detect_rectangles(page_cv, min_area=500, max_area=50000)
-        
-        # Store detected rectangles
+
+        detected_rects = detect_rectangles(page_cv, settings=settings)
+
         self.page_detected_rects[self.current_page_idx] = detected_rects
         self.image_display.detected_rects = detected_rects
 
-        logger.debug(f"Detected {len(detected_rects)} rectangles on page {self.current_page_idx + 1}")
+        logger.debug(
+            "Detected %d rectangles on page %d",
+            len(detected_rects),
+            self.current_page_idx + 1,
+        )
 
-        # Update display to show detected rectangles
         self.image_display.update_display()
-
         self._update_remove_inner_button_state()
+
+        if self._rect_detect_dialog is not None:
+            self._rect_detect_dialog.set_detection_status(
+                len(detected_rects), self.current_page_idx + 1
+            )
 
     def run_design_analyse(self):
         """Assistant → Analyse: propose fields for the current page via external VLM."""
@@ -1206,7 +1277,7 @@ class Designer(QMainWindow):
         # Ensure CV candidates exist for the matcher / prompt
         cv_rects = self.page_detected_rects[self.current_page_idx]
         if not cv_rects:
-            self.detect_rectangles()
+            self._run_rectangle_detection(self.rectangle_detection_settings)
             cv_rects = self.page_detected_rects[self.current_page_idx]
 
         self.analyse_action.setEnabled(False)
