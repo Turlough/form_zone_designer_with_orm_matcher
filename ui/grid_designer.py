@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (
     QButtonGroup,
 )
 from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal, QSize, QTimer
-from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QBrush, QMouseEvent, QShowEvent
+from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QBrush, QMouseEvent, QShowEvent, QKeyEvent
 
 from fields import RadioGrid
 from util.field_geometry_edit import hit_resize_handle, HANDLE_HIT_PX
@@ -34,6 +34,26 @@ logger = logging.getLogger(__name__)
 LABEL_MAX_LENGTH = 50
 MIN_GRID_WIDTH_PX = 20
 MIN_GRID_HEIGHT_PX = 20
+ADD_LABEL_SHORTCUT_TTIP = "Press Enter or Tab in a label field to add another"
+
+
+class GridLabelLineEdit(QLineEdit):
+    """Row/column label field; Enter or Tab adds the next field."""
+
+    add_next = pyqtSignal()
+
+    def focusNextPrevChild(self, next_child: bool) -> bool:
+        if next_child:
+            self.add_next.emit()
+            return True
+        return super().focusNextPrevChild(next_child)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key.Key_Tab and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            event.accept()
+            self.add_next.emit()
+            return
+        super().keyPressEvent(event)
 
 
 class GridDesignerPageWidget(QLabel):
@@ -560,7 +580,9 @@ class GridDesigner(QMainWindow):
         self._add_col_edit()
         mid.addLayout(self.col_container)
         add_col_btn = QPushButton("+ Add column")
-        add_col_btn.clicked.connect(self._add_col_edit)
+        add_col_btn.setToolTip(ADD_LABEL_SHORTCUT_TTIP)
+        add_col_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        add_col_btn.clicked.connect(lambda: self._add_col_edit(focus=True))
         mid.addWidget(add_col_btn)
         mid.addStretch()
         main.addLayout(mid)
@@ -583,7 +605,9 @@ class GridDesigner(QMainWindow):
         self._add_row_edit()
         left_layout.addWidget(row_edits_widget)
         add_row_btn = QPushButton("+ Add row")
-        add_row_btn.clicked.connect(self._add_row_edit)
+        add_row_btn.setToolTip(ADD_LABEL_SHORTCUT_TTIP)
+        add_row_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        add_row_btn.clicked.connect(lambda: self._add_row_edit(focus=True))
         left_layout.addWidget(add_row_btn)
         left_layout.addStretch()
         content.addWidget(left_panel)
@@ -657,57 +681,59 @@ class GridDesigner(QMainWindow):
         self._clear_row_edits()
         self._clear_col_edits()
         for label in grid.row_labels:
-            e = QLineEdit()
-            e.setPlaceholderText("Row label")
-            e.setMaxLength(LABEL_MAX_LENGTH)
-            e.setText(label)
-            e.textChanged.connect(self._sync_grid_shape)
-            e.returnPressed.connect(self._on_row_edit_enter)
-            self.row_edits.append(e)
-            self.row_container.addWidget(e)
+            self._append_row_edit(label)
         for label in grid.col_labels:
-            e = QLineEdit()
-            e.setPlaceholderText("Column label")
-            e.setMaxLength(LABEL_MAX_LENGTH)
-            e.setText(label)
-            e.textChanged.connect(self._sync_grid_shape)
-            e.returnPressed.connect(self._on_col_edit_enter)
-            self.col_edits.append(e)
-            self.col_container.addWidget(e)
+            self._append_col_edit(label)
         if not self.row_edits:
-            self._add_row_edit()
+            self._add_row_edit(focus=True)
         if not self.col_edits:
-            self._add_col_edit()
+            self._add_col_edit(focus=True)
         self.page_widget.load_grid_state(grid)
         self._sync_grid_shape()
 
-    def _add_row_edit(self):
-        e = QLineEdit()
+    def _append_row_edit(self, text: str = ""):
+        e = GridLabelLineEdit()
         e.setPlaceholderText("Row label")
         e.setMaxLength(LABEL_MAX_LENGTH)
+        if text:
+            e.setText(text)
         e.textChanged.connect(self._sync_grid_shape)
         e.returnPressed.connect(self._on_row_edit_enter)
+        e.add_next.connect(self._on_row_edit_enter)
         self.row_edits.append(e)
         self.row_container.addWidget(e)
-        self._sync_grid_shape()
 
-    def _add_col_edit(self):
-        e = QLineEdit()
+    def _append_col_edit(self, text: str = ""):
+        e = GridLabelLineEdit()
         e.setPlaceholderText("Column label")
         e.setMaxLength(LABEL_MAX_LENGTH)
+        if text:
+            e.setText(text)
         e.textChanged.connect(self._sync_grid_shape)
         e.returnPressed.connect(self._on_col_edit_enter)
+        e.add_next.connect(self._on_col_edit_enter)
         self.col_edits.append(e)
         self.col_container.addWidget(e)
+
+    def _add_row_edit(self, *, focus: bool = False):
+        self._append_row_edit()
         self._sync_grid_shape()
+        if focus:
+            self.row_edits[-1].setFocus()
+
+    def _add_col_edit(self, *, focus: bool = False):
+        self._append_col_edit()
+        self._sync_grid_shape()
+        if focus:
+            self.col_edits[-1].setFocus()
 
     def _on_row_edit_enter(self):
-        self._add_row_edit()
-        self.row_edits[-1].setFocus()
+        self._add_row_edit(focus=True)
+        QTimer.singleShot(0, lambda: self.row_edits[-1].setFocus() if self.row_edits else None)
 
     def _on_col_edit_enter(self):
-        self._add_col_edit()
-        self.col_edits[-1].setFocus()
+        self._add_col_edit(focus=True)
+        QTimer.singleShot(0, lambda: self.col_edits[-1].setFocus() if self.col_edits else None)
 
     def _orientation_is_vertical(self) -> bool:
         return self.orient_vertical_rb.isChecked()
