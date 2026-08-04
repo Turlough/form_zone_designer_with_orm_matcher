@@ -24,9 +24,10 @@ from PyQt6.QtWidgets import (
     QButtonGroup,
 )
 from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal, QSize, QTimer
-from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QShowEvent
+from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QBrush, QMouseEvent, QShowEvent
 
 from fields import RadioGrid
+from util.field_geometry_edit import hit_resize_handle, HANDLE_HIT_PX
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +67,12 @@ class GridDesignerPageWidget(QLabel):
         self.col_fracs: list[float] = []
         self.row_fracs: list[float] = []
 
-        self.dragging: Optional[str] = None  # 'col', 'row', or None
+        self.dragging: Optional[str] = None  # 'col', 'row', 'handle', 'move', or None
         self.drag_index: int = -1
         self.last_pos: Optional[QPoint] = None
+        self._resize_handle: Optional[str] = None
+        self._drag_start_grid_rect: Optional[tuple[int, int, int, int]] = None
+        self._drag_start_logo_pos: Optional[tuple[float, float]] = None
 
         self.zoom_mode = "fit_width"  # 'autofit', 'fit_width', 'fit_height', 'manual'
         self.zoom_factor = 1.0
@@ -212,6 +216,15 @@ class GridDesignerPageWidget(QLabel):
                 p.setPen(QPen(QColor(200, 200, 100), 1))
                 p.drawLine(rx, yy, rx + rw, yy)
 
+            handle_pen = QPen(QColor(255, 255, 255), 1)
+            handle_brush = QBrush(QColor(0, 150, 255))
+            p.setPen(handle_pen)
+            p.setBrush(handle_brush)
+            hs = 6
+            for hx, hy in self._handle_points_pixmap(rx, ry, rw, rh).values():
+                p.drawRect(hx - hs, hy - hs, hs * 2, hs * 2)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+
         if self.is_drawing and self.start_point and self.current_point:
             x1 = self.start_point.x() - self.image_offset_x
             y1 = self.start_point.y() - self.image_offset_y
@@ -228,6 +241,67 @@ class GridDesignerPageWidget(QLabel):
         ix = (px - self.image_offset_x) / self.scale_x
         iy = (py - self.image_offset_y) / self.scale_y
         return (ix, iy)
+
+    def _to_logo(self, px: int, py: int) -> tuple[float, float]:
+        ix, iy = self._to_image(px, py)
+        if self.bbox:
+            ix -= self.bbox[0][0]
+            iy -= self.bbox[0][1]
+        return ix, iy
+
+    @staticmethod
+    def _handle_points_pixmap(rx: int, ry: int, rw: int, rh: int) -> dict[str, tuple[int, int]]:
+        cx = rx + rw // 2
+        cy = ry + rh // 2
+        return {
+            "nw": (rx, ry),
+            "n": (cx, ry),
+            "ne": (rx + rw, ry),
+            "e": (rx + rw, cy),
+            "se": (rx + rw, ry + rh),
+            "s": (cx, ry + rh),
+            "sw": (rx, ry + rh),
+            "w": (rx, cy),
+        }
+
+    def _resize_grid_rect(self, handle: str, start: tuple[int, int, int, int], cur_x: float, cur_y: float):
+        x, y, w, h = start
+        if handle in ("nw", "n", "ne"):
+            new_top = int(cur_y)
+            bottom = y + h
+            y = min(new_top, bottom - MIN_GRID_HEIGHT_PX)
+            h = bottom - y
+        if handle in ("sw", "s", "se"):
+            h = max(MIN_GRID_HEIGHT_PX, int(cur_y) - y)
+        if handle in ("nw", "w", "sw"):
+            new_left = int(cur_x)
+            right = x + w
+            x = min(new_left, right - MIN_GRID_WIDTH_PX)
+            w = right - x
+        if handle in ("ne", "e", "se"):
+            w = max(MIN_GRID_WIDTH_PX, int(cur_x) - x)
+        self.grid_rect = (x, y, w, h)
+
+    def _hit_resize_handle(self, pos: QPoint) -> Optional[str]:
+        gr = self._grid_rect_display()
+        if not gr:
+            return None
+        return hit_resize_handle(
+            pos.x(), pos.y(),
+            gr.x(), gr.y(), gr.width(), gr.height(),
+            HANDLE_HIT_PX,
+        )
+
+    def _clear_drag(self):
+        self.dragging = None
+        self.drag_index = -1
+        self.last_pos = None
+        self._resize_handle = None
+        self._drag_start_grid_rect = None
+        self._drag_start_logo_pos = None
+        if self.mouseGrabber() is self:
+            self.releaseMouse()
+        self.unsetCursor()
 
     def _grid_rect_display(self) -> Optional[QRect]:
         if not self.grid_rect or not self.base_pixmap:
@@ -271,24 +345,58 @@ class GridDesignerPageWidget(QLabel):
             return
         pos = event.pos()
         if self.grid_rect is not None:
+            handle = self._hit_resize_handle(pos)
+            if handle:
+                self.dragging = "handle"
+                self._resize_handle = handle
+                self._drag_start_grid_rect = self.grid_rect
+                self.last_pos = pos
+                self.grabMouse()
+                return
             ci = self._hit_col_boundary(pos)
             ri = self._hit_row_boundary(pos)
             if ci is not None:
                 self.dragging = "col"
                 self.drag_index = ci
                 self.last_pos = pos
+                self.grabMouse()
                 return
             if ri is not None:
                 self.dragging = "row"
                 self.drag_index = ri
                 self.last_pos = pos
+                self.grabMouse()
                 return
+            gr = self._grid_rect_display()
+            if gr and gr.contains(pos.x(), pos.y()):
+                self.dragging = "move"
+                self._drag_start_logo_pos = self._to_logo(pos.x(), pos.y())
+                self._drag_start_grid_rect = self.grid_rect
+                self.last_pos = pos
+                self.grabMouse()
+                return
+            return
         self.is_drawing = True
         self.start_point = pos
         self.current_point = pos
 
     def mouseMoveEvent(self, event: QMouseEvent):
         pos = event.pos()
+        if self.dragging == "handle" and self._resize_handle and self._drag_start_grid_rect:
+            lx, ly = self._to_logo(pos.x(), pos.y())
+            self._resize_grid_rect(self._resize_handle, self._drag_start_grid_rect, lx, ly)
+            self.update_display()
+            return
+        if self.dragging == "move" and self._drag_start_grid_rect and self._drag_start_logo_pos:
+            lx, ly = self._to_logo(pos.x(), pos.y())
+            ox, oy = self._drag_start_logo_pos
+            dx = int(lx - ox)
+            dy = int(ly - oy)
+            if dx or dy:
+                x, y, w, h = self._drag_start_grid_rect
+                self.grid_rect = (x + dx, y + dy, w, h)
+                self.update_display()
+            return
         if self.dragging == "col" and self.last_pos is not None and self.grid_rect is not None:
             gr = self._grid_rect_display()
             if gr:
@@ -321,6 +429,26 @@ class GridDesignerPageWidget(QLabel):
             self.current_point = pos
             self.update_display()
             return
+        if self.grid_rect is not None:
+            handle = self._hit_resize_handle(pos)
+            gr = self._grid_rect_display()
+            if handle:
+                cursors = {
+                    "nw": Qt.CursorShape.SizeFDiagCursor,
+                    "se": Qt.CursorShape.SizeFDiagCursor,
+                    "ne": Qt.CursorShape.SizeBDiagCursor,
+                    "sw": Qt.CursorShape.SizeBDiagCursor,
+                    "n": Qt.CursorShape.SizeVerCursor,
+                    "s": Qt.CursorShape.SizeVerCursor,
+                    "e": Qt.CursorShape.SizeHorCursor,
+                    "w": Qt.CursorShape.SizeHorCursor,
+                }
+                self.setCursor(cursors.get(handle, Qt.CursorShape.ArrowCursor))
+            elif gr and gr.contains(pos.x(), pos.y()):
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
+            else:
+                self.unsetCursor()
+            return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
@@ -328,9 +456,7 @@ class GridDesignerPageWidget(QLabel):
             super().mouseReleaseEvent(event)
             return
         if self.dragging:
-            self.dragging = None
-            self.drag_index = -1
-            self.last_pos = None
+            self._clear_drag()
             return
         if self.is_drawing and self.start_point and self.current_point:
             self.is_drawing = False
@@ -439,7 +565,10 @@ class GridDesigner(QMainWindow):
         mid.addStretch()
         main.addLayout(mid)
 
-        main.addWidget(QLabel("Draw a rectangle on the page to define the grid, then drag boundaries to match the template."))
+        main.addWidget(QLabel(
+            "Draw a rectangle on the page to define the grid. "
+            "Then drag corner/edge handles or inner lines to match the template."
+        ))
 
         content = QHBoxLayout()
         left_panel = QWidget()
