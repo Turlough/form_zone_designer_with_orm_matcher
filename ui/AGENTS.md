@@ -12,6 +12,7 @@ PyQt6 widgets, panels, dialogs, and layouts shared by Designer, Indexer, and rel
 ## Local Contracts
 
 - Designer-facing: thumbnails, main image, edit panel, grid designer, rectangle selection dialog, analyse preview dialog (`DesignerAnalysePreviewDialog`), rectangle detection sensitivity dialog (`DesignerRectangleDetectDialog`)
+- Existing-field edit: non-modal `RectangleSelectedDialog` plus reshape handles on `ImageDisplayWidget` (move, corner/edge resize; grid line drag for multi-button `RadioGroup`)
 - Indexer-facing: main image panel, details panel, menus, OCR/index/comment/QC dialogs
 - Prefer extending existing widgets over duplicating paint or layout logic in entry-point apps
 

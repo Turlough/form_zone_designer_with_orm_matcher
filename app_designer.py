@@ -31,12 +31,17 @@ from util import (
     save_rectangle_detection_settings,
 )
 from util.fiducial_paths import find_default_logo, find_fiducial_for_page, per_page_logo_filename
+from util.field_geometry_edit import (
+    geometry_edit_target,
+    snapshot_field_geometry,
+    restore_field_geometry,
+)
 from util.app_state import load_state, save_state
 from util.path_utils import resolve_path_case_insensitive, find_file_case_insensitive, find_project_template
 from util.document_loader import get_document_loader_for_path
 import logging
 
-from PyQt6.QtCore import QPoint, QThread, pyqtSignal
+from PyQt6.QtCore import QPoint, QThread, pyqtSignal, Qt
 from ui import (
     ImageDisplayWidget,
     DesignerThumbnailPanel,
@@ -125,6 +130,8 @@ class Designer(QMainWindow):
         self._analyse_worker: DesignAnalyseWorker | None = None
         self.rectangle_detection_settings = RectangleDetectionSettings()
         self._rect_detect_dialog: DesignerRectangleDetectDialog | None = None
+        self._field_edit_dialog: RectangleSelectedDialog | None = None
+        self._field_geometry_snapshot = None
         
         # Initialize UI
         self.init_ui()
@@ -203,6 +210,7 @@ class Designer(QMainWindow):
 
         # Wire selection callback from image widget to edit panel
         self.image_display.on_field_selected = self.on_field_selected
+        self.image_display.on_geometry_changed = self._on_field_geometry_changed
     
     def _load_config_from_path(self, folder_path: str) -> bool:
         """Load config from a folder path (no dialog). Clears existing pages. Returns True on success."""
@@ -674,17 +682,56 @@ class Designer(QMainWindow):
 
         self.edit_panel.set_page_json(json_text)
 
+    def _on_field_geometry_changed(self):
+        """Refresh JSON preview while reshaping a field (dialog stays open)."""
+        if self.current_page_idx is not None:
+            self._update_edit_panel_json(self.current_page_idx)
+
+    def _close_field_edit_dialog(self, *, revert: bool = False):
+        if self._field_edit_dialog is not None:
+            self._field_edit_dialog.blockSignals(True)
+            self._field_edit_dialog.close()
+            self._field_edit_dialog.deleteLater()
+            self._field_edit_dialog = None
+        if (
+            revert
+            and self._field_geometry_snapshot is not None
+            and self.image_display.edit_geometry_field is not None
+        ):
+            restore_field_geometry(
+                self.image_display.edit_geometry_field,
+                self._field_geometry_snapshot,
+            )
+            self.image_display.update_display()
+        self._field_geometry_snapshot = None
+        self.image_display.end_field_edit()
+
+    def _on_field_edit_cancelled(self):
+        self._close_field_edit_dialog(revert=True)
+
+    def _on_field_edit_submitted(self, config: dict):
+        self._close_field_edit_dialog(revert=False)
+        self.on_field_config_changed(config)
+
+    def _on_field_edit_deleted(self):
+        self._close_field_edit_dialog(revert=False)
+        self.delete_current_rectangle()
+
     def on_field_selected(self, field_obj, global_pos):
         """
         Called when the user clicks on an existing field on the image.
-        Updates preview, highlights the field in the list, and opens RectangleSelectedDialog.
+        Updates preview, highlights the field in the list, opens non-modal dialog,
+        and enables reshape handles on the canvas.
         """
         if not self.edit_panel or self.current_page_idx is None:
             return
 
+        self._close_field_edit_dialog(revert=True)
+
         # Store reference to selected field and find its index
         self.selected_field_obj = field_obj
         self.selected_field_index = None
+        parent_group = None
         if 0 <= self.current_page_idx < len(self.page_field_list):
             field_list = self.page_field_list[self.current_page_idx]
             # If the selected field is a RadioButton, it may belong to a RadioGroup (not in list)
@@ -692,6 +739,7 @@ class Designer(QMainWindow):
                 for idx, field in enumerate(field_list):
                     if isinstance(field, RadioGroup) and field_obj in field.radio_buttons:
                         self.selected_field_index = idx
+                        parent_group = field
                         break
             if self.selected_field_index is None:
                 for idx, field in enumerate(field_list):
@@ -703,6 +751,12 @@ class Designer(QMainWindow):
                     ):
                         self.selected_field_index = idx
                         break
+            if parent_group is None and isinstance(field_obj, RadioGroup):
+                parent_group = field_obj
+
+        geo_target = geometry_edit_target(field_obj, parent_group)
+        self._field_geometry_snapshot = snapshot_field_geometry(geo_target)
+        self.image_display.start_field_edit(field_obj, parent_group)
 
         # Update preview strip
         page = self.pages[self.current_page_idx]
@@ -738,10 +792,13 @@ class Designer(QMainWindow):
             is_just_drawn=False,
             existing_field=field_obj,
             inner_rect_count=0,
+            non_modal=True,
         )
-        dialog.submitted.connect(self.on_field_config_changed)
-        dialog.deleted.connect(self.delete_current_rectangle)
-        dialog.exec()
+        dialog.submitted.connect(self._on_field_edit_submitted)
+        dialog.deleted.connect(self._on_field_edit_deleted)
+        dialog.cancelled.connect(self._on_field_edit_cancelled)
+        self._field_edit_dialog = dialog
+        dialog.show()
 
     def on_field_config_changed(self, config: dict):
         """

@@ -5,6 +5,23 @@ from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QBrush, QFont, QFontMet
 from PyQt6.QtWidgets import QDialog
 from fields import Field, RadioGroup, RadioButton, Tickbox, TextField, NumericRadioGroup
 from util.field_metadata import display_label
+from util.field_geometry_edit import (
+    geometry_edit_target,
+    grid_division_lines,
+    drag_vertical_division,
+    drag_horizontal_division,
+    resize_field_by_handle,
+    resize_radio_group_by_handle,
+    move_field,
+    sync_radio_group_bounds,
+    hit_resize_handle,
+    field_logo_rect,
+    logo_rect_from_abs,
+    button_rects_snapshot,
+    group_bounds_from_buttons,
+    HANDLE_HIT_PX,
+    LINE_HIT_PX,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -61,6 +78,17 @@ class ImageDisplayWidget(QLabel):
 
         # When True, show first 20 chars of field name to the right of each field (set by main window from toggle)
         self.show_field_names = False
+
+        # Field reshape edit mode (non-modal dialog open)
+        self.edit_geometry_field: Field | None = None
+        self.edit_parent_group: RadioGroup | None = None
+        self._edit_drag: str | None = None  # 'handle', 'move', 'col', 'row'
+        self._edit_handle: str | None = None
+        self._edit_line_coord: int | None = None
+        self._edit_start_bounds: tuple[int, int, int, int] | None = None
+        self._edit_start_button_rects: list[tuple[int, int, int, int]] | None = None
+        self._edit_last_pos: tuple[float, float] | None = None
+        self.on_geometry_changed = None  # callback after live geometry edit
     
     def set_image(self, pixmap, bbox=None, field_list=None, detected_rects=None):
         """Set the image, bounding box, and field list to display."""
@@ -340,13 +368,238 @@ class ImageDisplayWidget(QLabel):
                     int(sh * self.scale_y),
                 )
                 painter.drawRect(scaled_rect)
+
+            if self.edit_geometry_field is not None:
+                self._draw_edit_overlay(painter)
             
             painter.end()
             self.setPixmap(display_pixmap)
+
+    def _logo_top_left(self) -> tuple[int, int]:
+        return self.bbox[0] if self.bbox else (0, 0)
+
+    def _field_pixmap_rect(self, field: Field) -> QRect:
+        """Field rect in coordinates of the displayed pixmap (before widget centering offset)."""
+        logo_top_left = self._logo_top_left()
+        abs_x = field.x + logo_top_left[0]
+        abs_y = field.y + logo_top_left[1]
+        return QRect(
+            int(abs_x * self.scale_x),
+            int(abs_y * self.scale_y),
+            int(field.width * self.scale_x),
+            int(field.height * self.scale_y),
+        )
+
+    def _field_widget_rect(self, field: Field) -> QRect:
+        """Field rect in widget coordinates (matches QMouseEvent.pos())."""
+        rect = self._field_pixmap_rect(field)
+        rect.translate(self.image_offset_x, self.image_offset_y)
+        return rect
+
+    def _draw_edit_overlay(self, painter: QPainter):
+        field = self.edit_geometry_field
+        if field is None:
+            return
+        scaled_rect = self._field_pixmap_rect(field)
+        pen = QPen(QColor(0, 200, 255), 2)
+        painter.setPen(pen)
+        painter.drawRect(scaled_rect)
+
+        if isinstance(field, RadioGroup) and len(field.radio_buttons) >= 2:
+            logo_top_left = self._logo_top_left()
+            ox, oy = logo_top_left
+            col_lines, row_lines = grid_division_lines(field)
+            div_pen = QPen(QColor(200, 200, 100), 2)
+            painter.setPen(div_pen)
+            for lx in col_lines:
+                xx = int((lx + ox) * self.scale_x)
+                painter.drawLine(xx, scaled_rect.y(), xx, scaled_rect.y() + scaled_rect.height())
+            for ly in row_lines:
+                yy = int((ly + oy) * self.scale_y)
+                painter.drawLine(scaled_rect.x(), yy, scaled_rect.x() + scaled_rect.width(), yy)
+
+        handle_pen = QPen(QColor(255, 255, 255), 1)
+        handle_brush = QBrush(QColor(0, 150, 255))
+        painter.setPen(handle_pen)
+        painter.setBrush(handle_brush)
+        hs = 6
+        for hx, hy in self._handle_points(scaled_rect).values():
+            painter.drawRect(hx - hs, hy - hs, hs * 2, hs * 2)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    @staticmethod
+    def _handle_points(rect: QRect) -> dict[str, tuple[int, int]]:
+        cx = rect.x() + rect.width() // 2
+        cy = rect.y() + rect.height() // 2
+        return {
+            "nw": (rect.x(), rect.y()),
+            "n": (cx, rect.y()),
+            "ne": (rect.x() + rect.width(), rect.y()),
+            "e": (rect.x() + rect.width(), cy),
+            "se": (rect.x() + rect.width(), rect.y() + rect.height()),
+            "s": (cx, rect.y() + rect.height()),
+            "sw": (rect.x(), rect.y() + rect.height()),
+            "w": (rect.x(), cy),
+        }
+
+    def start_field_edit(self, field: Field, parent_group: RadioGroup | None = None):
+        self.edit_geometry_field = geometry_edit_target(field, parent_group)
+        self.edit_parent_group = parent_group
+        self._clear_edit_drag()
+        if isinstance(self.edit_geometry_field, RadioGroup):
+            sync_radio_group_bounds(self.edit_geometry_field)
+        self.update_display()
+
+    def end_field_edit(self):
+        if self.mouseGrabber() is self:
+            self.releaseMouse()
+        self.edit_geometry_field = None
+        self.edit_parent_group = None
+        self._clear_edit_drag()
+        self.update_display()
+
+    def _clear_edit_drag(self):
+        self._edit_drag = None
+        self._edit_handle = None
+        self._edit_line_coord = None
+        self._edit_start_bounds = None
+        self._edit_start_button_rects = None
+        self._edit_last_pos = None
+        self.unsetCursor()
+
+    def _notify_geometry_changed(self):
+        if self.on_geometry_changed:
+            self.on_geometry_changed()
+
+    def _image_coords(self, pos: QPoint) -> tuple[float, float]:
+        return (
+            (pos.x() - self.image_offset_x) / self.scale_x,
+            (pos.y() - self.image_offset_y) / self.scale_y,
+        )
+
+    def _try_start_edit_drag(self, pos: QPoint) -> bool:
+        field = self.edit_geometry_field
+        if field is None:
+            return False
+        widget_rect = self._field_widget_rect(field)
+        px, py = pos.x(), pos.y()
+
+        if isinstance(field, RadioGroup) and len(field.radio_buttons) >= 2:
+            logo_top_left = self._logo_top_left()
+            col_lines, row_lines = grid_division_lines(field)
+            for lx in col_lines:
+                disp_x = int((lx + logo_top_left[0]) * self.scale_x) + self.image_offset_x
+                if (
+                    widget_rect.x() <= px <= widget_rect.x() + widget_rect.width()
+                    and widget_rect.y() <= py <= widget_rect.y() + widget_rect.height()
+                    and abs(px - disp_x) <= LINE_HIT_PX
+                ):
+                    self._edit_drag = "col"
+                    self._edit_line_coord = lx
+                    self._edit_last_pos = self._image_coords(pos)
+                    self.setCursor(Qt.CursorShape.SizeHorCursor)
+                    return True
+            for ly in row_lines:
+                disp_y = int((ly + logo_top_left[1]) * self.scale_y) + self.image_offset_y
+                if (
+                    widget_rect.x() <= px <= widget_rect.x() + widget_rect.width()
+                    and widget_rect.y() <= py <= widget_rect.y() + widget_rect.height()
+                    and abs(py - disp_y) <= LINE_HIT_PX
+                ):
+                    self._edit_drag = "row"
+                    self._edit_line_coord = ly
+                    self._edit_last_pos = self._image_coords(pos)
+                    self.setCursor(Qt.CursorShape.SizeVerCursor)
+                    return True
+
+        handle = hit_resize_handle(
+            px, py,
+            widget_rect.x(), widget_rect.y(),
+            widget_rect.width(), widget_rect.height(),
+            HANDLE_HIT_PX,
+        )
+        if handle:
+            self._edit_drag = "handle"
+            self._edit_handle = handle
+            self._edit_last_pos = self._image_coords(pos)
+            if isinstance(field, RadioGroup) and field.radio_buttons:
+                self._edit_start_button_rects = button_rects_snapshot(field)
+                self._edit_start_bounds = group_bounds_from_buttons(self._edit_start_button_rects)
+            else:
+                self._edit_start_button_rects = None
+                self._edit_start_bounds = field_logo_rect(field)
+            cursors = {
+                "nw": Qt.CursorShape.SizeFDiagCursor,
+                "se": Qt.CursorShape.SizeFDiagCursor,
+                "ne": Qt.CursorShape.SizeBDiagCursor,
+                "sw": Qt.CursorShape.SizeBDiagCursor,
+                "n": Qt.CursorShape.SizeVerCursor,
+                "s": Qt.CursorShape.SizeVerCursor,
+                "e": Qt.CursorShape.SizeHorCursor,
+                "w": Qt.CursorShape.SizeHorCursor,
+            }
+            self.setCursor(cursors.get(handle, Qt.CursorShape.ArrowCursor))
+            return True
+
+        if widget_rect.contains(px, py):
+            self._edit_drag = "move"
+            self._edit_last_pos = self._image_coords(pos)
+            self.setCursor(Qt.CursorShape.SizeAllCursor)
+            return True
+        return False
+
+    def _apply_edit_drag(self, pos: QPoint):
+        field = self.edit_geometry_field
+        if field is None or self._edit_drag is None or self._edit_last_pos is None:
+            return
+        ix, iy = self._image_coords(pos)
+        logo_top_left = self._logo_top_left()
+        cur_x, cur_y = logo_rect_from_abs(ix, iy, logo_top_left)
+
+        if self._edit_drag == "col" and isinstance(field, RadioGroup) and self._edit_line_coord is not None:
+            if drag_vertical_division(field, self._edit_line_coord, cur_x):
+                self._edit_line_coord = cur_x
+                self._notify_geometry_changed()
+                self.update_display()
+            return
+        if self._edit_drag == "row" and isinstance(field, RadioGroup) and self._edit_line_coord is not None:
+            if drag_horizontal_division(field, self._edit_line_coord, cur_y):
+                self._edit_line_coord = cur_y
+                self._notify_geometry_changed()
+                self.update_display()
+            return
+        if self._edit_drag == "handle" and self._edit_handle and self._edit_start_bounds:
+            if isinstance(field, RadioGroup) and field.radio_buttons and self._edit_start_button_rects:
+                resize_radio_group_by_handle(
+                    field,
+                    self._edit_handle,
+                    self._edit_start_bounds,
+                    self._edit_start_button_rects,
+                    cur_x,
+                    cur_y,
+                )
+            else:
+                resize_field_by_handle(field, self._edit_handle, 0, 0, cur_x, cur_y)
+            self._notify_geometry_changed()
+            self.update_display()
+            return
+        if self._edit_drag == "move":
+            last_ix, last_iy = self._edit_last_pos
+            dx = int(ix - last_ix)
+            dy = int(iy - last_iy)
+            if dx or dy:
+                move_field(field, dx, dy)
+                self._edit_last_pos = (ix, iy)
+                self._notify_geometry_changed()
+                self.update_display()
     
     def mousePressEvent(self, event: QMouseEvent):
         """Handle mouse press: left-click selects field/detected rect or starts drawing; right-click no longer converts."""
         if event.button() != Qt.MouseButton.LeftButton or not self.base_pixmap:
+            return
+
+        if self.edit_geometry_field is not None and self._try_start_edit_drag(event.pos()):
+            self.grabMouse()
             return
 
         click_x = (event.pos().x() - self.image_offset_x) / self.scale_x
@@ -394,18 +647,42 @@ class ImageDisplayWidget(QLabel):
                 return
 
         # 3) Otherwise, start drawing a new rectangle
+        if self.edit_geometry_field is not None:
+            return
         self.is_drawing = True
         self.start_point = event.pos()
         self.current_point = event.pos()
     
     def mouseMoveEvent(self, event: QMouseEvent):
         """Handle mouse move to update the rectangle being drawn."""
+        if self._edit_drag and self.base_pixmap:
+            self._apply_edit_drag(event.pos())
+            return
+        if self.edit_geometry_field is not None and self.base_pixmap:
+            widget_rect = self._field_widget_rect(self.edit_geometry_field)
+            px, py = event.pos().x(), event.pos().y()
+            if hit_resize_handle(
+                px, py,
+                widget_rect.x(), widget_rect.y(),
+                widget_rect.width(), widget_rect.height(),
+                HANDLE_HIT_PX,
+            ):
+                self.setCursor(Qt.CursorShape.CrossCursor)
+            elif widget_rect.contains(px, py):
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
+            else:
+                self.unsetCursor()
         if self.is_drawing and self.base_pixmap:
             self.current_point = event.pos()
             self.update_display()
     
     def mouseReleaseEvent(self, event: QMouseEvent):
         """Handle mouse release: finish drawing and notify main window to show dialog (no add until submit)."""
+        if event.button() == Qt.MouseButton.LeftButton and self._edit_drag:
+            if self.mouseGrabber() is self:
+                self.releaseMouse()
+            self._clear_edit_drag()
+            return
         if event.button() != Qt.MouseButton.LeftButton or not self.is_drawing or not self.base_pixmap:
             return
 

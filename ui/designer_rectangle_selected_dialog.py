@@ -48,6 +48,7 @@ class RectangleSelectedDialog(QDialog):
         inner_rect_count: int = 0,
         inner_default_names: list[str] | None = None,
         default_field_type: str = "Tickbox",
+        non_modal: bool | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Rectangle / Field")
@@ -56,6 +57,11 @@ class RectangleSelectedDialog(QDialog):
         self._existing_field = existing_field
         self._inner_rect_count = max(0, inner_rect_count)
         self._inner_default_names = inner_default_names or []
+        self._non_modal = existing_field is not None if non_modal is None else non_modal
+        self._finished_action = False
+        if self._non_modal:
+            self.setModal(False)
+            self.setWindowModality(Qt.WindowModality.NonModal)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
@@ -65,6 +71,12 @@ class RectangleSelectedDialog(QDialog):
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("Enter field name...")
         layout.addWidget(self.name_edit)
+
+        if existing_field is not None:
+            hint = QLabel("Drag handles or grid lines on the page to reshape.")
+            hint.setWordWrap(True)
+            hint.setStyleSheet("color: #666; font-size: 11px;")
+            layout.addWidget(hint)
 
         # Type: vertical pick list (radio buttons)
         layout.addWidget(QLabel("Field type:"))
@@ -136,8 +148,9 @@ class RectangleSelectedDialog(QDialog):
         self._inner_name_widget.setVisible(is_rg and self._inner_rect_count > 0)
 
     def _on_delete(self):
+        self._finished_action = True
         self.deleted.emit()
-        self.accept()
+        self._close_dialog()
 
     def _on_submit(self):
         name = self.name_edit.text().strip()
@@ -150,12 +163,24 @@ class RectangleSelectedDialog(QDialog):
         config = {"field_type": field_type, "field_name": name}
         if field_type == "RadioGroup" and self._inner_name_edits:
             config["inner_names"] = [e.text().strip() or f"Option {i+1}" for i, e in enumerate(self._inner_name_edits)]
+        self._finished_action = True
         self.submitted.emit(config)
-        self.accept()
+        self._close_dialog()
+
+    def _close_dialog(self):
+        if self._non_modal:
+            self.close()
+        else:
+            self.accept()
 
     def reject(self):
-        self.cancelled.emit()
-        super().reject()
+        if not self._finished_action:
+            self.cancelled.emit()
+        if self._non_modal:
+            self._finished_action = True
+            self.close()
+        else:
+            super().reject()
 
     def done(self, result: int):
         self._save_geometry()
@@ -175,6 +200,9 @@ class RectangleSelectedDialog(QDialog):
 
     def closeEvent(self, event):
         self._save_geometry()
+        if self._non_modal and not self._finished_action:
+            self.cancelled.emit()
+            self._finished_action = True
         super().closeEvent(event)
 
     def _position_near_anchor(self):
