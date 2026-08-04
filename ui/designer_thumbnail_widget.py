@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPainter, QColor, QPen, QFont
-from fields import Field, RadioGroup
+from fields import Field, RadioGroup, RadioButton, NumericRadioGroup
+from field_factory import get_field_display_color
 
 # Space for page number to the right of thumbnail
 PAGE_NUM_WIDTH = 28
@@ -62,16 +63,16 @@ class DesignerThumbnailWidget(QWidget):
         if self.field_list:
             for field in self.field_list:
                 if isinstance(field, Field):
-                    color = QColor(*field.colour)
+                    color = get_field_display_color(field)
                     pen = QPen(color, 1)
                     painter.setPen(pen)
                     painter.drawRect(field.x + self.margin, field.y + self.margin,
                                    field.width, field.height)
                     
                     # If this is a RadioGroup, also draw its RadioButtons
-                    if isinstance(field, RadioGroup):
+                    if isinstance(field, (RadioGroup, NumericRadioGroup)):
                         for radio_button in field.radio_buttons:
-                            rb_color = QColor(*radio_button.colour)
+                            rb_color = get_field_display_color(radio_button)
                             rb_pen = QPen(rb_color, 1)
                             painter.setPen(rb_pen)
                             painter.drawRect(radio_button.x + self.margin, radio_button.y + self.margin,

@@ -2,6 +2,22 @@ from dataclasses import dataclass, asdict, field, KW_ONLY
 import uuid
 
 
+def _normalize_colour(value) -> tuple[int, int, int] | None:
+    if value is None:
+        return None
+    if isinstance(value, tuple) and len(value) == 3:
+        return tuple(int(c) for c in value)
+    if isinstance(value, list) and len(value) == 3:
+        return tuple(int(c) for c in value)
+    return None
+
+
+def _apply_canonical_colour(instance: "Field") -> None:
+    from field_factory import default_colour_tuple_for_class
+
+    instance.colour = default_colour_tuple_for_class(type(instance))
+
+
 @dataclass
 class Field:
     colour: tuple[int, int, int]
@@ -19,10 +35,14 @@ class Field:
         self.width = self.width or 10
         self.height = self.height or 10
         self.name = self.name
-        self.colour = self.colour or (255, 0, 0)
         self.summary = self.summary or ""
         self.column_title = self.column_title or ""
         self.full_text = self.full_text or ""
+        if type(self) is Field:
+            normalized = _normalize_colour(self.colour)
+            self.colour = normalized or (255, 0, 0)
+        else:
+            _apply_canonical_colour(self)
 
     def __str__(self):
         return f"{self.name} ({self.x}, {self.y}, {self.width}, {self.height})"
@@ -54,6 +74,7 @@ class Field:
                 "Field instances are temporary and must be converted to a concrete type "
                 "(Tickbox, RadioButton, RadioGroup, or TextField) before serialization."
             )
+        _apply_canonical_colour(self)
         data = asdict(self)
         data.pop("_", None)
         data["_type"] = self.__class__.__name__
@@ -76,6 +97,7 @@ class Field:
         data = dict(data)
         field_type = data.pop("_type")
         data.pop("_", None)
+        data.pop("colour", None)
 
         # Resolve concrete field class from global FIELD_TYPE_MAP
         field_class = FIELD_TYPE_MAP.get(field_type, Field)
@@ -93,9 +115,19 @@ class Field:
                 # Remove _type if present, we know it's a RadioButton
                 rb_dict.pop("_type", None)
                 rb_dict.pop("_", None)
+                rb_dict.pop("colour", None)
+                from field_factory import default_colour_tuple_for_type
+
+                rb_dict["colour"] = default_colour_tuple_for_type("RadioButton")
                 radio_buttons.append(RadioButton(**rb_dict))
+            from field_factory import default_colour_tuple_for_type
+
+            data["colour"] = default_colour_tuple_for_type(field_type)
             return field_class(radio_buttons=radio_buttons, **data)
 
+        from field_factory import default_colour_tuple_for_type
+
+        data["colour"] = default_colour_tuple_for_type(field_type)
         return field_class(**data)
 
 
@@ -112,16 +144,16 @@ class RadioGrid(Field):
 
     def __post_init__(self):
         super().__post_init__()
-        self.colour = (100, 150, 0)
         if not self.grid_id:
             self.grid_id = str(uuid.uuid4())
 
-    def expand_to_radio_groups(self) -> list[RadioGroup]:
+    def expand_to_radio_groups(self) -> list["RadioGroup"]:
         from util.radio_grid_layout import expand_radio_grid
 
         return expand_radio_grid(self)
 
     def to_dict(self):
+        _apply_canonical_colour(self)
         data = {
             "_type": self.__class__.__name__,
             "grid_id": self.grid_id,
@@ -145,6 +177,10 @@ class RadioGrid(Field):
         d = dict(data)
         d.pop("_type", None)
         d.pop("_", None)
+        d.pop("colour", None)
+        from field_factory import default_colour_tuple_for_type
+
+        d["colour"] = default_colour_tuple_for_type("RadioGrid")
         return RadioGrid(**d)
 
 
@@ -152,16 +188,10 @@ class RadioGrid(Field):
 class Tickbox(Field):
     checked_value: str = "Ticked"
 
-    def __post_init__(self):
-        super().__post_init__()
-
 
 @dataclass
 class RadioButton(Tickbox):
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.colour = (100, 150, 0)
+    pass
 
 
 @dataclass
@@ -171,7 +201,6 @@ class RadioGroup(Field):
     def __post_init__(self):
         super().__post_init__()
         self.radio_buttons = self.radio_buttons or []
-        self.colour = (100, 150, 0)
 
     def add_radio_button(self, radio_button: RadioButton):
         self.radio_buttons.append(radio_button)
@@ -181,6 +210,7 @@ class RadioGroup(Field):
 
     def to_dict(self):
         """Convert RadioGroup to dictionary with properly serialized radio buttons."""
+        _apply_canonical_colour(self)
         data = {
             "_type": self.__class__.__name__,
             "colour": self.colour,
@@ -197,80 +227,47 @@ class RadioGroup(Field):
 
 @dataclass
 class NumericRadioGroup(RadioGroup):
-    def __post_init__(self):
-        super().__post_init__()
-        self.colour = (0, 150, 150)
-        self.radio_buttons = self.radio_buttons or []
-
-    def add_radio_button(self, radio_button: RadioButton):
-        self.radio_buttons.append(radio_button)
-
-    def remove_radio_button(self, radio_button: RadioButton):
-        self.radio_buttons.remove(radio_button)
-
-    def to_dict(self):
-        """Convert NumericRadioGroup to dictionary with properly serialized radio buttons."""
-        data = super().to_dict()
-        return data
+    pass
 
 
 @dataclass
 class TextField(Field):
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.colour = (0, 150, 150)
+    pass
 
 
 @dataclass
 class IntegerField(TextField):
-    def __post_init__(self):
-        super().__post_init__()
-        self.colour = (0, 150, 150)
+    pass
 
 
 @dataclass
 class DecimalField(TextField):
-    def __post_init__(self):
-        super().__post_init__()
-        self.colour = (0, 150, 150)
+    pass
 
 
 @dataclass
 class DateField(TextField):
-    def __post_init__(self):
-        super().__post_init__()
-        self.colour = (0, 150, 150)
+    pass
 
 
 @dataclass
 class EmailField(TextField):
-    def __post_init__(self):
-        super().__post_init__()
-        self.colour = (0, 150, 150)
+    pass
 
 
 @dataclass
 class IrishMobileField(TextField):
-    def __post_init__(self):
-        super().__post_init__()
-        self.colour = (0, 150, 150)
+    pass
 
 
 @dataclass
 class EircodeField(TextField):
-    def __post_init__(self):
-        super().__post_init__()
-        self.colour = (0, 150, 150)
+    pass
 
 
 @dataclass
 class SignatureField(Tickbox):
     checked_value: str = "Signed"
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.colour = (0, 150, 150)
 
 
 FIELD_TYPE_MAP = {

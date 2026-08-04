@@ -16,7 +16,7 @@ from PIL import Image
 import numpy as np
 from datetime import datetime
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, DateField, IntegerField, DecimalField, IrishMobileField, EircodeField
-from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP, INVALID_COLOUR
+from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP, get_field_display_color, INVALID_COLOUR
 import logging
 
 logger = logging.getLogger(__name__)
@@ -201,19 +201,8 @@ class IndexDetailPanel(QWidget):
         self.field_comments = {}
 
     def _get_field_color(self, field: Field) -> QColor:
-        """Resolve display colour for a field from FIELD_TYPE_MAP (matches main image panel)."""
-        for field_class, color, _validator in FACTORY_FIELD_TYPE_MAP.values():
-            if type(field) is field_class:
-                return color
-        colour_attr = getattr(field, "colour", None)
-        if isinstance(colour_attr, QColor):
-            return colour_attr
-        if isinstance(colour_attr, tuple) and len(colour_attr) == 3:
-            try:
-                return QColor(*colour_attr)
-            except TypeError:
-                pass
-        return QColor(0, 255, 0)
+        """Resolve display colour for a field from field_factory (matches main image panel)."""
+        return get_field_display_color(field)
 
     def _get_validator_for_field(self, field: Field):
         """Look up the appropriate Validator instance for a given field."""

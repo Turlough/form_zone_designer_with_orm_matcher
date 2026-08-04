@@ -3,7 +3,7 @@ from PyQt6.QtCore import Qt, QRect
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QFont, QFontMetrics
 
 from fields import Field, RadioGroup, RadioButton, Tickbox, TextField, IntegerField, DecimalField
-from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP, INVALID_COLOUR
+from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP, get_field_display_color, INVALID_COLOUR
 from .index_details_panel import _format_number_for_display
 
 
@@ -41,32 +41,7 @@ class MainImageIndexPanel(QLabel):
         self.on_field_click = None
 
     def _get_field_color(self, field: Field) -> QColor:
-        """
-        Resolve the display colour for a field using FIELD_TYPE_MAP from field_factory.
-
-        This deliberately ignores any colour stored in the JSON and instead
-        maps by concrete field class so that Indexer colours follow Designer.
-        """
-        # Prefer the shared FIELD_TYPE_MAP definition from field_factory.
-        # Match on the *exact* concrete class, not subclasses, so that
-        # specialised types (e.g. NumericRadioGroup) don't get treated
-        # as their parent type by accident.
-        for field_class, color, _validator in FACTORY_FIELD_TYPE_MAP.values():
-            if type(field) is field_class:
-                return color
-
-        # Fallbacks: honour an existing colour attribute if present
-        colour_attr = getattr(field, "colour", None)
-        if isinstance(colour_attr, QColor):
-            return colour_attr
-        if isinstance(colour_attr, tuple) and len(colour_attr) == 3:
-            try:
-                return QColor(*colour_attr)
-            except TypeError:
-                pass
-
-        # Ultimate fallback – a generic green
-        return QColor(0, 255, 0)
+        return get_field_display_color(field)
 
     def _get_validator_for_field(self, field: Field):
         """

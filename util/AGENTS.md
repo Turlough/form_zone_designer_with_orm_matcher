@@ -8,6 +8,7 @@ Non-UI services: ORM logo matching, document loading, persistence, CSV/index I/O
 
 - Modules under `util/`; package exports in `util/__init__.py` define the primary import surface for apps
 - Field-type definitions and factories live at repo root (`fields.py`, `field_factory.py`, `page.py`), not here
+- `field_factory.FIELD_TYPE_MAP` is the single source for field overlay colours (Designer + Indexer) and JSON `colour` on load/save; stored JSON colours are ignored/overwritten on read
 
 ## Local Contracts
 

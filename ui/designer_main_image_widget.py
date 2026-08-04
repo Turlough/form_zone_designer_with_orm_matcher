@@ -4,6 +4,7 @@ from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QBrush, QFont, QFontMet
 
 from PyQt6.QtWidgets import QDialog
 from fields import Field, RadioGroup, RadioButton, RadioGrid, Tickbox, TextField, NumericRadioGroup
+from field_factory import get_field_display_color
 from util.field_metadata import display_label
 from util.radio_grid_layout import expand_fields_for_display
 from util.field_geometry_edit import (
@@ -282,8 +283,7 @@ class ImageDisplayWidget(QLabel):
             if draw_fields:
                 for field in draw_fields:
                     if isinstance(field, Field):
-                        # Get color from field object
-                        color = QColor(*field.colour)
+                        color = get_field_display_color(field)
                         pen = QPen(color, 1)  # 1px width as requested
                         painter.setPen(pen)
                         
@@ -310,7 +310,7 @@ class ImageDisplayWidget(QLabel):
                         # If this is a RadioGroup, also draw its RadioButtons
                         if isinstance(field, RadioGroup) or isinstance(field, NumericRadioGroup):
                             for radio_button in field.radio_buttons:
-                                rb_color = QColor(*radio_button.colour)
+                                rb_color = get_field_display_color(radio_button)
                                 rb_pen = QPen(rb_color, 1)
                                 painter.setPen(rb_pen)
                                 
@@ -344,7 +344,7 @@ class ImageDisplayWidget(QLabel):
                             int(field.width * self.scale_x),
                             int(field.height * self.scale_y),
                         )
-                        pen = QPen(QColor(180, 100, 255), 2)
+                        pen = QPen(get_field_display_color(field), 2)
                         pen.setStyle(Qt.PenStyle.DashLine)
                         painter.setPen(pen)
                         painter.drawRect(scaled_rect)

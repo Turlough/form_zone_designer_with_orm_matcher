@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from fields import FIELD_TYPE_MAP
+from field_factory import default_colour_tuple_for_type
 from util.field_metadata import upgrade_field_dict, strip_analysis_keys, ANALYSIS_ONLY_KEYS
 
 
@@ -75,31 +76,12 @@ def _normalise_field_type(field_dict: dict) -> dict:
     return field_dict
 
 
-def _default_colour_for_type(type_name: str) -> tuple[int, int, int]:
-    colours = {
-        "Tickbox": (255, 0, 0),
-        "SignatureField": (0, 150, 150),
-        "RadioButton": (100, 150, 0),
-        "RadioGroup": (100, 150, 0),
-        "NumericRadioGroup": (0, 150, 150),
-        "TextField": (0, 150, 150),
-        "IntegerField": (0, 100, 200),
-        "DecimalField": (0, 100, 200),
-        "DateField": (0, 100, 250),
-        "EmailField": (0, 150, 150),
-        "IrishMobileField": (0, 150, 150),
-        "EircodeField": (0, 150, 150),
-    }
-    return colours.get(type_name, (255, 0, 0))
-
-
 def prepare_field_for_persistence(field_dict: dict) -> dict:
     """Strip analysis keys, upgrade metadata, ensure colour and geometry ints."""
     d = _normalise_field_type(dict(field_dict))
     d = upgrade_field_dict(d)
     type_name = d["_type"]
-    if "colour" not in d:
-        d["colour"] = list(_default_colour_for_type(type_name))
+    d["colour"] = list(default_colour_tuple_for_type(type_name))
     for key in ("x", "y", "width", "height"):
         if key in d and d[key] is not None:
             try:

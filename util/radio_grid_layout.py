@@ -37,6 +37,8 @@ def cell_rects_for_grid(grid: RadioGrid) -> list[list[tuple[int, int, int, int]]
 
 def expand_radio_grid(grid: RadioGrid) -> list[RadioGroup]:
     """Materialize a RadioGrid into RadioGroup fields for Indexer/Exporter."""
+    from field_factory import default_colour_tuple_for_type
+
     rows = list(grid.row_labels)
     cols = list(grid.col_labels)
     cells = cell_rects_for_grid(grid)
@@ -44,6 +46,8 @@ def expand_radio_grid(grid: RadioGrid) -> list[RadioGroup]:
         return []
     if len(cells) != len(rows) or len(cells[0]) != len(cols):
         return []
+    radio_colour = default_colour_tuple_for_type("RadioButton")
+    group_colour = default_colour_tuple_for_type("RadioGroup")
     groups: list[RadioGroup] = []
     if grid.orientation == "vertical":
         for j, col_name in enumerate(cols):
@@ -51,12 +55,12 @@ def expand_radio_grid(grid: RadioGrid) -> list[RadioGroup]:
             for i, row_name in enumerate(rows):
                 x, y, w, h = cells[i][j]
                 buttons.append(
-                    RadioButton(colour=(100, 150, 0), name=row_name, x=x, y=y, width=w, height=h)
+                    RadioButton(colour=radio_colour, name=row_name, x=x, y=y, width=w, height=h)
                 )
             col_height = sum(cells[k][j][3] for k in range(len(rows)))
             groups.append(
                 RadioGroup(
-                    colour=(100, 150, 0),
+                    colour=group_colour,
                     name=col_name,
                     x=cells[0][j][0],
                     y=cells[0][j][1],
@@ -71,11 +75,11 @@ def expand_radio_grid(grid: RadioGrid) -> list[RadioGroup]:
             for j, col_name in enumerate(cols):
                 x, y, w, h = cells[i][j]
                 buttons.append(
-                    RadioButton(colour=(100, 150, 0), name=col_name, x=x, y=y, width=w, height=h)
+                    RadioButton(colour=radio_colour, name=col_name, x=x, y=y, width=w, height=h)
                 )
             groups.append(
                 RadioGroup(
-                    colour=(100, 150, 0),
+                    colour=group_colour,
                     name=row_name,
                     x=cells[i][0][0],
                     y=cells[i][0][1],

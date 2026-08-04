@@ -53,6 +53,7 @@ from ui import (
     DesignerRectangleDetectDialog,
 )
 from fields import Field, Tickbox, RadioButton, RadioGroup, RadioGrid, TextField, FIELD_TYPE_MAP
+from field_factory import default_colour_tuple_for_type
 import json
 
 logging.basicConfig(level=logging.INFO)
@@ -854,8 +855,6 @@ class Designer(QMainWindow):
                 self.selected_field_obj in field_at_index.radio_buttons):
             rb = self.selected_field_obj
             rb.name = config.get("field_name", rb.name)
-            if "colour" in config:
-                rb.colour = config["colour"]
             # Persist and refresh
             if self.config:
                 save_page_fields(
@@ -878,7 +877,7 @@ class Designer(QMainWindow):
         
         # Create a new field of the correct type, preserving position and dimensions
         field_kwargs = {
-            "colour": old_field.colour,
+            "colour": default_colour_tuple_for_type(field_type),
             "name": field_name,
             "x": old_field.x,
             "y": old_field.y,
@@ -998,8 +997,7 @@ class Designer(QMainWindow):
             kwargs = {"name": field_name, "x": int(x_rel), "y": int(y_rel), "width": int(w), "height": int(h)}
             if field_class == RadioGroup:
                 kwargs["radio_buttons"] = []
-            colour_by_type = {Tickbox: (255, 0, 0), RadioButton: (100, 150, 0), RadioGroup: (100, 150, 0), TextField: (0, 150, 150)}
-            kwargs["colour"] = colour_by_type.get(field_class, (255, 0, 0))
+            kwargs["colour"] = default_colour_tuple_for_type(field_type)
             new_field = field_class(**kwargs)
             self.page_detected_rects[self.current_page_idx].pop(rect_index)
             self.page_field_list[self.current_page_idx].append(new_field)
@@ -1079,10 +1077,12 @@ class Designer(QMainWindow):
                 inner_names = config.get("inner_names", [])
                 while len(inner_names) < inner_count:
                     inner_names.append(f"Option {len(inner_names) + 1}")
+                radio_colour = default_colour_tuple_for_type("RadioButton")
+                group_colour = default_colour_tuple_for_type("RadioGroup")
                 radio_buttons = []
                 for i, (rx, ry, rw, rh, _) in enumerate(combined_inner):
                     name = inner_names[i] if i < len(inner_names) else f"Option {i + 1}"
-                    rb = RadioButton(name=name, x=rx, y=ry, width=rw, height=rh, colour=(100, 150, 0))
+                    rb = RadioButton(name=name, x=rx, y=ry, width=rw, height=rh, colour=radio_colour)
                     radio_buttons.append(rb)
                 # Remove converted fields from page_field_list first (reverse order to preserve indices)
                 for j in reversed(field_indices_to_remove):
@@ -1091,7 +1091,7 @@ class Designer(QMainWindow):
                     name=field_name,
                     x=left_rel, y=top_rel, width=w, height=h,
                     radio_buttons=radio_buttons,
-                    colour=(100, 150, 100)
+                    colour=group_colour
                 )
                 self.page_field_list[self.current_page_idx].append(rg)
                 # Remove inner rects from detected_rects (match by position)
@@ -1109,7 +1109,14 @@ class Designer(QMainWindow):
                 self.image_display.detected_rects = self.page_detected_rects[self.current_page_idx]
             else:
                 field_class = FIELD_TYPE_MAP.get(field_type, Tickbox)
-                kwargs = {"name": field_name, "x": left_rel, "y": top_rel, "width": w, "height": h, "colour": (255, 0, 0)}
+                kwargs = {
+                    "name": field_name,
+                    "x": left_rel,
+                    "y": top_rel,
+                    "width": w,
+                    "height": h,
+                    "colour": default_colour_tuple_for_type(field_type),
+                }
                 if field_class == RadioGroup:
                     kwargs["radio_buttons"] = []
                 new_field = field_class(**kwargs)

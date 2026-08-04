@@ -28,6 +28,7 @@ from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal, QSize, QTimer
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QBrush, QMouseEvent, QShowEvent, QKeyEvent
 
 from fields import RadioGrid
+from field_factory import default_colour_tuple_for_type
 from util.field_geometry_edit import hit_resize_handle, HANDLE_HIT_PX
 
 logger = logging.getLogger(__name__)
@@ -853,7 +854,7 @@ class GridDesigner(QMainWindow):
         if not grid_name:
             grid_name = rows[0] if rows else "Grid"
         grid = RadioGrid(
-            colour=(100, 150, 0),
+            colour=default_colour_tuple_for_type("RadioGrid"),
             name=grid_name,
             x=int(gx),
             y=int(gy),
