@@ -7,6 +7,7 @@ and vertical orientation (column = RadioGroup, rows = RadioButton names).
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
 
 from PyQt6.QtWidgets import (
@@ -35,6 +36,12 @@ LABEL_MAX_LENGTH = 50
 MIN_GRID_WIDTH_PX = 20
 MIN_GRID_HEIGHT_PX = 20
 ADD_LABEL_SHORTCUT_TTIP = "Press Enter or Tab in a label field to add another"
+
+
+def question_number_prefix_from_name(name: str) -> str | None:
+    """Leading numeric prefix from grid name: 1, 1.2, 1.2.3, …"""
+    match = re.match(r"^(\d+(?:\.\d+)*)", name.lstrip())
+    return match.group(1) if match else None
 
 
 class GridLabelLineEdit(QLineEdit):
@@ -695,8 +702,7 @@ class GridDesigner(QMainWindow):
         e = GridLabelLineEdit()
         e.setPlaceholderText("Row label")
         e.setMaxLength(LABEL_MAX_LENGTH)
-        if text:
-            e.setText(text)
+        e.setText(text)
         e.textChanged.connect(self._sync_grid_shape)
         e.returnPressed.connect(self._on_row_edit_enter)
         e.add_next.connect(self._on_row_edit_enter)
@@ -707,33 +713,60 @@ class GridDesigner(QMainWindow):
         e = GridLabelLineEdit()
         e.setPlaceholderText("Column label")
         e.setMaxLength(LABEL_MAX_LENGTH)
-        if text:
-            e.setText(text)
+        e.setText(text)
         e.textChanged.connect(self._sync_grid_shape)
         e.returnPressed.connect(self._on_col_edit_enter)
         e.add_next.connect(self._on_col_edit_enter)
         self.col_edits.append(e)
         self.col_container.addWidget(e)
 
-    def _add_row_edit(self, *, focus: bool = False):
-        self._append_row_edit()
-        self._sync_grid_shape()
-        if focus:
-            self.row_edits[-1].setFocus()
+    def _question_number_prefix(self) -> str | None:
+        return question_number_prefix_from_name(self.grid_name_edit.text())
 
-    def _add_col_edit(self, *, focus: bool = False):
-        self._append_col_edit()
+    def _prefill_for_new_question(self) -> str:
+        prefix = self._question_number_prefix()
+        return f"{prefix} " if prefix else ""
+
+    @staticmethod
+    def _focus_label_edit(edit: QLineEdit | None) -> None:
+        if edit is None:
+            return
+        edit.setFocus()
+        edit.setCursorPosition(len(edit.text()))
+
+    def _add_row_edit(self, *, focus: bool = False, prefill: str | None = None):
+        if prefill is None and not self._orientation_is_vertical():
+            prefill = self._prefill_for_new_question()
+        elif prefill is None:
+            prefill = ""
+        self._append_row_edit(prefill)
         self._sync_grid_shape()
         if focus:
-            self.col_edits[-1].setFocus()
+            self._focus_label_edit(self.row_edits[-1])
+
+    def _add_col_edit(self, *, focus: bool = False, prefill: str | None = None):
+        if prefill is None and self._orientation_is_vertical():
+            prefill = self._prefill_for_new_question()
+        elif prefill is None:
+            prefill = ""
+        self._append_col_edit(prefill)
+        self._sync_grid_shape()
+        if focus:
+            self._focus_label_edit(self.col_edits[-1])
 
     def _on_row_edit_enter(self):
         self._add_row_edit(focus=True)
-        QTimer.singleShot(0, lambda: self.row_edits[-1].setFocus() if self.row_edits else None)
+        QTimer.singleShot(
+            0,
+            lambda: self._focus_label_edit(self.row_edits[-1] if self.row_edits else None),
+        )
 
     def _on_col_edit_enter(self):
         self._add_col_edit(focus=True)
-        QTimer.singleShot(0, lambda: self.col_edits[-1].setFocus() if self.col_edits else None)
+        QTimer.singleShot(
+            0,
+            lambda: self._focus_label_edit(self.col_edits[-1] if self.col_edits else None),
+        )
 
     def _orientation_is_vertical(self) -> bool:
         return self.orient_vertical_rb.isChecked()

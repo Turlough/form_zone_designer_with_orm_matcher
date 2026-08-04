@@ -67,6 +67,16 @@ def test_expand_fields_for_runtime_mixed_page():
     assert all(isinstance(f, RadioGroup) for f in expanded[1:])
 
 
+def test_question_number_prefix_from_name():
+    from ui.grid_designer import question_number_prefix_from_name
+
+    assert question_number_prefix_from_name("1 Section") == "1"
+    assert question_number_prefix_from_name("1.2 Likert") == "1.2"
+    assert question_number_prefix_from_name("  1.2.3 Grid") == "1.2.3"
+    assert question_number_prefix_from_name("Likert") is None
+    assert question_number_prefix_from_name("A1") is None
+
+
 def test_page_json_list_contains_radio_grid():
     grid = _sample_grid()
     payload = [grid.to_dict()]
