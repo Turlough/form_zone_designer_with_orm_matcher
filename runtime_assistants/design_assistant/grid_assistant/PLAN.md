@@ -27,7 +27,7 @@ Add a Grid Designer **Assistant** button that, given a drawn grid ROI, user-sele
 | Column labels | Good, Average, Poor | full question text as the one column |
 | Row labels | five sub-questions (no Q# prefix) | answer options (Under 35, …) |
 
-Samples live in `grid_assistant/samples/` (`Three-column grid.png` + `.md`, `Single column grid.png` + `.md`). Each `.md` is the expected Assistant / Grid Designer intent for its image.
+Samples live in `grid_assistant/samples/` (`Three-column grid.png` + `.md`, `Single column grid.png` + `.md`, `framed three column grid.png` + `.md`). Each `.md` is the expected Assistant / Grid Designer intent for its image; the framed sample defines tight checkbox-only `grid_rect` framing.
 
 ## Architecture
 

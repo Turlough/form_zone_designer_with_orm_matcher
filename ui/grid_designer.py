@@ -957,19 +957,29 @@ class GridDesigner(QMainWindow):
         if not self.col_edits:
             self._append_col_edit("Column 1")
 
+        framed = getattr(result, "grid_rect_fiducial", None)
+        if framed is not None:
+            self.page_widget.grid_rect = tuple(int(v) for v in framed)
+
         self.page_widget.apply_grid_layout(
             result.n_rows,
             result.n_cols,
             row_fracs=result.row_fracs,
             col_fracs=result.col_fracs,
         )
+        self.page_widget.grid_rect_changed.emit()
         self._update_remove_buttons()
+        QTimer.singleShot(0, self._scroll_to_grid_rect)
 
         msgs = []
         if result.warnings:
             msgs.extend(result.warnings)
         n = getattr(result, "rects_in_roi_count", 0)
-        msgs.insert(0, f"Assistant filled {result.n_rows}×{result.n_cols} from {n} rectangles.")
+        msgs.insert(
+            0,
+            f"Assistant filled {result.n_rows}×{result.n_cols} from {n} rectangles "
+            "(grid framed to answer boxes).",
+        )
         self.statusBar().showMessage(" ".join(msgs), 12000)
 
     def _scroll_to_grid_rect(self):

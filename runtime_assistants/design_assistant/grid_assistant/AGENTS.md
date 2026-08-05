@@ -23,8 +23,9 @@ Fill Grid Designer metadata and row/column labels from a drawn ROI crop plus Ope
 
 ### Outputs
 
-- `AnalyseGridResult`: `question_number`, `summary`/`name`, `full_text`, `row_labels`, `col_labels`, `n_rows`/`n_cols`, `row_fracs`/`col_fracs`, `warnings`
+- `AnalyseGridResult`: `question_number`, `summary`/`name`, `full_text`, `row_labels`, `col_labels`, `n_rows`/`n_cols`, `row_fracs`/`col_fracs`, `grid_rect_fiducial`, `warnings`
 - Autofill overwrites Grid Designer fields on success
+- After analysis, **shrink** `grid_rect` to tightly frame answer boxes (stem/headings excluded); outer margins match each outer button’s inner gap to the first/last split — see `samples/framed three column grid.md`
 - Cluster counts win over VLM label counts (pad/truncate with warnings)
 - `question_number` never appears in answer / `RadioButton` labels
 
@@ -47,7 +48,7 @@ Fill Grid Designer metadata and row/column labels from a drawn ROI crop plus Ope
 
 ## Work Guidance
 
-- Hybrid: local CV for shape/splits; VLM for text
+- Hybrid: local CV for shape/splits/tight frame; VLM for text (may use a larger analysis ROI than the stored grid)
 - Advise (tooltip) that ROI should include question + labels; do not require OpenCV boxes around text
 - Warn when orientation toggle disagrees with clustered layout or VLM `orientation_observed`
 

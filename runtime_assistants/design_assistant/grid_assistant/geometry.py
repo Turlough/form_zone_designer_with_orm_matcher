@@ -15,6 +15,8 @@ class ClusterResult:
     row_fracs: list[float]
     col_fracs: list[float]
     rects_in_roi: list[Rect] = field(default_factory=list)
+    # Page-absolute grid rect tightly framing answer boxes (may shrink user ROI).
+    framed_rect_page: Rect | None = None
     orientation_hint: str | None = None  # "horizontal" | "vertical" | None
     warnings: list[str] = field(default_factory=list)
 
@@ -132,13 +134,161 @@ def _count_clusters(values: list[float], typical_size: float) -> int:
     return len(_cluster_1d(values, min_gap=gap))
 
 
+def _assign_to_bins(values: list[float], n: int, typical_size: float) -> list[int]:
+    """Assign each value to bin 0..n-1 by clustering then nearest mean."""
+    if n <= 1 or not values:
+        return [0] * len(values)
+    gap = max(typical_size * 0.6, 4.0)
+    clusters = _cluster_1d(values, min_gap=gap)
+    means = sorted(sum(c) / len(c) for c in clusters)
+    if len(means) != n:
+        ordered = sorted(values)
+        means = []
+        for i in range(n):
+            lo = int(round(i * len(ordered) / n))
+            hi = int(round((i + 1) * len(ordered) / n))
+            chunk = ordered[lo:hi] or [ordered[min(lo, len(ordered) - 1)]]
+            means.append(sum(chunk) / len(chunk))
+        means = sorted(means)
+    out: list[int] = []
+    for v in values:
+        best_i = min(range(len(means)), key=lambda i: abs(means[i] - v))
+        out.append(min(best_i, n - 1))
+    return out
+
+
+def frame_answer_rects(
+    rects: Sequence[Rect],
+    n_rows: int,
+    n_cols: int,
+) -> tuple[Rect, list[float], list[float]]:
+    """Shrink-wrap a grid rect around answer boxes with balanced cell margins.
+
+    Outer top/bottom (and left/right) margins match the gap from each outer
+    button to the adjacent internal split, so each radio is centred in its cell.
+    See ``samples/framed three column grid.md``.
+    """
+    rects = [tuple(int(v) for v in r) for r in rects]  # type: ignore[misc]
+    n_rows = max(1, n_rows)
+    n_cols = max(1, n_cols)
+    if not rects:
+        return (0, 0, 10, 10), [], []
+
+    widths = [r[2] for r in rects]
+    heights = [r[3] for r in rects]
+    med_w = float(sorted(widths)[len(widths) // 2])
+    med_h = float(sorted(heights)[len(heights) // 2])
+    xs = [_center(r)[0] for r in rects]
+    ys = [_center(r)[1] for r in rects]
+    row_ids = _assign_to_bins(ys, n_rows, med_h)
+    col_ids = _assign_to_bins(xs, n_cols, med_w)
+
+    row_tops = [0.0] * n_rows
+    row_bottoms = [0.0] * n_rows
+    row_counts = [0] * n_rows
+    for r, rid in zip(rects, row_ids):
+        x, y, w, h = r
+        if row_counts[rid] == 0:
+            row_tops[rid] = float(y)
+            row_bottoms[rid] = float(y + h)
+        else:
+            row_tops[rid] = min(row_tops[rid], float(y))
+            row_bottoms[rid] = max(row_bottoms[rid], float(y + h))
+        row_counts[rid] += 1
+
+    col_lefts = [0.0] * n_cols
+    col_rights = [0.0] * n_cols
+    col_counts = [0] * n_cols
+    for r, cid in zip(rects, col_ids):
+        x, y, w, h = r
+        if col_counts[cid] == 0:
+            col_lefts[cid] = float(x)
+            col_rights[cid] = float(x + w)
+        else:
+            col_lefts[cid] = min(col_lefts[cid], float(x))
+            col_rights[cid] = max(col_rights[cid], float(x + w))
+        col_counts[cid] += 1
+
+    # Fill empty bins from neighbours / union
+    for i in range(n_rows):
+        if row_counts[i] == 0:
+            row_tops[i] = min(r[1] for r in rects)
+            row_bottoms[i] = max(r[1] + r[3] for r in rects)
+    for j in range(n_cols):
+        if col_counts[j] == 0:
+            col_lefts[j] = min(r[0] for r in rects)
+            col_rights[j] = max(r[0] + r[2] for r in rects)
+
+    # Internal splits at midpoints between adjacent bands
+    y_splits: list[float] = []
+    for i in range(n_rows - 1):
+        y_splits.append((row_bottoms[i] + row_tops[i + 1]) / 2.0)
+    x_splits: list[float] = []
+    for j in range(n_cols - 1):
+        x_splits.append((col_rights[j] + col_lefts[j + 1]) / 2.0)
+
+    # Outer margins mirror inner margin of the outer cells
+    if n_rows >= 2:
+        margin_top = max(1.0, y_splits[0] - row_bottoms[0])
+        margin_bottom = max(1.0, row_tops[-1] - y_splits[-1])
+    else:
+        margin_top = margin_bottom = max(2.0, med_h * 0.35)
+    if n_cols >= 2:
+        margin_left = max(1.0, x_splits[0] - col_rights[0])
+        margin_right = max(1.0, col_lefts[-1] - x_splits[-1])
+    else:
+        margin_left = margin_right = max(2.0, med_w * 0.35)
+
+    # If only one axis has splits, reuse that margin on the other for balance
+    if n_rows >= 2 and n_cols == 1:
+        m = (margin_top + margin_bottom) / 2.0
+        margin_left = margin_right = max(margin_left, m)
+    if n_cols >= 2 and n_rows == 1:
+        m = (margin_left + margin_right) / 2.0
+        margin_top = margin_bottom = max(margin_top, m)
+
+    grid_top = row_tops[0] - margin_top
+    grid_bottom = row_bottoms[-1] + margin_bottom
+    grid_left = col_lefts[0] - margin_left
+    grid_right = col_rights[-1] + margin_right
+
+    gx = int(round(grid_left))
+    gy = int(round(grid_top))
+    gw = max(1, int(round(grid_right - grid_left)))
+    gh = max(1, int(round(grid_bottom - grid_top)))
+    framed = (gx, gy, gw, gh)
+
+    row_fracs = [
+        min(max((s - grid_top) / gh, 0.05), 0.95) for s in y_splits
+    ] if gh > 0 else []
+    col_fracs = [
+        min(max((s - grid_left) / gw, 0.05), 0.95) for s in x_splits
+    ] if gw > 0 else []
+
+    # Enforce strictly increasing fracs
+    def _clean(fracs: list[float]) -> list[float]:
+        cleaned: list[float] = []
+        for i, f in enumerate(fracs):
+            lo = (cleaned[-1] + 0.02) if cleaned else 0.02
+            hi = 0.98 - 0.02 * (len(fracs) - 1 - i)
+            cleaned.append(min(max(f, lo), hi))
+        return cleaned
+
+    return framed, _clean(row_fracs), _clean(col_fracs)
+
+
 def cluster_grid_rects(
     rects_in_roi: Sequence[Rect],
     roi_page: Rect,
     *,
     user_orientation: str,
 ) -> ClusterResult:
-    """Infer n_rows, n_cols, and split fractions from answer rectangles."""
+    """Infer n_rows, n_cols, tight frame, and split fractions from answer rectangles.
+
+    ``roi_page`` is the user analysis ROI (may include stem/headings); the returned
+    ``framed_rect_page`` hugs answer boxes only.
+    """
+    del roi_page  # analysis ROI; framing uses answer rects only
     warnings: list[str] = []
     rects = [tuple(int(v) for v in r) for r in rects_in_roi]  # type: ignore[misc]
     if len(rects) < 2:
@@ -151,7 +301,6 @@ def cluster_grid_rects(
             warnings=["Need at least two answer rectangles inside the grid ROI."],
         )
 
-    rx, ry, rw, rh = roi_page
     xs = [_center(r)[0] for r in rects]
     ys = [_center(r)[1] for r in rects]
     widths = [r[2] for r in rects]
@@ -184,8 +333,7 @@ def cluster_grid_rects(
                 )
             n_rows, n_cols = best
 
-    col_fracs = _fracs_from_centers(xs, float(rx), float(rw), n_cols)
-    row_fracs = _fracs_from_centers(ys, float(ry), float(rh), n_rows)
+    framed, row_fracs, col_fracs = frame_answer_rects(rects, n_rows, n_cols)
 
     # Orientation hint from aspect of the checkbox matrix
     orientation_hint: str | None = None
@@ -216,6 +364,7 @@ def cluster_grid_rects(
         row_fracs=row_fracs,
         col_fracs=col_fracs,
         rects_in_roi=rects,
+        framed_rect_page=framed,
         orientation_hint=orientation_hint,
         warnings=warnings,
     )

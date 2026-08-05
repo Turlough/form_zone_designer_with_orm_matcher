@@ -5,6 +5,7 @@ from runtime_assistants.design_assistant.grid_assistant.geometry import (
     cluster_grid_rects,
     fiducial_rect_to_page,
     filter_rects_in_roi,
+    frame_answer_rects,
     page_rect_to_fiducial,
 )
 from runtime_assistants.design_assistant.grid_assistant.schema import (
@@ -36,6 +37,15 @@ def test_cluster_single_column():
     assert result.n_cols == 1
     assert len(result.row_fracs) == 4
     assert result.col_fracs == []
+    assert result.framed_rect_page is not None
+    fx, fy, fw, fh = result.framed_rect_page
+    # Tight frame: top below stem-sized ROI (fy >> 0), bottom above ROI end
+    assert fy > 0
+    assert fy + fh < 200
+    first_top = rects[0][1]
+    last_bottom = rects[-1][1] + rects[-1][3]
+    assert fy < first_top
+    assert fy + fh > last_bottom
 
 
 def test_cluster_matrix_5x3():
@@ -49,6 +59,27 @@ def test_cluster_matrix_5x3():
     assert result.n_cols == 3
     assert len(result.row_fracs) == 4
     assert len(result.col_fracs) == 2
+    assert result.framed_rect_page is not None
+
+
+def test_frame_excludes_stem_area():
+    """Tall ROI with stem above boxes; frame hugs checkboxes only."""
+    # Stem-like empty space y=0..80; boxes start at y=100
+    rects = [(50, 100 + i * 40, 16, 16) for i in range(4)]
+    framed, row_fracs, col_fracs = frame_answer_rects(rects, n_rows=4, n_cols=1)
+    fx, fy, fw, fh = framed
+    assert fy >= 80  # does not extend into stem band
+    assert fy < 100
+    assert fy + fh > 100 + 3 * 40 + 16
+    assert len(row_fracs) == 3
+    assert col_fracs == []
+    # First cell: margin above first box ≈ margin below it to first split
+    first_top = 100
+    first_bottom = 116
+    split0_y = fy + row_fracs[0] * fh
+    margin_above = first_top - fy
+    margin_below = split0_y - first_bottom
+    assert abs(margin_above - margin_below) <= 2.0
 
 
 def test_orientation_warning_mismatch():

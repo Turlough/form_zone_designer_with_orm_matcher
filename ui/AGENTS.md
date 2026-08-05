@@ -17,7 +17,7 @@ PyQt6 widgets, panels, dialogs, and layouts shared by Designer, Indexer, and rel
 - Drawn-rect Field Editor submit with type `RadioGrid`: clear the main-image selection, then open Grid Designer pre-seeded with that rect/name (grid is added only when Grid Designer submits)
 - Grid Designer scrolls its page viewport to center the grid rectangle when opened with a pre-seeded/existing grid
 - Grid Designer metadata: `question_number`, name/summary, `full_text`; row/col labels are not capped at 50 characters (overlay still uses summary ≤50)
-- Grid Designer **Assistant** (right of orientation toggles): requires drawn ROI + ≥2 detected answer rects in ROI; autofills/overwrites labels and metadata via `runtime_assistants/design_assistant/grid_assistant/`
+- Grid Designer **Assistant** (right of orientation toggles): requires drawn ROI + ≥2 detected answer rects in ROI; autofills/overwrites labels and metadata via `runtime_assistants/design_assistant/grid_assistant/`; shrinks `grid_rect` to tightly frame answer boxes (stem/headings excluded)
 
 - Grid Designer grid name / row / column label edits have no character max; overlay display still caps via `summary` / `display_label` (50)
 - Indexer-facing: main image panel, details panel, menus, OCR/index/comment/QC dialogs

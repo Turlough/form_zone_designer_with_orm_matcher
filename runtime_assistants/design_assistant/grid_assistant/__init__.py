@@ -19,6 +19,7 @@ from runtime_assistants.design_assistant.grid_assistant.geometry import (
     cluster_grid_rects,
     fiducial_rect_to_page,
     filter_rects_in_roi,
+    page_rect_to_fiducial,
 )
 from runtime_assistants.design_assistant.grid_assistant.schema import (
     GridAnalysisResult,
@@ -41,6 +42,8 @@ class AnalyseGridResult:
     n_cols: int = 1
     row_fracs: list[float] = field(default_factory=list)
     col_fracs: list[float] = field(default_factory=list)
+    # Fiducial-relative rect tightly framing answer boxes (stem/headings excluded).
+    grid_rect_fiducial: tuple[int, int, int, int] | None = None
     orientation_observed: str = ""
     warnings: list[str] = field(default_factory=list)
     model: str = ""
@@ -118,6 +121,11 @@ def analyse_grid(
         if not col_labels or col_labels[0].startswith("Column "):
             col_labels = [full_text]
 
+    framed_page = cluster.framed_rect_page
+    grid_rect_fiducial = (
+        page_rect_to_fiducial(framed_page, fiducial_bbox) if framed_page else None
+    )
+
     return AnalyseGridResult(
         question_number=parsed.question_number,
         summary=summary,
@@ -129,6 +137,7 @@ def analyse_grid(
         n_cols=cluster.n_cols,
         row_fracs=list(cluster.row_fracs),
         col_fracs=list(cluster.col_fracs),
+        grid_rect_fiducial=grid_rect_fiducial,
         orientation_observed=parsed.orientation_observed,
         warnings=warnings,
         model=model_name,
