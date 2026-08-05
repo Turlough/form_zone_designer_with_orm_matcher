@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fields import RadioButton, RadioGroup, RadioGrid
+from util.field_metadata import sanitize_column_title, truncate_summary
 
 
 def _split_lines(n: int, fracs: list[float]) -> list[float]:
@@ -35,6 +36,25 @@ def cell_rects_for_grid(grid: RadioGrid) -> list[list[tuple[int, int, int, int]]
     return out
 
 
+def _meta_for_group(grid: RadioGrid, label: str, *, n_groups: int) -> dict:
+    """Metadata for an expanded RadioGroup (never applied to RadioButtons)."""
+    qn = (getattr(grid, "question_number", None) or "").strip()
+    grid_full = (getattr(grid, "full_text", None) or "").strip()
+    grid_summary = (getattr(grid, "summary", None) or "").strip()
+    if n_groups == 1:
+        full_text = grid_full or label
+        summary = truncate_summary(grid_summary or label)
+    else:
+        full_text = label
+        summary = truncate_summary(label)
+    return {
+        "question_number": qn,
+        "full_text": full_text,
+        "summary": summary,
+        "column_title": sanitize_column_title(label),
+    }
+
+
 def expand_radio_grid(grid: RadioGrid) -> list[RadioGroup]:
     """Materialize a RadioGrid into RadioGroup fields for Indexer/Exporter."""
     from field_factory import default_colour_tuple_for_type
@@ -50,6 +70,7 @@ def expand_radio_grid(grid: RadioGrid) -> list[RadioGroup]:
     group_colour = default_colour_tuple_for_type("RadioGroup")
     groups: list[RadioGroup] = []
     if grid.orientation == "vertical":
+        n_groups = len(cols)
         for j, col_name in enumerate(cols):
             buttons: list[RadioButton] = []
             for i, row_name in enumerate(rows):
@@ -58,6 +79,7 @@ def expand_radio_grid(grid: RadioGrid) -> list[RadioGroup]:
                     RadioButton(colour=radio_colour, name=row_name, x=x, y=y, width=w, height=h)
                 )
             col_height = sum(cells[k][j][3] for k in range(len(rows)))
+            meta = _meta_for_group(grid, col_name, n_groups=n_groups)
             groups.append(
                 RadioGroup(
                     colour=group_colour,
@@ -67,9 +89,11 @@ def expand_radio_grid(grid: RadioGrid) -> list[RadioGroup]:
                     width=cells[0][j][2],
                     height=col_height,
                     radio_buttons=buttons,
+                    **meta,
                 )
             )
     else:
+        n_groups = len(rows)
         for i, row_name in enumerate(rows):
             buttons: list[RadioButton] = []
             for j, col_name in enumerate(cols):
@@ -77,6 +101,7 @@ def expand_radio_grid(grid: RadioGrid) -> list[RadioGroup]:
                 buttons.append(
                     RadioButton(colour=radio_colour, name=col_name, x=x, y=y, width=w, height=h)
                 )
+            meta = _meta_for_group(grid, row_name, n_groups=n_groups)
             groups.append(
                 RadioGroup(
                     colour=group_colour,
@@ -86,6 +111,7 @@ def expand_radio_grid(grid: RadioGrid) -> list[RadioGroup]:
                     width=sum(cells[i][k][2] for k in range(len(cols))),
                     height=cells[i][0][3],
                     radio_buttons=buttons,
+                    **meta,
                 )
             )
     return groups

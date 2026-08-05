@@ -501,6 +501,12 @@ class Designer(QMainWindow):
         page_pixmap = QPixmap.fromImage(q_image)
         gd = GridDesigner(self)
         gd.set_page(page_pixmap, bbox)
+        detected = (
+            self.page_detected_rects[self.current_page_idx]
+            if self.current_page_idx < len(self.page_detected_rects)
+            else []
+        )
+        gd.set_assistant_inputs(page, bbox, detected)
         if existing_grid is not None:
             self._editing_grid_index = self._index_of_grid(existing_grid)
             gd.load_grid(existing_grid)

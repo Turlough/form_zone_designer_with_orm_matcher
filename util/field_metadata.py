@@ -1,4 +1,4 @@
-"""Helpers for optional field metadata (summary, column_title, full_text).
+"""Helpers for optional field metadata (summary, column_title, full_text, question_number).
 
 Backward compatible: when new keys are absent, fall back to ``name``.
 """
@@ -53,10 +53,15 @@ def full_question_text(field: Any) -> str:
     return (getattr(field, "name", None) or "").strip()
 
 
+def question_number_of(field: Any) -> str:
+    """Question number string, if set."""
+    return (getattr(field, "question_number", None) or "").strip()
+
+
 def sanitize_column_title(text: str) -> str:
-    """Produce a CSV-safe column title from free text."""
+    """Produce a CSV-safe column title from free text (no length cap)."""
     cleaned = " ".join((text or "").strip().split())
-    return cleaned[:80] if cleaned else "field"
+    return cleaned if cleaned else "field"
 
 
 def truncate_summary(text: str, max_len: int = SUMMARY_MAX_LEN) -> str:
@@ -76,12 +81,14 @@ def upgrade_field_dict(data: dict) -> dict:
 
     Ensures ``name``, ``summary``, and ``column_title`` are consistent for
     new/analysed fields while preserving existing ``name`` when present.
+    ``question_number`` and ``full_text`` are preserved when non-empty.
     """
     d = strip_analysis_keys(dict(data))
     name = (d.get("name") or "").strip()
     summary = (d.get("summary") or "").strip()
     column_title = (d.get("column_title") or "").strip()
     full_text = (d.get("full_text") or "").strip()
+    question_number = (d.get("question_number") or "").strip()
 
     if summary:
         summary = truncate_summary(summary)
@@ -103,6 +110,10 @@ def upgrade_field_dict(data: dict) -> dict:
         d["full_text"] = full_text
     elif "full_text" in d and not full_text:
         d.pop("full_text", None)
+    if question_number:
+        d["question_number"] = question_number
+    elif "question_number" in d and not question_number:
+        d.pop("question_number", None)
 
     if "radio_buttons" in d and isinstance(d["radio_buttons"], list):
         d["radio_buttons"] = [

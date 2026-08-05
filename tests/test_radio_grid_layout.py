@@ -83,3 +83,59 @@ def test_page_json_list_contains_radio_grid():
     raw = json.dumps(payload)
     loaded = Field.from_dict(json.loads(raw)[0])
     assert isinstance(loaded, RadioGrid)
+
+
+def test_question_number_and_long_labels_round_trip():
+    long_row = "Overhead power line/electrical awareness and more detail"
+    grid = RadioGrid(
+        colour=(100, 150, 0),
+        name="Health and Safety",
+        x=0,
+        y=0,
+        width=300,
+        height=200,
+        orientation="horizontal",
+        row_labels=[long_row, "Child/visitor safety on the farmyard"],
+        col_labels=["Good", "Average", "Poor"],
+        question_number="1.7",
+        full_text="From a health and safety perspective, how would you rate the following on your farm?",
+        summary="Health and Safety",
+    )
+    data = grid.to_dict()
+    assert data["question_number"] == "1.7"
+    assert len(data["row_labels"][0]) > 50
+    restored = Field.from_dict(data)
+    assert isinstance(restored, RadioGrid)
+    assert restored.question_number == "1.7"
+    assert restored.row_labels[0] == long_row
+
+    groups = expand_radio_grid(restored)
+    assert len(groups) == 2
+    assert groups[0].question_number == "1.7"
+    assert groups[0].name == long_row
+    for rb in groups[0].radio_buttons:
+        assert not getattr(rb, "question_number", None)
+        assert rb.name in ("Good", "Average", "Poor")
+
+
+def test_expand_single_column_vertical_copies_stem_meta():
+    grid = RadioGrid(
+        colour=(100, 150, 0),
+        name="Age group",
+        x=0,
+        y=0,
+        width=100,
+        height=200,
+        orientation="vertical",
+        row_labels=["Under 35", "35 to 44", "45 to 54"],
+        col_labels=["What age group do you fall into?"],
+        question_number="1.2",
+        full_text="What age group do you fall into?",
+        summary="Age group",
+    )
+    groups = expand_radio_grid(grid)
+    assert len(groups) == 1
+    assert groups[0].question_number == "1.2"
+    assert groups[0].full_text == "What age group do you fall into?"
+    assert groups[0].summary == "Age group"
+    assert all(not (rb.question_number or "") for rb in groups[0].radio_buttons)

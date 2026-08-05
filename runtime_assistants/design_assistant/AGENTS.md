@@ -28,8 +28,9 @@ Analyse a Designer template page image and propose backward-compatible `json/N.j
 |-----|-----|-----|
 | full_text | — | Full question text |
 | summary | 50 chars | Designer overlay when Field names enabled |
-| column_title | — | CSV column header |
+| column_title | — | CSV column header (no short length cap) |
 | name | — | Legacy identifier; keep populated for Indexer/Exporter |
+| question_number | — | Printed number (e.g. `1.7`); not used on answer buttons |
 
 Read fallbacks: `summary ← name`, `column_title ← name`.
 
@@ -50,7 +51,7 @@ Read fallbacks: `summary ← name`, `column_title ← name`.
 - Hybrid remote VLM + local CV; do not trust VLM pixel boxes alone
 - Downscale upload image; one page per request; retry once on bad JSON
 - Radio groups: nested `radio_buttons` matching `Field.from_dict` shape
-- Grid opportunities: `grid_suggestions` only; creation stays in GridDesigner
+- Grid opportunities: page Analyse may emit `grid_suggestions`; Grid Designer creation/fill is via Grid Designer + `grid_assistant/`
 
 ## Verification
 
@@ -58,3 +59,5 @@ Read fallbacks: `summary ← name`, `column_title ← name`.
 - `tests/test_design_assistant_match.py` — rect association with synthetic data
 
 ## Child DOX Index
+
+- `runtime_assistants/design_assistant/grid_assistant/AGENTS.md` — Grid Designer ROI assistant

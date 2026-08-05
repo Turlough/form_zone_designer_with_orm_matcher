@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QLabel,
     QLineEdit,
+    QTextEdit,
     QPushButton,
     QSizePolicy,
     QStyle,
@@ -25,12 +26,17 @@ from PyQt6.QtWidgets import (
     QRadioButton,
     QButtonGroup,
 )
-from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal, QSize, QTimer
+from PyQt6.QtCore import Qt, QRect, QPoint, QThread, pyqtSignal, QSize, QTimer
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QBrush, QMouseEvent, QShowEvent, QKeyEvent
 
 from fields import RadioGrid
 from field_factory import default_colour_tuple_for_type
 from util.field_geometry_edit import hit_resize_handle, HANDLE_HIT_PX
+from util.field_metadata import truncate_summary
+from runtime_assistants.design_assistant.grid_assistant.geometry import (
+    fiducial_rect_to_page,
+    filter_rects_in_roi,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +49,56 @@ def question_number_prefix_from_name(name: str) -> str | None:
     """Leading numeric prefix from grid name: 1, 1.2, 1.2.3, …"""
     match = re.match(r"^(\d+(?:\.\d+)*)", name.lstrip())
     return match.group(1) if match else None
+
+
+ASSISTANT_DISABLED_TTIP = (
+    "Draw a grid rectangle that includes the question and answer labels, "
+    "and ensure at least two answer rectangles (from Designer detection) "
+    "fall inside it."
+)
+ASSISTANT_ENABLED_TTIP = (
+    "Fill rows, columns, and metadata from the ROI image and answer rectangles "
+    "(overwrites current labels)."
+)
+
+
+class GridAssistantWorker(QThread):
+    """Background worker for Grid Designer → Assistant (external VLM)."""
+
+    finished_ok = pyqtSignal(object)
+    finished_error = pyqtSignal(str)
+
+    def __init__(
+        self,
+        page_image,
+        grid_rect_fiducial: tuple[int, int, int, int],
+        fiducial_bbox,
+        cv_rects: list,
+        orientation: str,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._page_image = page_image
+        self._grid_rect = grid_rect_fiducial
+        self._fiducial_bbox = fiducial_bbox
+        self._cv_rects = cv_rects
+        self._orientation = orientation
+
+    def run(self):
+        try:
+            from runtime_assistants.design_assistant.grid_assistant import analyse_grid
+
+            result = analyse_grid(
+                self._page_image,
+                grid_rect_fiducial=self._grid_rect,
+                fiducial_bbox=self._fiducial_bbox,
+                cv_rects=self._cv_rects,
+                orientation=self._orientation,
+            )
+            self.finished_ok.emit(result)
+        except Exception as e:
+            logger.exception("Grid Assistant failed")
+            self.finished_error.emit(str(e))
 
 
 class GridLabelLineEdit(QLineEdit):
@@ -71,6 +127,7 @@ class GridDesignerPageWidget(QLabel):
     """
 
     grid_too_small = pyqtSignal()
+    grid_rect_changed = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -138,6 +195,31 @@ class GridDesignerPageWidget(QLabel):
         self.n_cols = max(1, n_cols)
         self._reset_splits()
 
+    def apply_grid_layout(
+        self,
+        n_rows: int,
+        n_cols: int,
+        row_fracs: list[float] | None = None,
+        col_fracs: list[float] | None = None,
+    ):
+        """Set shape and optional split fractions (pads/truncates via _ensure_splits)."""
+        self.n_rows = max(1, n_rows)
+        self.n_cols = max(1, n_cols)
+        if col_fracs is not None:
+            self.col_fracs = list(col_fracs)
+        elif self.n_cols >= 2:
+            self.col_fracs = [i / self.n_cols for i in range(1, self.n_cols)]
+        else:
+            self.col_fracs = []
+        if row_fracs is not None:
+            self.row_fracs = list(row_fracs)
+        elif self.n_rows >= 2:
+            self.row_fracs = [i / self.n_rows for i in range(1, self.n_rows)]
+        else:
+            self.row_fracs = []
+        self._ensure_splits()
+        self.update_display()
+
     def load_grid_state(self, grid: RadioGrid):
         """Restore page widget from a saved RadioGrid."""
         self.grid_rect = (grid.x, grid.y, grid.width, grid.height)
@@ -150,6 +232,7 @@ class GridDesignerPageWidget(QLabel):
         self.start_point = None
         self.current_point = None
         self.update_display()
+        self.grid_rect_changed.emit()
 
     def _reset_splits(self):
         if self.n_cols >= 2:
@@ -485,6 +568,7 @@ class GridDesignerPageWidget(QLabel):
             return
         if self.dragging:
             self._clear_drag()
+            self.grid_rect_changed.emit()
             return
         if self.is_drawing and self.start_point and self.current_point:
             self.is_drawing = False
@@ -503,6 +587,7 @@ class GridDesignerPageWidget(QLabel):
             else:
                 self.grid_rect = (int(left), int(top), int(w), int(h))
                 self._ensure_splits()
+                self.grid_rect_changed.emit()
             self.start_point = None
             self.current_point = None
             self.update_display()
@@ -547,9 +632,15 @@ class GridDesigner(QMainWindow):
         self.statusBar().showMessage("Add rows (questions) and columns (answers), then draw the grid on the page.")
 
         self._editing_grid: RadioGrid | None = None
+        self._page_image = None  # PIL Image for Assistant
+        self._fiducial_bbox = None
+        self._cv_rects: list = []
+        self._assistant_worker: GridAssistantWorker | None = None
+
         self.page_widget = GridDesignerPageWidget(self)
         self.page_widget.setMinimumSize(400, 400)
         self.page_widget.grid_too_small.connect(self._on_grid_too_small)
+        self.page_widget.grid_rect_changed.connect(self._update_assistant_enabled)
 
         self.row_edits: list[QLineEdit] = []
         self.col_edits: list[QLineEdit] = []
@@ -558,12 +649,26 @@ class GridDesigner(QMainWindow):
         self.setCentralWidget(central)
         main = QVBoxLayout(central)
 
-        name_row = QHBoxLayout()
-        name_row.addWidget(QLabel("Grid name:"))
+        meta_row = QHBoxLayout()
+        meta_row.addWidget(QLabel("Q#:"))
+        self.question_number_edit = QLineEdit()
+        self.question_number_edit.setPlaceholderText("e.g. 1.7")
+        self.question_number_edit.setMaximumWidth(80)
+        meta_row.addWidget(self.question_number_edit)
+        meta_row.addWidget(QLabel("Name:"))
         self.grid_name_edit = QLineEdit()
-        self.grid_name_edit.setPlaceholderText("Optional label for this grid")
-        name_row.addWidget(self.grid_name_edit)
-        main.addLayout(name_row)
+        self.grid_name_edit.setPlaceholderText("Short overlay label (summary)")
+        meta_row.addWidget(self.grid_name_edit, stretch=1)
+        main.addLayout(meta_row)
+
+        full_row = QHBoxLayout()
+        full_row.addWidget(QLabel("Full text:"))
+        self.full_text_edit = QTextEdit()
+        self.full_text_edit.setPlaceholderText("Full question / stem text from the form")
+        self.full_text_edit.setMaximumHeight(56)
+        self.full_text_edit.setAcceptRichText(False)
+        full_row.addWidget(self.full_text_edit, stretch=1)
+        main.addLayout(full_row)
 
         orient_row = QHBoxLayout()
         orient_row.addWidget(QLabel("Orientation:"))
@@ -576,6 +681,11 @@ class GridDesigner(QMainWindow):
         self.orient_horizontal_rb.toggled.connect(self._on_orientation_changed)
         orient_row.addWidget(self.orient_horizontal_rb)
         orient_row.addWidget(self.orient_vertical_rb)
+        self.assistant_btn = QPushButton("Assistant")
+        self.assistant_btn.setToolTip(ASSISTANT_DISABLED_TTIP)
+        self.assistant_btn.setEnabled(False)
+        self.assistant_btn.clicked.connect(self._on_assistant_clicked)
+        orient_row.addWidget(self.assistant_btn)
         orient_row.addStretch()
         main.addLayout(orient_row)
 
@@ -743,7 +853,9 @@ class GridDesigner(QMainWindow):
         """Open Grid Designer to edit an existing RadioGrid."""
         self._editing_grid = grid
         self.setWindowTitle(f"Grid Designer — {grid.name}")
-        self.grid_name_edit.setText(grid.name or "")
+        self.question_number_edit.setText(getattr(grid, "question_number", None) or "")
+        self.grid_name_edit.setText(grid.name or grid.summary or "")
+        self.full_text_edit.setPlainText(getattr(grid, "full_text", None) or "")
         if grid.orientation == "vertical":
             self.orient_vertical_rb.setChecked(True)
         else:
@@ -761,8 +873,104 @@ class GridDesigner(QMainWindow):
         self.page_widget.load_grid_state(grid)
         self._sync_grid_shape()
         self._update_remove_buttons()
+        self._update_assistant_enabled()
         # Window may already be shown (rare); otherwise showEvent scrolls after layout.
         QTimer.singleShot(0, self._scroll_to_grid_rect)
+
+    def set_assistant_inputs(self, page_image, fiducial_bbox, cv_rects: list | None):
+        """Provide page image and detected rects for the Assistant button."""
+        self._page_image = page_image
+        self._fiducial_bbox = fiducial_bbox
+        self._cv_rects = list(cv_rects or [])
+        self._update_assistant_enabled()
+
+    def _rects_in_roi_count(self) -> int:
+        gr = self.page_widget.grid_rect
+        if gr is None or not self._cv_rects:
+            return 0
+        roi_page = fiducial_rect_to_page(gr, self._fiducial_bbox)
+        return len(filter_rects_in_roi(self._cv_rects, roi_page))
+
+    def _update_assistant_enabled(self):
+        running = self._assistant_worker is not None and self._assistant_worker.isRunning()
+        ok = (
+            not running
+            and self._page_image is not None
+            and self.page_widget.grid_rect is not None
+            and self._rects_in_roi_count() >= 2
+        )
+        self.assistant_btn.setEnabled(ok)
+        self.assistant_btn.setToolTip(
+            ASSISTANT_ENABLED_TTIP if ok else ASSISTANT_DISABLED_TTIP
+        )
+
+    def _on_assistant_clicked(self):
+        if self._assistant_worker is not None and self._assistant_worker.isRunning():
+            return
+        gr = self.page_widget.grid_rect
+        if gr is None or self._page_image is None:
+            self.statusBar().showMessage(ASSISTANT_DISABLED_TTIP, 6000)
+            return
+        if self._rects_in_roi_count() < 2:
+            self.statusBar().showMessage(ASSISTANT_DISABLED_TTIP, 6000)
+            return
+        self.statusBar().showMessage("Grid Assistant analysing…")
+        self.assistant_btn.setEnabled(False)
+        worker = GridAssistantWorker(
+            self._page_image,
+            gr,
+            self._fiducial_bbox,
+            self._cv_rects,
+            "vertical" if self._orientation_is_vertical() else "horizontal",
+            parent=self,
+        )
+        worker.finished_ok.connect(self._on_assistant_ok)
+        worker.finished_error.connect(self._on_assistant_error)
+        worker.finished.connect(self._on_assistant_finished)
+        self._assistant_worker = worker
+        worker.start()
+
+    def _on_assistant_finished(self):
+        self._assistant_worker = None
+        self._update_assistant_enabled()
+
+    def _on_assistant_error(self, message: str):
+        self.statusBar().showMessage(f"Grid Assistant failed: {message}", 10000)
+
+    def _on_assistant_ok(self, result):
+        self._apply_assistant_result(result)
+
+    def _apply_assistant_result(self, result):
+        """Overwrite metadata, labels, and splits from AnalyseGridResult."""
+        self.question_number_edit.setText(result.question_number or "")
+        self.grid_name_edit.setText(result.name or result.summary or "")
+        self.full_text_edit.setPlainText(result.full_text or "")
+
+        self._clear_row_edits()
+        self._clear_col_edits()
+        for label in result.row_labels:
+            self._append_row_edit(label)
+        for label in result.col_labels:
+            self._append_col_edit(label)
+        if not self.row_edits:
+            self._append_row_edit("Row 1")
+        if not self.col_edits:
+            self._append_col_edit("Column 1")
+
+        self.page_widget.apply_grid_layout(
+            result.n_rows,
+            result.n_cols,
+            row_fracs=result.row_fracs,
+            col_fracs=result.col_fracs,
+        )
+        self._update_remove_buttons()
+
+        msgs = []
+        if result.warnings:
+            msgs.extend(result.warnings)
+        n = getattr(result, "rects_in_roi_count", 0)
+        msgs.insert(0, f"Assistant filled {result.n_rows}×{result.n_cols} from {n} rectangles.")
+        self.statusBar().showMessage(" ".join(msgs), 12000)
 
     def _scroll_to_grid_rect(self):
         """Center the scroll viewport on the current grid rectangle (ROI)."""
@@ -816,6 +1024,9 @@ class GridDesigner(QMainWindow):
         self._update_remove_buttons()
 
     def _question_number_prefix(self) -> str | None:
+        qn = self.question_number_edit.text().strip()
+        if qn:
+            return qn
         return question_number_prefix_from_name(self.grid_name_edit.text())
 
     def _prefill_for_new_question(self) -> str:
@@ -953,6 +1164,9 @@ class GridDesigner(QMainWindow):
         grid_name = self.grid_name_edit.text().strip()
         if not grid_name:
             grid_name = rows[0] if rows else "Grid"
+        full_text = self.full_text_edit.toPlainText().strip()
+        question_number = self.question_number_edit.text().strip()
+        summary = truncate_summary(grid_name)
         grid = RadioGrid(
             colour=default_colour_tuple_for_type("RadioGrid"),
             name=grid_name,
@@ -965,12 +1179,13 @@ class GridDesigner(QMainWindow):
             col_labels=cols,
             col_fracs=list(self.page_widget.col_fracs),
             row_fracs=list(self.page_widget.row_fracs),
+            summary=summary,
+            column_title=grid_name,
+            full_text=full_text,
+            question_number=question_number,
         )
         if self._editing_grid is not None:
             grid.grid_id = self._editing_grid.grid_id
-            grid.summary = self._editing_grid.summary
-            grid.column_title = self._editing_grid.column_title
-            grid.full_text = self._editing_grid.full_text
         self.grid_submitted.emit(grid)
         self.statusBar().showMessage("Grid submitted.")
         self.close()

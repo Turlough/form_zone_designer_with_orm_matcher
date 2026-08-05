@@ -44,12 +44,21 @@ def test_upgrade_field_dict_fills_metadata():
             "full_text": "What is your herd number?",
             "summary": "Herd number question that is way too long for the overlay label",
             "column_title": "Herd Number",
+            "question_number": "2.1",
         }
     )
     assert upgraded["name"] == "Herd Number"
     assert upgraded["column_title"] == "Herd Number"
     assert len(upgraded["summary"]) <= 50
+    assert upgraded["question_number"] == "2.1"
     assert "answer_located" not in upgraded
+
+
+def test_sanitize_column_title_keeps_long_text():
+    from util.field_metadata import sanitize_column_title
+
+    long = "A" * 120
+    assert sanitize_column_title(long) == long
 
 
 def test_strip_analysis_keys():

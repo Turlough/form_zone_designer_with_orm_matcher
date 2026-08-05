@@ -27,3 +27,4 @@ Optional AI-assisted runtime modules invoked from apps (not Cursor-only rules un
 ## Child DOX Index
 
 - `runtime_assistants/design_assistant/AGENTS.md` — Designer page analysis VLM pipeline
+ - `runtime_assistants/design_assistant/grid_assistant/AGENTS.md` — Grid Designer ROI assistant
