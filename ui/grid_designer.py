@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSizePolicy,
+    QStyle,
     QToolButton,
     QRadioButton,
     QButtonGroup,
@@ -665,17 +666,80 @@ class GridDesigner(QMainWindow):
         self._sync_grid_shape()
         self.page_widget.set_fit_width()
 
+    def _make_remove_button(self, tooltip: str) -> QToolButton:
+        btn = QToolButton()
+        btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
+        btn.setToolTip(tooltip)
+        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn.setAutoRaise(True)
+        return btn
+
     def _clear_row_edits(self):
-        while self.row_edits:
-            w = self.row_edits.pop()
-            self.row_container.removeWidget(w)
-            w.deleteLater()
+        self.row_edits.clear()
+        while self.row_container.count():
+            item = self.row_container.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
 
     def _clear_col_edits(self):
-        while self.col_edits:
-            w = self.col_edits.pop()
-            self.col_container.removeWidget(w)
-            w.deleteLater()
+        self.col_edits.clear()
+        while self.col_container.count():
+            item = self.col_container.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+    def _update_remove_buttons(self):
+        # Called during __init__ while adding the first column, before row_container exists.
+        row_container = getattr(self, "row_container", None)
+        if row_container is not None:
+            can_remove_row = len(self.row_edits) > 1
+            for i in range(row_container.count()):
+                w = row_container.itemAt(i).widget()
+                if w is None:
+                    continue
+                btn = w.findChild(QToolButton)
+                if btn is not None:
+                    btn.setEnabled(can_remove_row)
+        col_container = getattr(self, "col_container", None)
+        if col_container is not None:
+            can_remove_col = len(self.col_edits) > 1
+            for i in range(col_container.count()):
+                w = col_container.itemAt(i).widget()
+                if w is None:
+                    continue
+                btn = w.findChild(QToolButton)
+                if btn is not None:
+                    btn.setEnabled(can_remove_col)
+
+    def _remove_row_edit(self, edit: QLineEdit):
+        if len(self.row_edits) <= 1:
+            return
+        try:
+            self.row_edits.remove(edit)
+        except ValueError:
+            return
+        wrapper = edit.parentWidget()
+        if wrapper is not None:
+            self.row_container.removeWidget(wrapper)
+            wrapper.deleteLater()
+        self._sync_grid_shape()
+        self._update_remove_buttons()
+
+    def _remove_col_edit(self, edit: QLineEdit):
+        if len(self.col_edits) <= 1:
+            return
+        try:
+            self.col_edits.remove(edit)
+        except ValueError:
+            return
+        wrapper = edit.parentWidget()
+        if wrapper is not None:
+            self.col_container.removeWidget(wrapper)
+            wrapper.deleteLater()
+        self._sync_grid_shape()
+        self._update_remove_buttons()
 
     def load_grid(self, grid: RadioGrid):
         """Open Grid Designer to edit an existing RadioGrid."""
@@ -698,6 +762,7 @@ class GridDesigner(QMainWindow):
             self._add_col_edit(focus=True)
         self.page_widget.load_grid_state(grid)
         self._sync_grid_shape()
+        self._update_remove_buttons()
 
     def _append_row_edit(self, text: str = ""):
         e = GridLabelLineEdit()
@@ -707,8 +772,17 @@ class GridDesigner(QMainWindow):
         e.textChanged.connect(self._sync_grid_shape)
         e.returnPressed.connect(self._on_row_edit_enter)
         e.add_next.connect(self._on_row_edit_enter)
+        remove_btn = self._make_remove_button("Remove this row")
+        remove_btn.clicked.connect(lambda _checked=False, edit=e: self._remove_row_edit(edit))
+        row = QWidget()
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(2)
+        lay.addWidget(remove_btn)
+        lay.addWidget(e, stretch=1)
         self.row_edits.append(e)
-        self.row_container.addWidget(e)
+        self.row_container.addWidget(row)
+        self._update_remove_buttons()
 
     def _append_col_edit(self, text: str = ""):
         e = GridLabelLineEdit()
@@ -718,8 +792,17 @@ class GridDesigner(QMainWindow):
         e.textChanged.connect(self._sync_grid_shape)
         e.returnPressed.connect(self._on_col_edit_enter)
         e.add_next.connect(self._on_col_edit_enter)
+        remove_btn = self._make_remove_button("Remove this column")
+        remove_btn.clicked.connect(lambda _checked=False, edit=e: self._remove_col_edit(edit))
+        col = QWidget()
+        lay = QVBoxLayout(col)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(2)
+        lay.addWidget(e)
+        lay.addWidget(remove_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
         self.col_edits.append(e)
-        self.col_container.addWidget(e)
+        self.col_container.addWidget(col)
+        self._update_remove_buttons()
 
     def _question_number_prefix(self) -> str | None:
         return question_number_prefix_from_name(self.grid_name_edit.text())
