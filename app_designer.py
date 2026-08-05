@@ -41,7 +41,7 @@ from util.path_utils import resolve_path_case_insensitive, find_file_case_insens
 from util.document_loader import get_document_loader_for_path
 import logging
 
-from PyQt6.QtCore import QPoint, QThread, pyqtSignal, Qt
+from PyQt6.QtCore import QPoint, QThread, QTimer, pyqtSignal, Qt
 from ui import (
     ImageDisplayWidget,
     DesignerThumbnailPanel,
@@ -1073,6 +1073,40 @@ class Designer(QMainWindow):
             if not field_name:
                 return
             self._last_field_type = field_type
+            if field_type == "RadioGrid":
+                # Drop the drawn selection; Grid Designer owns the outer bounds.
+                if self.image_display:
+                    self.image_display.clear_selection()
+                bbox = (
+                    self.fiducials[self.current_page_idx]
+                    if self.current_page_idx < len(self.fiducials)
+                    else None
+                )
+                if bbox is None:
+                    QMessageBox.warning(
+                        self,
+                        "Grid Designer",
+                        "A fiducial (logo) must be detected on this page before designing a Radio Grid.",
+                    )
+                    return
+                provisional = RadioGrid(
+                    colour=default_colour_tuple_for_type("RadioGrid"),
+                    name=field_name,
+                    x=int(left_rel),
+                    y=int(top_rel),
+                    width=int(w),
+                    height=int(h),
+                )
+                # Defer until Field Editor finishes closing.
+                QTimer.singleShot(
+                    0, lambda g=provisional: self.open_grid_designer(existing_grid=g)
+                )
+                logger.info(
+                    "Page %s: Opening Grid Designer for RadioGrid '%s' from drawn rect",
+                    self.current_page_idx + 1,
+                    field_name,
+                )
+                return
             if field_type == "RadioGroup" and inner_count > 0:
                 inner_names = config.get("inner_names", [])
                 while len(inner_names) < inner_count:

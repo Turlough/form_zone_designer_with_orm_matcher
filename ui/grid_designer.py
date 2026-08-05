@@ -645,11 +645,11 @@ class GridDesigner(QMainWindow):
         zoom_row.addWidget(self.fit_height_button)
         zoom_row.addStretch()
         right_layout.addLayout(zoom_row)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(False)
-        scroll.setStyleSheet("QScrollArea { background-color: #2b2b2b; }")
-        scroll.setWidget(self.page_widget)
-        right_layout.addWidget(scroll, stretch=1)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(False)
+        self.scroll_area.setStyleSheet("QScrollArea { background-color: #2b2b2b; }")
+        self.scroll_area.setWidget(self.page_widget)
+        right_layout.addWidget(self.scroll_area, stretch=1)
         content.addWidget(right_part, stretch=1)
         main.addLayout(content, stretch=1)
 
@@ -763,6 +763,21 @@ class GridDesigner(QMainWindow):
         self.page_widget.load_grid_state(grid)
         self._sync_grid_shape()
         self._update_remove_buttons()
+        # Window may already be shown (rare); otherwise showEvent scrolls after layout.
+        QTimer.singleShot(0, self._scroll_to_grid_rect)
+
+    def _scroll_to_grid_rect(self):
+        """Center the scroll viewport on the current grid rectangle (ROI)."""
+        gr = self.page_widget._grid_rect_display()
+        if gr is None:
+            return
+        vp = self.scroll_area.viewport().size()
+        if vp.width() <= 0 or vp.height() <= 0:
+            return
+        cx = gr.x() + gr.width() // 2
+        cy = gr.y() + gr.height() // 2
+        self.scroll_area.horizontalScrollBar().setValue(max(0, cx - vp.width() // 2))
+        self.scroll_area.verticalScrollBar().setValue(max(0, cy - vp.height() // 2))
 
     def _append_row_edit(self, text: str = ""):
         e = GridLabelLineEdit()
@@ -875,9 +890,15 @@ class GridDesigner(QMainWindow):
     def showEvent(self, event: QShowEvent):
         super().showEvent(event)
         self.setWindowState(self.windowState() | Qt.WindowState.WindowMaximized)
-        # Defer fit update until layout is applied (viewport size is 0 when set_page runs before show)
+        # Defer fit + ROI scroll until layout is applied (viewport size is 0 before show)
         if self.page_widget.base_pixmap:
-            QTimer.singleShot(0, self.page_widget.update_display)
+            QTimer.singleShot(0, self._after_show_ready)
+
+    def _after_show_ready(self):
+        self.page_widget.update_display()
+        self._scroll_to_grid_rect()
+        # Second pass after maximize layout settles
+        QTimer.singleShot(0, self._scroll_to_grid_rect)
 
     def set_page(self, pixmap: QPixmap, bbox=None):
         self.page_widget.set_image(pixmap, bbox)

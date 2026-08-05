@@ -14,6 +14,8 @@ PyQt6 widgets, panels, dialogs, and layouts shared by Designer, Indexer, and rel
 - Designer-facing: thumbnails, main image, edit panel, grid designer, rectangle selection dialog, analyse preview dialog (`DesignerAnalysePreviewDialog`), rectangle detection sensitivity dialog (`DesignerRectangleDetectDialog`)
 - Existing-field edit: non-modal `RectangleSelectedDialog` plus reshape handles on `ImageDisplayWidget` (standalone fields only)
 - `RadioGrid` click opens Grid Designer for create/edit/reshape; runtime apps expand grids to `RadioGroup`s on load
+- Drawn-rect Field Editor submit with type `RadioGrid`: clear the main-image selection, then open Grid Designer pre-seeded with that rect/name (grid is added only when Grid Designer submits)
+- Grid Designer scrolls its page viewport to center the grid rectangle when opened with a pre-seeded/existing grid
 - Indexer-facing: main image panel, details panel, menus, OCR/index/comment/QC dialogs
 - Field overlay colours: resolve via `field_factory.get_field_display_color()` (shared with Indexer); do not read `field.colour` for paint
 - Prefer extending existing widgets over duplicating paint or layout logic in entry-point apps
