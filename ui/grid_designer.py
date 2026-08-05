@@ -34,7 +34,6 @@ from util.field_geometry_edit import hit_resize_handle, HANDLE_HIT_PX
 
 logger = logging.getLogger(__name__)
 
-LABEL_MAX_LENGTH = 50
 MIN_GRID_WIDTH_PX = 20
 MIN_GRID_HEIGHT_PX = 20
 ADD_LABEL_SHORTCUT_TTIP = "Press Enter or Tab in a label field to add another"
@@ -563,7 +562,6 @@ class GridDesigner(QMainWindow):
         name_row.addWidget(QLabel("Grid name:"))
         self.grid_name_edit = QLineEdit()
         self.grid_name_edit.setPlaceholderText("Optional label for this grid")
-        self.grid_name_edit.setMaxLength(LABEL_MAX_LENGTH)
         name_row.addWidget(self.grid_name_edit)
         main.addLayout(name_row)
 
@@ -782,7 +780,6 @@ class GridDesigner(QMainWindow):
     def _append_row_edit(self, text: str = ""):
         e = GridLabelLineEdit()
         e.setPlaceholderText("Row label")
-        e.setMaxLength(LABEL_MAX_LENGTH)
         e.setText(text)
         e.textChanged.connect(self._sync_grid_shape)
         e.returnPressed.connect(self._on_row_edit_enter)
@@ -802,7 +799,6 @@ class GridDesigner(QMainWindow):
     def _append_col_edit(self, text: str = ""):
         e = GridLabelLineEdit()
         e.setPlaceholderText("Column label")
-        e.setMaxLength(LABEL_MAX_LENGTH)
         e.setText(text)
         e.textChanged.connect(self._sync_grid_shape)
         e.returnPressed.connect(self._on_col_edit_enter)
