@@ -16,9 +16,8 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QWidget,
     QComboBox,
-    QScrollArea,
     QTextEdit,
-    QFrame,
+    QSizePolicy,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QTimer
 from PyQt6.QtGui import QGuiApplication
@@ -162,15 +161,13 @@ class RectangleSelectedDialog(QDialog):
 
         batch_layout.addWidget(QLabel("Answer fields:"))
         self._inner_rows: list[_InnerFieldRow] = []
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setMaximumHeight(220)
-        self._inner_scroll_content = QWidget()
-        self._inner_layout = QVBoxLayout(self._inner_scroll_content)
+        self._inner_fields_panel = QWidget()
+        self._inner_fields_panel.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum
+        )
+        self._inner_layout = QVBoxLayout(self._inner_fields_panel)
         self._inner_layout.setContentsMargins(0, 0, 0, 0)
-        scroll.setWidget(self._inner_scroll_content)
-        batch_layout.addWidget(scroll)
+        batch_layout.addWidget(self._inner_fields_panel)
 
         assistant_row = QHBoxLayout()
         self.assistant_btn = QPushButton("Assistant")
@@ -250,13 +247,25 @@ class RectangleSelectedDialog(QDialog):
                 self._on_type_changed()
 
         self.setMinimumWidth(320 if self._batch_mode else 220)
+        self._fit_vertical_size()
+
+    def _fit_vertical_size(self) -> None:
+        """Grow the dialog so all content (especially answer rows) fits without scrolling."""
+        if self._batch_mode:
+            self._inner_fields_panel.adjustSize()
         self.adjustSize()
+        hint = self.sizeHint()
+        self.resize(
+            max(self.minimumWidth(), hint.width()),
+            hint.height(),
+        )
 
     def _on_type_changed(self):
         is_rg = self._button_group.checkedId() == FIELD_TYPES.index("RadioGroup")
         self._inner_name_widget.setVisible(
             is_rg and self._inner_rect_count > 0 and not self._batch_mode
         )
+        self._fit_vertical_size()
 
     def set_assistant_running(self, running: bool):
         self._assistant_running = running
@@ -297,7 +306,7 @@ class RectangleSelectedDialog(QDialog):
                 row.type_combo.setCurrentText(ft)
             row.name_edit.setText(proposal.name or proposal.column_title or "")
 
-        self.adjustSize()
+        self._fit_vertical_size()
 
     def _on_delete(self):
         self._finished_action = True
@@ -369,9 +378,13 @@ class RectangleSelectedDialog(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
+        QTimer.singleShot(0, self._finalize_show_geometry)
+
+    def _finalize_show_geometry(self):
+        self._fit_vertical_size()
         last = RectangleSelectedDialog._last_pos
         if last is not None:
-            QTimer.singleShot(0, lambda: self.move(last))
+            self.move(last)
         else:
             self._position_near_anchor()
 
