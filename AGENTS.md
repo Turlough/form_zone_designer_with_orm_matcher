@@ -91,6 +91,7 @@ When the user requests a durable behavior change, record it here or in the relev
 - `runtime_assistants/AGENTS.md` — external VLM assistants invoked from apps
  - `runtime_assistants/design_assistant/AGENTS.md` — Designer page analysis
   - `runtime_assistants/design_assistant/grid_assistant/AGENTS.md` — Grid Designer ROI assistant
+  - `runtime_assistants/design_assistant/question_assistant/AGENTS.md` — drawn-question frame assistant
 - `tests/AGENTS.md` — automated tests
   - `tests/validations/AGENTS.md` — validation pytest modules
 - `USER_INSTRUCTIONS/AGENTS.md` — operator docs (templates setup, Designer, Indexer, Exporter); static HTML in `USER_INSTRUCTIONS/html/`

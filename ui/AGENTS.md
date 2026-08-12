@@ -11,7 +11,8 @@ PyQt6 widgets, panels, dialogs, and layouts shared by Designer, Indexer, and rel
 
 ## Local Contracts
 
-- Designer-facing: thumbnails, main image, edit panel, grid designer, rectangle selection dialog, analyse preview dialog (`DesignerAnalysePreviewDialog`), rectangle detection sensitivity dialog (`DesignerRectangleDetectDialog`)
+- Designer-facing: thumbnails, main image, edit panel, grid designer, rectangle selection dialog (batch question mode + **Assistant** when drawn frame has inner rects), analyse preview dialog (`DesignerAnalysePreviewDialog`), rectangle detection sensitivity dialog (`DesignerRectangleDetectDialog`)
+- Drawn-rect batch mode (`RectangleSelectedDialog`): shared `question_number` / `full_text`, per-answer type+name rows; **Assistant** via `question_assistant/`; Submit creates one field per inner rectangle; **Radio grid…** opens Grid Designer; inner rects sorted reading-order before naming/Submit
 - Existing-field edit: non-modal `RectangleSelectedDialog` plus reshape handles on `ImageDisplayWidget` (standalone fields only)
 - `RadioGrid` click opens Grid Designer for create/edit/reshape; runtime apps expand grids to `RadioGroup`s on load
 - Drawn-rect Field Editor submit with type `RadioGrid`: clear the main-image selection, then open Grid Designer pre-seeded with that rect/name (grid is added only when Grid Designer submits)

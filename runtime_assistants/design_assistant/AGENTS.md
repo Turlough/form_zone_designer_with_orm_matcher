@@ -52,6 +52,7 @@ Read fallbacks: `summary ← name`, `column_title ← name`.
 - Downscale upload image; one page per request; retry once on bad JSON
 - Radio groups: nested `radio_buttons` matching `Field.from_dict` shape
 - Grid opportunities: page Analyse may emit `grid_suggestions`; Grid Designer creation/fill is via Grid Designer + `grid_assistant/`
+- Multi-answer checklist: drawn frame with inner rects → `question_assistant/` via `RectangleSelectedDialog` Assistant; batch fields on Submit
 
 ## Verification
 
@@ -61,3 +62,5 @@ Read fallbacks: `summary ← name`, `column_title ← name`.
 ## Child DOX Index
 
 - `runtime_assistants/design_assistant/grid_assistant/AGENTS.md` — Grid Designer ROI assistant
+- `runtime_assistants/design_assistant/question_assistant/AGENTS.md` — drawn-question frame assistant
+- `runtime_assistants/design_assistant/export_assistant_for_designer/AGENTS.md` — export format ingest and Check

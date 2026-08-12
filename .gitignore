@@ -10,3 +10,5 @@ dist/
 .cursor/agents/workspace/
 .cursor/workspace/
 uv.lock
+
+EXAMPLES/

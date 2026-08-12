@@ -31,6 +31,7 @@ from util import (
     save_rectangle_detection_settings,
 )
 from util.fiducial_paths import find_default_logo, find_fiducial_for_page, per_page_logo_filename
+from util.field_metadata import truncate_summary, sanitize_column_title
 from util.field_geometry_edit import (
     geometry_edit_target,
     snapshot_field_geometry,
@@ -58,6 +59,48 @@ import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class QuestionAssistantWorker(QThread):
+    """Background worker for drawn-question frame → Question Assistant."""
+
+    finished_ok = pyqtSignal(object)
+    finished_error = pyqtSignal(str)
+
+    def __init__(
+        self,
+        page_image,
+        roi_fiducial: tuple[int, int, int, int],
+        fiducial_bbox,
+        cv_rects: list,
+        inner_rects_fiducial: list,
+        export_columns_block: str = "",
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._page_image = page_image
+        self._roi_fiducial = roi_fiducial
+        self._fiducial_bbox = fiducial_bbox
+        self._cv_rects = cv_rects
+        self._inner_rects_fiducial = inner_rects_fiducial
+        self._export_columns_block = export_columns_block
+
+    def run(self):
+        try:
+            from runtime_assistants.design_assistant.question_assistant import analyse_question
+
+            result = analyse_question(
+                self._page_image,
+                roi_fiducial=self._roi_fiducial,
+                fiducial_bbox=self._fiducial_bbox,
+                cv_rects=self._cv_rects,
+                inner_rects_fiducial=self._inner_rects_fiducial,
+                export_columns_block=self._export_columns_block,
+            )
+            self.finished_ok.emit(result)
+        except Exception as e:
+            logger.exception("Question Assistant failed")
+            self.finished_error.emit(str(e))
 
 
 class DesignAnalyseWorker(QThread):
@@ -129,6 +172,8 @@ class Designer(QMainWindow):
         self._last_field_type = "Tickbox"
 
         self._analyse_worker: DesignAnalyseWorker | None = None
+        self._question_assistant_worker: QuestionAssistantWorker | None = None
+        self._question_assistant_dialog: RectangleSelectedDialog | None = None
         self.rectangle_detection_settings = RectangleDetectionSettings()
         self._rect_detect_dialog: DesignerRectangleDetectDialog | None = None
         self._field_edit_dialog: RectangleSelectedDialog | None = None
@@ -1033,6 +1078,214 @@ class Designer(QMainWindow):
         dialog.deleted.connect(on_deleted)
         dialog.exec()
 
+    def _export_columns_block_for_current_page(self) -> str:
+        if not self.config:
+            return ""
+        try:
+            from runtime_assistants.design_assistant.export_assistant_for_designer.io import (
+                load_active_export_format,
+            )
+            from runtime_assistants.design_assistant.export_assistant_for_designer.check import (
+                export_columns_for_prompt,
+            )
+            from runtime_assistants.design_assistant.export_assistant_for_designer.prompt_context import (
+                format_export_columns_block,
+            )
+
+            descriptor = load_active_export_format(self.config.config_folder)
+            if descriptor is None or self.current_page_idx is None:
+                return ""
+            cols = export_columns_for_prompt(descriptor, self.current_page_idx + 1)
+            return format_export_columns_block(cols)
+        except Exception:
+            logger.debug("Export format context unavailable for Question Assistant", exc_info=True)
+            return ""
+
+    def _open_radio_grid_from_drawn_rect(
+        self,
+        field_name: str,
+        drawn_rect_rel: tuple[int, int, int, int],
+    ) -> None:
+        left_rel, top_rel, w, h = drawn_rect_rel
+        if self.image_display:
+            self.image_display.clear_selection()
+        bbox = (
+            self.fiducials[self.current_page_idx]
+            if self.current_page_idx is not None
+            and self.current_page_idx < len(self.fiducials)
+            else None
+        )
+        if bbox is None:
+            QMessageBox.warning(
+                self,
+                "Grid Designer",
+                "A fiducial (logo) must be detected on this page before designing a Radio Grid.",
+            )
+            return
+        provisional = RadioGrid(
+            colour=default_colour_tuple_for_type("RadioGrid"),
+            name=field_name.strip() or "Grid",
+            x=int(left_rel),
+            y=int(top_rel),
+            width=int(w),
+            height=int(h),
+        )
+        QTimer.singleShot(0, lambda g=provisional: self.open_grid_designer(existing_grid=g))
+
+    def _submit_batch_question_fields(
+        self,
+        config: dict,
+        combined_inner: list,
+        field_indices_to_remove: list[int],
+        inner_rects_rel: list,
+    ) -> None:
+        page_fields = self.page_field_list[self.current_page_idx]
+        question_number = config.get("question_number", "").strip()
+        full_text = config.get("full_text", "").strip()
+        field_configs = config.get("fields") or []
+
+        for j in reversed(field_indices_to_remove):
+            page_fields.pop(j)
+
+        for i, fc in enumerate(field_configs):
+            if i >= len(combined_inner):
+                break
+            rx, ry, rw, rh, _ = combined_inner[i]
+            field_type = fc.get("field_type", "Tickbox")
+            field_name = fc.get("field_name", "").strip()
+            if not field_name:
+                continue
+            self._last_field_type = field_type
+            field_class = FIELD_TYPE_MAP.get(field_type, Tickbox)
+            kwargs = {
+                "name": field_name,
+                "x": int(rx),
+                "y": int(ry),
+                "width": int(rw),
+                "height": int(rh),
+                "colour": default_colour_tuple_for_type(field_type),
+                "summary": truncate_summary(field_name),
+                "column_title": sanitize_column_title(field_name),
+            }
+            if question_number:
+                kwargs["question_number"] = question_number
+            if full_text:
+                kwargs["full_text"] = full_text
+            if field_class == RadioGroup:
+                kwargs["radio_buttons"] = []
+            page_fields.append(field_class(**kwargs))
+
+        logo = (
+            self.fiducials[self.current_page_idx][0]
+            if self.fiducials[self.current_page_idx]
+            else (0, 0)
+        )
+        det = self.page_detected_rects[self.current_page_idx]
+        to_remove = []
+        for j, rect in enumerate(det):
+            ra, rb_val, rw_val, rh_val = rect
+            for irx, iry, iw, ih in inner_rects_rel:
+                if (
+                    ra == irx + logo[0]
+                    and rb_val == iry + logo[1]
+                    and rw_val == iw
+                    and rh_val == ih
+                ):
+                    to_remove.append(j)
+                    break
+        for j in reversed(to_remove):
+            det.pop(j)
+
+        if self.image_display:
+            self.image_display.clear_selection()
+            self.image_display.detected_rects = det
+            self.image_display.field_list = page_fields
+            self.image_display.update_display()
+        if self.config:
+            save_page_fields(
+                str(self.config.json_folder),
+                self.current_page_idx,
+                self.page_field_list,
+                self.config.config_folder,
+            )
+        self.update_thumbnail(self.current_page_idx)
+        self._update_edit_panel_json(self.current_page_idx)
+        self._update_remove_inner_button_state()
+        self.undo_button.setEnabled(True)
+        logger.info(
+            "Page %s: Added %d fields from question frame",
+            self.current_page_idx + 1,
+            len(field_configs),
+        )
+
+    def _run_question_assistant(
+        self,
+        dialog: RectangleSelectedDialog,
+        drawn_rect_rel: tuple[int, int, int, int],
+        inner_rects_fiducial: list[tuple[int, int, int, int]],
+    ) -> None:
+        if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.pages)):
+            return
+        if (
+            self._question_assistant_worker is not None
+            and self._question_assistant_worker.isRunning()
+        ):
+            return
+
+        page = self.pages[self.current_page_idx]
+        bbox = (
+            self.fiducials[self.current_page_idx]
+            if self.current_page_idx < len(self.fiducials)
+            else None
+        )
+        cv_rects = list(self.page_detected_rects[self.current_page_idx])
+
+        self._question_assistant_dialog = dialog
+        dialog.set_assistant_running(True)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        self.statusBar().showMessage("Question Assistant analysing…", 0)
+
+        worker = QuestionAssistantWorker(
+            page.copy(),
+            drawn_rect_rel,
+            bbox,
+            cv_rects,
+            list(inner_rects_fiducial),
+            self._export_columns_block_for_current_page(),
+            parent=self,
+        )
+        self._question_assistant_worker = worker
+        worker.finished_ok.connect(self._on_question_assistant_ok)
+        worker.finished_error.connect(self._on_question_assistant_error)
+        worker.finished.connect(self._on_question_assistant_finished)
+        worker.start()
+
+    def _on_question_assistant_finished(self):
+        QApplication.restoreOverrideCursor()
+        if self._question_assistant_dialog is not None:
+            self._question_assistant_dialog.set_assistant_running(False)
+        self._question_assistant_worker = None
+        self.statusBar().clearMessage()
+
+    def _on_question_assistant_error(self, message: str):
+        self.statusBar().showMessage(f"Question Assistant failed: {message}", 10000)
+        QMessageBox.warning(self, "Question Assistant", message)
+
+    def _on_question_assistant_ok(self, result):
+        dialog = self._question_assistant_dialog
+        if dialog is None:
+            return
+        dialog.apply_assistant_result(result)
+        msgs = []
+        if result.warnings:
+            msgs.extend(result.warnings)
+        n = getattr(result, "rects_in_roi_count", 0)
+        msgs.insert(
+            0,
+            f"Assistant filled {len(result.fields)} answer field(s) from {n} rectangle(s).",
+        )
+        self.statusBar().showMessage(" ".join(msgs), 12000)
+
     def _on_rect_drawn(self, drawn_rect_rel, inner_rects_rel, global_pos):
         """User finished drawing a rectangle: show dialog (RadioGroup enabled); on submit add field(s), on delete discard."""
         if self.current_page_idx is None or not (0 <= self.current_page_idx < len(self.page_field_list)):
@@ -1041,11 +1294,13 @@ class Designer(QMainWindow):
         right_rel = left_rel + w
         bottom_rel = top_rel + h
 
-        # Build combined inner items: detected rects + existing fields fully inside the drawn rect (converted to RadioButtons)
+        # Build combined inner items: detected rects + existing fields fully inside the drawn rect.
+        # Sort top-to-bottom then left-to-right so dialog rows / Option N match visual reading order
+        # (OpenCV detection order is area-based, not reading order). See sort_rects_reading_order.
         combined_inner = []  # list of (x, y, w, h, default_name)
         field_indices_to_remove = []  # indices in page_field_list to remove when creating RadioGroup
-        for i, (rx, ry, rw, rh) in enumerate(inner_rects_rel):
-            combined_inner.append((rx, ry, rw, rh, f"Option {i + 1}"))
+        for rx, ry, rw, rh in inner_rects_rel:
+            combined_inner.append((rx, ry, rw, rh, ""))
         page_fields = self.page_field_list[self.current_page_idx]
         for idx, field in enumerate(page_fields):
             if isinstance(field, RadioGroup):
@@ -1060,8 +1315,19 @@ class Designer(QMainWindow):
                     field.x + field.width <= right_rel and field.y + field.height <= bottom_rel):
                     combined_inner.append((field.x, field.y, field.width, field.height, field.name))
                     field_indices_to_remove.append(idx)
+
+        combined_inner.sort(
+            key=lambda item: (item[1] + item[3] / 2.0, item[0] + item[2] / 2.0)
+        )
+        combined_inner = [
+            (x, y, w, h, name or f"Option {i + 1}")
+            for i, (x, y, w, h, name) in enumerate(combined_inner)
+        ]
+        # Keep detection-list removal in sync with sorted geometry
+        inner_rects_rel = [(x, y, w, h) for (x, y, w, h, _) in combined_inner]
         inner_count = len(combined_inner)
         inner_default_names = [name for (_, _, _, _, name) in combined_inner]
+        inner_geom = list(inner_rects_rel)
 
         dialog = RectangleSelectedDialog(
             self,
@@ -1074,39 +1340,22 @@ class Designer(QMainWindow):
         )
 
         def on_submit(config: dict):
+            if config.get("batch_mode"):
+                self._submit_batch_question_fields(
+                    config,
+                    combined_inner,
+                    field_indices_to_remove,
+                    inner_rects_rel,
+                )
+                return
+
             field_type = config.get("field_type", "Tickbox")
             field_name = config.get("field_name", "").strip()
             if not field_name:
                 return
             self._last_field_type = field_type
             if field_type == "RadioGrid":
-                # Drop the drawn selection; Grid Designer owns the outer bounds.
-                if self.image_display:
-                    self.image_display.clear_selection()
-                bbox = (
-                    self.fiducials[self.current_page_idx]
-                    if self.current_page_idx < len(self.fiducials)
-                    else None
-                )
-                if bbox is None:
-                    QMessageBox.warning(
-                        self,
-                        "Grid Designer",
-                        "A fiducial (logo) must be detected on this page before designing a Radio Grid.",
-                    )
-                    return
-                provisional = RadioGrid(
-                    colour=default_colour_tuple_for_type("RadioGrid"),
-                    name=field_name,
-                    x=int(left_rel),
-                    y=int(top_rel),
-                    width=int(w),
-                    height=int(h),
-                )
-                # Defer until Field Editor finishes closing.
-                QTimer.singleShot(
-                    0, lambda g=provisional: self.open_grid_designer(existing_grid=g)
-                )
+                self._open_radio_grid_from_drawn_rect(field_name, drawn_rect_rel)
                 logger.info(
                     "Page %s: Opening Grid Designer for RadioGrid '%s' from drawn rect",
                     self.current_page_idx + 1,
@@ -1180,8 +1429,16 @@ class Designer(QMainWindow):
             self.image_display.update_display()
             logger.info(f"Page {self.current_page_idx + 1}: Discarded drawn rectangle (RadioGroup not added)")
 
+        def on_assistant_requested():
+            self._run_question_assistant(dialog, drawn_rect_rel, inner_geom)
+
+        def on_radio_grid_requested(name: str):
+            self._open_radio_grid_from_drawn_rect(name, drawn_rect_rel)
+
         dialog.submitted.connect(on_submit)
         dialog.deleted.connect(on_deleted)
+        dialog.assistant_requested.connect(on_assistant_requested)
+        dialog.radio_grid_requested.connect(on_radio_grid_requested)
         dialog.exec()
 
     # ---- Zoom / fit button handlers ----

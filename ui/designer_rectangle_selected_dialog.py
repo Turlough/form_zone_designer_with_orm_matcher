@@ -1,6 +1,9 @@
 """
 Dialog shown when a rectangle is selected (clicked, drawn, or existing field).
 Positioned to the right of the mouse (or left if no room), centered vertically.
+
+Batch mode (drawn frame with inner answer rectangles): shared question metadata,
+per-answer type/name rows, and Assistant autofill.
 """
 from PyQt6.QtWidgets import (
     QDialog,
@@ -11,7 +14,11 @@ from PyQt6.QtWidgets import (
     QRadioButton,
     QButtonGroup,
     QPushButton,
-    QWidget
+    QWidget,
+    QComboBox,
+    QScrollArea,
+    QTextEdit,
+    QFrame,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QTimer
 from PyQt6.QtGui import QGuiApplication
@@ -19,24 +26,61 @@ from fields import FIELD_TYPE_MAP
 
 FIELD_TYPES = list(FIELD_TYPE_MAP.keys())
 
+QUESTION_FIELD_TYPES = [
+    t
+    for t in FIELD_TYPES
+    if t
+    not in (
+        "RadioGroup",
+        "RadioButton",
+        "RadioGrid",
+        "NumericRadioGroup",
+    )
+]
+
+ASSISTANT_ENABLED_TTIP = (
+    "Fill question text and answer field names/types from the framed region "
+    "(overwrites current entries)."
+)
+ASSISTANT_DISABLED_TTIP = (
+    "Draw a frame that includes the question and at least one detected answer rectangle."
+)
+
+
+class _InnerFieldRow(QWidget):
+    """One answer control row in batch mode."""
+
+    def __init__(self, index: int, default_name: str = "", parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(QLabel(f"{index + 1}."))
+        self.type_combo = QComboBox()
+        self.type_combo.addItems(QUESTION_FIELD_TYPES)
+        self.type_combo.setCurrentText("Tickbox")
+        layout.addWidget(self.type_combo)
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText(f"Option {index + 1}")
+        if default_name:
+            self.name_edit.setText(default_name)
+        layout.addWidget(self.name_edit, stretch=1)
+
 
 class RectangleSelectedDialog(QDialog):
     """
     Dialog shown when a rectangle is selected (clicked within rect, drawn rect,
     or clicked within existing field). Provides name, type pick list, and
-    Delete / Submit / Cancel. For drawn rect with RadioGroup, shows name
-    inputs for each inner rectangle.
+    Delete / Submit / Cancel. For drawn rect with inner rects, batch mode lists
+    each answer with type and name plus Assistant autofill.
     """
 
     _last_pos = None  # Persists last position within app session
 
-    # Emitted with config dict: {"field_type": str, "field_name": str}
-    # or for RadioGroup: {"field_type": "RadioGroup", "field_name": str, "inner_names": [str, ...]}
     submitted = pyqtSignal(dict)
-    # Emitted when user clicks Delete (caller should remove rect/field and refresh)
     deleted = pyqtSignal()
-    # Emitted when user cancels (dialog closed without submit/delete)
     cancelled = pyqtSignal()
+    assistant_requested = pyqtSignal()
+    radio_grid_requested = pyqtSignal(str)
 
     def __init__(
         self,
@@ -59,6 +103,8 @@ class RectangleSelectedDialog(QDialog):
         self._inner_default_names = inner_default_names or []
         self._non_modal = existing_field is not None if non_modal is None else non_modal
         self._finished_action = False
+        self._batch_mode = is_just_drawn and self._inner_rect_count >= 1
+        self._assistant_running = False
         if self._non_modal:
             self.setModal(False)
             self.setWindowModality(Qt.WindowModality.NonModal)
@@ -66,11 +112,14 @@ class RectangleSelectedDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
 
-        # Name
-        layout.addWidget(QLabel("Field name:"))
+        self._single_name_widget = QWidget()
+        single_layout = QVBoxLayout(self._single_name_widget)
+        single_layout.setContentsMargins(0, 0, 0, 0)
+        single_layout.addWidget(QLabel("Field name:"))
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("Enter field name...")
-        layout.addWidget(self.name_edit)
+        single_layout.addWidget(self.name_edit)
+        layout.addWidget(self._single_name_widget)
 
         if existing_field is not None:
             hint = QLabel("Drag handles or grid lines on the page to reshape.")
@@ -78,25 +127,73 @@ class RectangleSelectedDialog(QDialog):
             hint.setStyleSheet("color: #666; font-size: 11px;")
             layout.addWidget(hint)
 
-        # Type: vertical pick list (radio buttons)
-        layout.addWidget(QLabel("Field type:"))
+        self._single_type_widget = QWidget()
+        type_outer = QVBoxLayout(self._single_type_widget)
+        type_outer.setContentsMargins(0, 0, 0, 0)
+        type_outer.addWidget(QLabel("Field type:"))
         self._button_group = QButtonGroup(self)
         self._type_radios = {}
         for i, ft in enumerate(FIELD_TYPES):
             rb = QRadioButton(ft)
             self._button_group.addButton(rb, i)
             self._type_radios[ft] = rb
-            layout.addWidget(rb)
+            type_outer.addWidget(rb)
         self._radiogroup_radio = self._type_radios["RadioGroup"]
         if not is_just_drawn:
             self._radiogroup_radio.setEnabled(False)
+        layout.addWidget(self._single_type_widget)
 
-        # Inner names (for RadioGroup when just drawn with inner rects)
-        self._inner_name_widget = QWidget()
-        self._inner_layout = QVBoxLayout(self._inner_name_widget)
+        # Batch mode: shared question metadata + per-answer rows
+        self._batch_widget = QWidget()
+        batch_layout = QVBoxLayout(self._batch_widget)
+        batch_layout.setContentsMargins(0, 0, 0, 0)
+        batch_layout.setSpacing(6)
+
+        batch_layout.addWidget(QLabel("Question number:"))
+        self.question_number_edit = QLineEdit()
+        self.question_number_edit.setPlaceholderText("e.g. 6.9")
+        batch_layout.addWidget(self.question_number_edit)
+
+        batch_layout.addWidget(QLabel("Full question text:"))
+        self.full_text_edit = QTextEdit()
+        self.full_text_edit.setPlaceholderText("Full wording of the question stem…")
+        self.full_text_edit.setMaximumHeight(72)
+        batch_layout.addWidget(self.full_text_edit)
+
+        batch_layout.addWidget(QLabel("Answer fields:"))
+        self._inner_rows: list[_InnerFieldRow] = []
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setMaximumHeight(220)
+        self._inner_scroll_content = QWidget()
+        self._inner_layout = QVBoxLayout(self._inner_scroll_content)
         self._inner_layout.setContentsMargins(0, 0, 0, 0)
+        scroll.setWidget(self._inner_scroll_content)
+        batch_layout.addWidget(scroll)
+
+        assistant_row = QHBoxLayout()
+        self.assistant_btn = QPushButton("Assistant")
+        self.assistant_btn.setToolTip(ASSISTANT_DISABLED_TTIP)
+        self.assistant_btn.clicked.connect(self._on_assistant_clicked)
+        assistant_row.addWidget(self.assistant_btn)
+        self.radio_grid_btn = QPushButton("Radio grid…")
+        self.radio_grid_btn.setToolTip(
+            "Open Grid Designer for a radio-button matrix instead."
+        )
+        self.radio_grid_btn.clicked.connect(self._on_radio_grid_clicked)
+        assistant_row.addWidget(self.radio_grid_btn)
+        assistant_row.addStretch()
+        batch_layout.addLayout(assistant_row)
+
+        layout.addWidget(self._batch_widget)
+
+        # Inner names (RadioGroup legacy path when batch off but inner rects exist)
+        self._inner_name_widget = QWidget()
+        self._inner_rg_layout = QVBoxLayout(self._inner_name_widget)
+        self._inner_rg_layout.setContentsMargins(0, 0, 0, 0)
         self._inner_name_edits: list[QLineEdit] = []
-        if self._inner_rect_count > 0:
+        if self._inner_rect_count > 0 and not self._batch_mode:
             layout.addWidget(QLabel("Names for options (RadioGroup):"))
             for i in range(self._inner_rect_count):
                 le = QLineEdit()
@@ -104,48 +201,103 @@ class RectangleSelectedDialog(QDialog):
                 if i < len(self._inner_default_names) and self._inner_default_names[i]:
                     le.setText(self._inner_default_names[i])
                 self._inner_name_edits.append(le)
-                self._inner_layout.addWidget(le)
+                self._inner_rg_layout.addWidget(le)
             layout.addWidget(self._inner_name_widget)
         self._inner_name_widget.setVisible(False)
         self._button_group.buttonClicked.connect(self._on_type_changed)
 
-        # Buttons
         btn_layout = QHBoxLayout()
-
         self.submit_btn = QPushButton("Submit")
         self.submit_btn.setDefault(True)
         self.submit_btn.clicked.connect(self._on_submit)
-        self.cancel_btn = QPushButton("Cancel")    
+        self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self.reject)
         self.delete_btn = QPushButton("Delete")
         self.delete_btn.clicked.connect(self._on_delete)
-
         btn_layout.addWidget(self.delete_btn)
         btn_layout.addStretch()
         btn_layout.addWidget(self.cancel_btn)
         btn_layout.addWidget(self.submit_btn)
         layout.addLayout(btn_layout)
 
-        # Pre-fill for existing field
-        if existing_field is not None:
-            self.name_edit.setText(getattr(existing_field, "name", "") or "")
-            t = type(existing_field).__name__
-            if t in self._type_radios:
-                self._type_radios[t].setChecked(True)
-            self._on_type_changed()
+        if self._batch_mode:
+            self._single_name_widget.hide()
+            self._single_type_widget.hide()
+            self._batch_widget.show()
+            for i in range(self._inner_rect_count):
+                default = (
+                    self._inner_default_names[i]
+                    if i < len(self._inner_default_names)
+                    else ""
+                )
+                row = _InnerFieldRow(i, default)
+                self._inner_rows.append(row)
+                self._inner_layout.addWidget(row)
+            self._update_assistant_enabled()
         else:
-            default = default_field_type if default_field_type in self._type_radios else "Tickbox"
-            if default == "RadioGroup" and not is_just_drawn:
-                default = "Tickbox"
-            self._type_radios[default].setChecked(True)
-            self._on_type_changed()
+            self._batch_widget.hide()
+            if existing_field is not None:
+                self.name_edit.setText(getattr(existing_field, "name", "") or "")
+                t = type(existing_field).__name__
+                if t in self._type_radios:
+                    self._type_radios[t].setChecked(True)
+                self._on_type_changed()
+            else:
+                default = default_field_type if default_field_type in self._type_radios else "Tickbox"
+                if default == "RadioGroup" and not is_just_drawn:
+                    default = "Tickbox"
+                self._type_radios[default].setChecked(True)
+                self._on_type_changed()
 
-        self.setMinimumWidth(220)
+        self.setMinimumWidth(320 if self._batch_mode else 220)
         self.adjustSize()
 
     def _on_type_changed(self):
         is_rg = self._button_group.checkedId() == FIELD_TYPES.index("RadioGroup")
-        self._inner_name_widget.setVisible(is_rg and self._inner_rect_count > 0)
+        self._inner_name_widget.setVisible(
+            is_rg and self._inner_rect_count > 0 and not self._batch_mode
+        )
+
+    def set_assistant_running(self, running: bool):
+        self._assistant_running = running
+        self._update_assistant_enabled()
+        self.assistant_btn.setText("Analysing…" if running else "Assistant")
+
+    def _update_assistant_enabled(self):
+        if not self._batch_mode:
+            return
+        ok = not self._assistant_running and self._inner_rect_count >= 1
+        self.assistant_btn.setEnabled(ok)
+        self.assistant_btn.setToolTip(
+            ASSISTANT_ENABLED_TTIP if ok else ASSISTANT_DISABLED_TTIP
+        )
+
+    def _on_assistant_clicked(self):
+        if self._assistant_running:
+            return
+        self.assistant_requested.emit()
+
+    def _on_radio_grid_clicked(self):
+        name = self.question_number_edit.text().strip()
+        if not name:
+            name = self.full_text_edit.toPlainText().strip()[:50] or "Grid"
+        self.radio_grid_requested.emit(name)
+
+    def apply_assistant_result(self, result) -> None:
+        """Apply AnalyseQuestionResult from Question Assistant."""
+        self.question_number_edit.setText(result.question_number or "")
+        self.full_text_edit.setPlainText(result.full_text or "")
+
+        for i, row in enumerate(self._inner_rows):
+            if i >= len(result.fields):
+                break
+            proposal = result.fields[i]
+            ft = proposal.field_type
+            if ft in QUESTION_FIELD_TYPES:
+                row.type_combo.setCurrentText(ft)
+            row.name_edit.setText(proposal.name or proposal.column_title or "")
+
+        self.adjustSize()
 
     def _on_delete(self):
         self._finished_action = True
@@ -153,6 +305,29 @@ class RectangleSelectedDialog(QDialog):
         self._close_dialog()
 
     def _on_submit(self):
+        if self._batch_mode:
+            fields = []
+            for row in self._inner_rows:
+                name = row.name_edit.text().strip()
+                if not name:
+                    return
+                fields.append(
+                    {
+                        "field_type": row.type_combo.currentText(),
+                        "field_name": name,
+                    }
+                )
+            config = {
+                "batch_mode": True,
+                "question_number": self.question_number_edit.text().strip(),
+                "full_text": self.full_text_edit.toPlainText().strip(),
+                "fields": fields,
+            }
+            self._finished_action = True
+            self.submitted.emit(config)
+            self._close_dialog()
+            return
+
         name = self.name_edit.text().strip()
         if not name:
             return
@@ -162,7 +337,10 @@ class RectangleSelectedDialog(QDialog):
         field_type = FIELD_TYPES[idx]
         config = {"field_type": field_type, "field_name": name}
         if field_type == "RadioGroup" and self._inner_name_edits:
-            config["inner_names"] = [e.text().strip() or f"Option {i+1}" for i, e in enumerate(self._inner_name_edits)]
+            config["inner_names"] = [
+                e.text().strip() or f"Option {i+1}"
+                for i, e in enumerate(self._inner_name_edits)
+            ]
         self._finished_action = True
         self.submitted.emit(config)
         self._close_dialog()
@@ -193,7 +371,6 @@ class RectangleSelectedDialog(QDialog):
         super().showEvent(event)
         last = RectangleSelectedDialog._last_pos
         if last is not None:
-            # Defer so window manager doesn't override; apply after dialog is fully shown
             QTimer.singleShot(0, lambda: self.move(last))
         else:
             self._position_near_anchor()
@@ -206,23 +383,18 @@ class RectangleSelectedDialog(QDialog):
         super().closeEvent(event)
 
     def _position_near_anchor(self):
-        """Position dialog to the right of anchor (or left if no room), vertically centered."""
         screen = QGuiApplication.screenAt(self._anchor_global)
         if not screen:
             screen = QGuiApplication.primaryScreen()
         if not screen:
             return
         geo = screen.availableGeometry()
-        # Dialog size
         w = self.frameSize().width()
         h = self.frameSize().height()
-        # Prefer right of anchor, vertically centered on anchor
         x_right = self._anchor_global.x() + 20
         x_left = self._anchor_global.x() - 20 - w
         y_center = self._anchor_global.y() - h // 2
-        # Clamp y to screen
         y = max(geo.y(), min(geo.y() + geo.height() - h, y_center))
-        # Choose left or right based on space
         if x_right + w <= geo.x() + geo.width():
             x = x_right
         elif x_left >= geo.x():

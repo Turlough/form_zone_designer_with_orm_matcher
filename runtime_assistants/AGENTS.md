@@ -28,3 +28,5 @@ Optional AI-assisted runtime modules invoked from apps (not Cursor-only rules un
 
 - `runtime_assistants/design_assistant/AGENTS.md` — Designer page analysis VLM pipeline
  - `runtime_assistants/design_assistant/grid_assistant/AGENTS.md` — Grid Designer ROI assistant
+ - `runtime_assistants/design_assistant/question_assistant/AGENTS.md` — drawn-question frame assistant
+ - `runtime_assistants/design_assistant/export_assistant_for_designer/AGENTS.md` — export format ingest and Check
