@@ -1,4 +1,4 @@
-"""Layout helpers for RadioGrid: cell geometry and expansion to RadioGroups."""
+"""Layout helpers for RadioGrid and simple RadioGroup construction."""
 
 from __future__ import annotations
 
@@ -115,6 +115,63 @@ def expand_radio_grid(grid: RadioGrid) -> list[RadioGroup]:
                 )
             )
     return groups
+
+
+def radio_group_name_from_question(question_number: str, full_text: str) -> str:
+    """Group name: question stem, else question number, else RadioGroup."""
+    stem = (full_text or "").strip()
+    if stem:
+        return stem
+    qn = (question_number or "").strip()
+    return qn or "RadioGroup"
+
+
+def build_radio_group_from_frame(
+    *,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    options: list[tuple[str, int, int, int, int]],
+    question_number: str = "",
+    full_text: str = "",
+) -> RadioGroup:
+    """One RadioGroup from a question frame and named answer rectangles.
+
+    Option layout may be irregular; it need not be a rectangular grid.
+    Metadata is applied to the group, not the RadioButtons.
+    """
+    from field_factory import default_colour_tuple_for_type
+
+    name = radio_group_name_from_question(question_number, full_text)
+    radio_colour = default_colour_tuple_for_type("RadioButton")
+    group_colour = default_colour_tuple_for_type("RadioGroup")
+    buttons = [
+        RadioButton(
+            colour=radio_colour,
+            name=opt_name,
+            x=int(ox),
+            y=int(oy),
+            width=int(ow),
+            height=int(oh),
+        )
+        for opt_name, ox, oy, ow, oh in options
+    ]
+    qn = (question_number or "").strip()
+    stem = (full_text or "").strip()
+    return RadioGroup(
+        colour=group_colour,
+        name=name,
+        x=int(x),
+        y=int(y),
+        width=int(width),
+        height=int(height),
+        radio_buttons=buttons,
+        question_number=qn,
+        full_text=stem,
+        summary=truncate_summary(name),
+        column_title=sanitize_column_title(name),
+    )
 
 
 def expand_fields_for_runtime(fields: list) -> list:

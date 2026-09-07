@@ -20,7 +20,7 @@ Non-UI services: ORM logo matching, document loading, persistence, CSV/index I/O
 - Field display/CSV metadata helpers: `util/field_metadata.py` (`summary`, `column_title`, `full_text`, `question_number` with `name` fallbacks; summary overlay ≤50; column titles not short-capped)
 
 - Designer field reshape: `util/field_geometry_edit.py` (grid division drag, resize handles, snapshots for cancel)
-- Radio grid layout: `util/radio_grid_layout.py` — expand `RadioGrid` to `RadioGroup`s for Indexer/Exporter
+- Radio grid layout: `util/radio_grid_layout.py` — expand `RadioGrid` to `RadioGroup`s for Indexer/Exporter; `build_radio_group_from_frame` for a single irregular RadioGroup from a question frame (group name from question text)
 - Designer page VLM analysis lives under `runtime_assistants/design_assistant/` (not in this package)
 - Document loading: `util/document_loader.py`; lazy page access for Indexer in `util/lazy_document_pages.py`
 - Fiducials: `util/fiducial_paths.py` — default logo candidates and per-page `logo-pN.png` (1-based N) overriding default when present

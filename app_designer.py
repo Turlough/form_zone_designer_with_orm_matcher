@@ -32,6 +32,7 @@ from util import (
 )
 from util.fiducial_paths import find_default_logo, find_fiducial_for_page, per_page_logo_filename
 from util.field_metadata import truncate_summary, sanitize_column_title
+from util.radio_grid_layout import build_radio_group_from_frame
 from util.field_geometry_edit import (
     geometry_edit_target,
     snapshot_field_geometry,
@@ -1132,6 +1133,97 @@ class Designer(QMainWindow):
         )
         QTimer.singleShot(0, lambda g=provisional: self.open_grid_designer(existing_grid=g))
 
+    def _pop_detected_rects_matching(self, inner_rects_rel: list) -> None:
+        """Remove OpenCV rects that match the given fiducial-relative inner boxes."""
+        logo = (
+            self.fiducials[self.current_page_idx][0]
+            if self.fiducials[self.current_page_idx]
+            else (0, 0)
+        )
+        det = self.page_detected_rects[self.current_page_idx]
+        to_remove = []
+        for j, rect in enumerate(det):
+            ra, rb_val, rw_val, rh_val = rect
+            for irx, iry, iw, ih in inner_rects_rel:
+                if (
+                    ra == irx + logo[0]
+                    and rb_val == iry + logo[1]
+                    and rw_val == iw
+                    and rh_val == ih
+                ):
+                    to_remove.append(j)
+                    break
+        for j in reversed(to_remove):
+            det.pop(j)
+
+    def _after_page_fields_changed(self, *, clear_selection: bool = False) -> None:
+        """Persist current page fields and refresh Designer views."""
+        page_fields = self.page_field_list[self.current_page_idx]
+        det = self.page_detected_rects[self.current_page_idx]
+        if self.image_display:
+            if clear_selection:
+                self.image_display.clear_selection()
+            self.image_display.detected_rects = det
+            self.image_display.field_list = page_fields
+            self.image_display.update_display()
+        if self.config:
+            save_page_fields(
+                str(self.config.json_folder),
+                self.current_page_idx,
+                self.page_field_list,
+                self.config.config_folder,
+            )
+        self.update_thumbnail(self.current_page_idx)
+        self._update_edit_panel_json(self.current_page_idx)
+        self._update_remove_inner_button_state()
+        self.undo_button.setEnabled(True)
+
+    def _submit_radio_group_from_question_frame(
+        self,
+        config: dict,
+        drawn_rect_rel: tuple[int, int, int, int],
+        combined_inner: list,
+        field_indices_to_remove: list[int],
+        inner_rects_rel: list,
+    ) -> None:
+        page_fields = self.page_field_list[self.current_page_idx]
+        question_number = config.get("question_number", "").strip()
+        full_text = config.get("full_text", "").strip()
+        field_configs = config.get("fields") or []
+        options: list[tuple[str, int, int, int, int]] = []
+        for i, fc in enumerate(field_configs):
+            if i >= len(combined_inner):
+                break
+            rx, ry, rw, rh, _ = combined_inner[i]
+            field_name = fc.get("field_name", "").strip()
+            if not field_name:
+                continue
+            options.append((field_name, int(rx), int(ry), int(rw), int(rh)))
+        if not options:
+            return
+        left_rel, top_rel, w, h = drawn_rect_rel
+        rg = build_radio_group_from_frame(
+            x=int(left_rel),
+            y=int(top_rel),
+            width=int(w),
+            height=int(h),
+            options=options,
+            question_number=question_number,
+            full_text=full_text,
+        )
+        for j in reversed(field_indices_to_remove):
+            page_fields.pop(j)
+        page_fields.append(rg)
+        self._last_field_type = "RadioGroup"
+        self._pop_detected_rects_matching(inner_rects_rel)
+        self._after_page_fields_changed(clear_selection=True)
+        logger.info(
+            "Page %s: Added RadioGroup '%s' with %d option(s) from question frame",
+            self.current_page_idx + 1,
+            rg.name,
+            len(rg.radio_buttons),
+        )
+
     def _submit_batch_question_fields(
         self,
         config: dict,
@@ -1175,43 +1267,8 @@ class Designer(QMainWindow):
                 kwargs["radio_buttons"] = []
             page_fields.append(field_class(**kwargs))
 
-        logo = (
-            self.fiducials[self.current_page_idx][0]
-            if self.fiducials[self.current_page_idx]
-            else (0, 0)
-        )
-        det = self.page_detected_rects[self.current_page_idx]
-        to_remove = []
-        for j, rect in enumerate(det):
-            ra, rb_val, rw_val, rh_val = rect
-            for irx, iry, iw, ih in inner_rects_rel:
-                if (
-                    ra == irx + logo[0]
-                    and rb_val == iry + logo[1]
-                    and rw_val == iw
-                    and rh_val == ih
-                ):
-                    to_remove.append(j)
-                    break
-        for j in reversed(to_remove):
-            det.pop(j)
-
-        if self.image_display:
-            self.image_display.clear_selection()
-            self.image_display.detected_rects = det
-            self.image_display.field_list = page_fields
-            self.image_display.update_display()
-        if self.config:
-            save_page_fields(
-                str(self.config.json_folder),
-                self.current_page_idx,
-                self.page_field_list,
-                self.config.config_folder,
-            )
-        self.update_thumbnail(self.current_page_idx)
-        self._update_edit_panel_json(self.current_page_idx)
-        self._update_remove_inner_button_state()
-        self.undo_button.setEnabled(True)
+        self._pop_detected_rects_matching(inner_rects_rel)
+        self._after_page_fields_changed(clear_selection=True)
         logger.info(
             "Page %s: Added %d fields from question frame",
             self.current_page_idx + 1,
@@ -1340,6 +1397,15 @@ class Designer(QMainWindow):
         )
 
         def on_submit(config: dict):
+            if config.get("radio_group_mode"):
+                self._submit_radio_group_from_question_frame(
+                    config,
+                    drawn_rect_rel,
+                    combined_inner,
+                    field_indices_to_remove,
+                    inner_rects_rel,
+                )
+                return
             if config.get("batch_mode"):
                 self._submit_batch_question_fields(
                     config,

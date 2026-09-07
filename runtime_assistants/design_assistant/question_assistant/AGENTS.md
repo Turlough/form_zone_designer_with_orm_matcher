@@ -22,12 +22,12 @@ Fill multi-answer question metadata when the Designer draws a frame around detec
 ### Outputs
 
 - `AnalyseQuestionResult`: `question_number`, `full_text`, `fields[]` (`field_type`, `name`, `summary`, `column_title`), `warnings`
-- Autofill overwrites batch dialog entries; **Submit** creates one persisted field per inner rectangle
+- Autofill overwrites batch dialog entries; **Submit** creates one persisted field per inner rectangle; **Radio group** on the same dialog creates one `RadioGroup` from the frame (not via this assistant)
 
 ### Field types
 
 - Allowed: Tickbox, TextField, IntegerField, DecimalField, DateField, etc.
-- Not allowed: RadioGroup, RadioButton, RadioGrid, NumericRadioGroup (use Grid Designer for matrices)
+- Not allowed: RadioGroup, RadioButton, RadioGrid, NumericRadioGroup (Designer **Radio group** for one exclusive question; Grid Designer for matrices)
 
 ### VLM
 

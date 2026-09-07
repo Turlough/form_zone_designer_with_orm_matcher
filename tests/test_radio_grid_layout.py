@@ -7,6 +7,8 @@ from util.radio_grid_layout import (
     cell_rects_for_grid,
     expand_fields_for_runtime,
     expand_radio_grid,
+    build_radio_group_from_frame,
+    radio_group_name_from_question,
 )
 
 
@@ -139,3 +141,48 @@ def test_expand_single_column_vertical_copies_stem_meta():
     assert groups[0].full_text == "What age group do you fall into?"
     assert groups[0].summary == "Age group"
     assert all(not (rb.question_number or "") for rb in groups[0].radio_buttons)
+
+
+def test_radio_group_name_from_question():
+    assert radio_group_name_from_question("5.1", "stem text") == "stem text"
+    assert radio_group_name_from_question("", "Whole farm stocking") == "Whole farm stocking"
+    assert radio_group_name_from_question("5.1", "") == "5.1"
+    assert radio_group_name_from_question("  ", "") == "RadioGroup"
+
+
+def test_build_radio_group_from_irregular_frame():
+    """Compact 3+2 option layout still yields one RadioGroup."""
+    rg = build_radio_group_from_frame(
+        x=10,
+        y=20,
+        width=400,
+        height=200,
+        options=[
+            ("Less than 170", 20, 80, 16, 16),
+            ("170-220", 200, 80, 16, 16),
+            ("221-250", 20, 120, 16, 16),
+            ("More than 250", 200, 120, 16, 16),
+            ("Don't know", 20, 160, 16, 16),
+        ],
+        question_number="5.1",
+        full_text="What is your Whole Farm Stocking Rate?",
+    )
+    assert isinstance(rg, RadioGroup)
+    assert rg.name == "What is your Whole Farm Stocking Rate?"
+    assert rg.question_number == "5.1"
+    assert rg.full_text == "What is your Whole Farm Stocking Rate?"
+    assert rg.x == 10 and rg.y == 20 and rg.width == 400 and rg.height == 200
+    assert [b.name for b in rg.radio_buttons] == [
+        "Less than 170",
+        "170-220",
+        "221-250",
+        "More than 250",
+        "Don't know",
+    ]
+    assert (rg.radio_buttons[4].x, rg.radio_buttons[4].y) == (20, 160)
+    assert all(not (rb.question_number or "") for rb in rg.radio_buttons)
+
+    restored = Field.from_dict(rg.to_dict())
+    assert isinstance(restored, RadioGroup)
+    assert len(restored.radio_buttons) == 5
+    assert restored.radio_buttons[4].name == "Don't know"

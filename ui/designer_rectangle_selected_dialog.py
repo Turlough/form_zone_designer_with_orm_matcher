@@ -44,6 +44,11 @@ ASSISTANT_ENABLED_TTIP = (
 ASSISTANT_DISABLED_TTIP = (
     "Draw a frame that includes the question and at least one detected answer rectangle."
 )
+RADIO_GROUP_TTIP = (
+    "Create one RadioGroup from this frame. Inner rectangles become mutually "
+    "exclusive options (layout need not be a grid)."
+)
+RADIO_GRID_TTIP = "Open Grid Designer for a radio-button matrix instead."
 
 
 class _InnerFieldRow(QWidget):
@@ -70,7 +75,8 @@ class RectangleSelectedDialog(QDialog):
     Dialog shown when a rectangle is selected (clicked within rect, drawn rect,
     or clicked within existing field). Provides name, type pick list, and
     Delete / Submit / Cancel. For drawn rect with inner rects, batch mode lists
-    each answer with type and name plus Assistant autofill.
+    each answer with type and name plus Assistant autofill. **Radio group**
+    creates one RadioGroup from the frame; **Radio grid…** opens Grid Designer.
     """
 
     _last_pos = None  # Persists last position within app session
@@ -174,10 +180,12 @@ class RectangleSelectedDialog(QDialog):
         self.assistant_btn.setToolTip(ASSISTANT_DISABLED_TTIP)
         self.assistant_btn.clicked.connect(self._on_assistant_clicked)
         assistant_row.addWidget(self.assistant_btn)
+        self.radio_group_btn = QPushButton("Radio group")
+        self.radio_group_btn.setToolTip(RADIO_GROUP_TTIP)
+        self.radio_group_btn.clicked.connect(self._on_radio_group_clicked)
+        assistant_row.addWidget(self.radio_group_btn)
         self.radio_grid_btn = QPushButton("Radio grid…")
-        self.radio_grid_btn.setToolTip(
-            "Open Grid Designer for a radio-button matrix instead."
-        )
+        self.radio_grid_btn.setToolTip(RADIO_GRID_TTIP)
         self.radio_grid_btn.clicked.connect(self._on_radio_grid_clicked)
         assistant_row.addWidget(self.radio_grid_btn)
         assistant_row.addStretch()
@@ -246,7 +254,7 @@ class RectangleSelectedDialog(QDialog):
                 self._type_radios[default].setChecked(True)
                 self._on_type_changed()
 
-        self.setMinimumWidth(320 if self._batch_mode else 220)
+        self.setMinimumWidth(380 if self._batch_mode else 220)
         self._fit_vertical_size()
 
     def _fit_vertical_size(self) -> None:
@@ -280,16 +288,52 @@ class RectangleSelectedDialog(QDialog):
         self.assistant_btn.setToolTip(
             ASSISTANT_ENABLED_TTIP if ok else ASSISTANT_DISABLED_TTIP
         )
+        busy = self._assistant_running
+        self.radio_group_btn.setEnabled(not busy)
+        self.radio_grid_btn.setEnabled(not busy)
 
     def _on_assistant_clicked(self):
         if self._assistant_running:
             return
         self.assistant_requested.emit()
 
+    def _batch_answer_fields(self) -> list[dict] | None:
+        """Return per-answer type/name rows, or None if any name is empty."""
+        fields = []
+        for row in self._inner_rows:
+            name = row.name_edit.text().strip()
+            if not name:
+                return None
+            fields.append(
+                {
+                    "field_type": row.type_combo.currentText(),
+                    "field_name": name,
+                }
+            )
+        return fields
+
+    def _on_radio_group_clicked(self):
+        if self._assistant_running:
+            return
+        fields = self._batch_answer_fields()
+        if fields is None:
+            return
+        config = {
+            "radio_group_mode": True,
+            "question_number": self.question_number_edit.text().strip(),
+            "full_text": self.full_text_edit.toPlainText().strip(),
+            "fields": fields,
+        }
+        self._finished_action = True
+        self.submitted.emit(config)
+        self._close_dialog()
+
     def _on_radio_grid_clicked(self):
-        name = self.question_number_edit.text().strip()
+        if self._assistant_running:
+            return
+        name = self.full_text_edit.toPlainText().strip()
         if not name:
-            name = self.full_text_edit.toPlainText().strip()[:50] or "Grid"
+            name = self.question_number_edit.text().strip() or "Grid"
         self._finished_action = True
         self.radio_grid_requested.emit(name)
         self._close_dialog()
@@ -317,17 +361,9 @@ class RectangleSelectedDialog(QDialog):
 
     def _on_submit(self):
         if self._batch_mode:
-            fields = []
-            for row in self._inner_rows:
-                name = row.name_edit.text().strip()
-                if not name:
-                    return
-                fields.append(
-                    {
-                        "field_type": row.type_combo.currentText(),
-                        "field_name": name,
-                    }
-                )
+            fields = self._batch_answer_fields()
+            if fields is None:
+                return
             config = {
                 "batch_mode": True,
                 "question_number": self.question_number_edit.text().strip(),
