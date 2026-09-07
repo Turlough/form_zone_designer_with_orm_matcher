@@ -290,7 +290,9 @@ class RectangleSelectedDialog(QDialog):
         name = self.question_number_edit.text().strip()
         if not name:
             name = self.full_text_edit.toPlainText().strip()[:50] or "Grid"
+        self._finished_action = True
         self.radio_grid_requested.emit(name)
+        self._close_dialog()
 
     def apply_assistant_result(self, result) -> None:
         """Apply AnalyseQuestionResult from Question Assistant."""

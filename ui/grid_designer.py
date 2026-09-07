@@ -11,6 +11,7 @@ import re
 from typing import Optional
 
 from PyQt6.QtWidgets import (
+    QApplication,
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -916,6 +917,7 @@ class GridDesigner(QMainWindow):
             return
         self.statusBar().showMessage("Grid Assistant analysing…")
         self.assistant_btn.setEnabled(False)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         worker = GridAssistantWorker(
             self._page_image,
             gr,
@@ -931,6 +933,7 @@ class GridDesigner(QMainWindow):
         worker.start()
 
     def _on_assistant_finished(self):
+        QApplication.restoreOverrideCursor()
         self._assistant_worker = None
         self._update_assistant_enabled()
 
