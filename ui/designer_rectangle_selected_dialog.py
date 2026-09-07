@@ -3,7 +3,8 @@ Dialog shown when a rectangle is selected (clicked, drawn, or existing field).
 Positioned to the right of the mouse (or left if no room), centered vertically.
 
 Batch mode (drawn frame with inner answer rectangles): shared question metadata,
-per-answer type/name rows, and Assistant autofill.
+per-answer type/name rows (scroll if they would overflow the screen), and
+Assistant autofill. Action buttons stay visible.
 """
 from PyQt6.QtWidgets import (
     QDialog,
@@ -18,6 +19,8 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QTextEdit,
     QSizePolicy,
+    QScrollArea,
+    QFrame,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QTimer
 from PyQt6.QtGui import QGuiApplication
@@ -75,8 +78,10 @@ class RectangleSelectedDialog(QDialog):
     Dialog shown when a rectangle is selected (clicked within rect, drawn rect,
     or clicked within existing field). Provides name, type pick list, and
     Delete / Submit / Cancel. For drawn rect with inner rects, batch mode lists
-    each answer with type and name plus Assistant autofill. **Radio group**
-    creates one RadioGroup from the frame; **Radio grid…** opens Grid Designer.
+    each answer with type and name plus Assistant autofill; answer rows scroll
+    when the dialog would exceed the screen so Assistant / Radio group /
+    Radio grid / Submit stay reachable. **Radio group** creates one RadioGroup
+    from the frame; **Radio grid…** opens Grid Designer.
     """
 
     _last_pos = None  # Persists last position within app session
@@ -173,7 +178,21 @@ class RectangleSelectedDialog(QDialog):
         )
         self._inner_layout = QVBoxLayout(self._inner_fields_panel)
         self._inner_layout.setContentsMargins(0, 0, 0, 0)
-        batch_layout.addWidget(self._inner_fields_panel)
+        self._inner_fields_scroll = QScrollArea()
+        self._inner_fields_scroll.setWidgetResizable(True)
+        self._inner_fields_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._inner_fields_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._inner_fields_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self._inner_fields_scroll.setMinimumHeight(72)
+        self._inner_fields_scroll.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self._inner_fields_scroll.setWidget(self._inner_fields_panel)
+        batch_layout.addWidget(self._inner_fields_scroll, stretch=1)
 
         assistant_row = QHBoxLayout()
         self.assistant_btn = QPushButton("Assistant")
@@ -191,7 +210,10 @@ class RectangleSelectedDialog(QDialog):
         assistant_row.addStretch()
         batch_layout.addLayout(assistant_row)
 
-        layout.addWidget(self._batch_widget)
+        self._batch_widget.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+        )
+        layout.addWidget(self._batch_widget, stretch=1)
 
         # Inner names (RadioGroup legacy path when batch off but inner rects exist)
         self._inner_name_widget = QWidget()
@@ -257,16 +279,55 @@ class RectangleSelectedDialog(QDialog):
         self.setMinimumWidth(380 if self._batch_mode else 220)
         self._fit_vertical_size()
 
+    def _available_screen_geo(self):
+        screen = QGuiApplication.screenAt(self._anchor_global)
+        if screen is None and self.isVisible():
+            screen = QGuiApplication.screenAt(self.pos())
+        if screen is None:
+            screen = QGuiApplication.primaryScreen()
+        return screen.availableGeometry() if screen else None
+
+    def _max_client_height(self) -> int:
+        geo = self._available_screen_geo()
+        if geo is None:
+            return 800
+        if self.isVisible():
+            frame_extra = max(0, self.frameGeometry().height() - self.geometry().height())
+        else:
+            frame_extra = 40
+        return max(200, geo.height() - frame_extra)
+
     def _fit_vertical_size(self) -> None:
-        """Grow the dialog so all content (especially answer rows) fits without scrolling."""
+        """Size to content, but never taller than the screen; answer rows scroll."""
+        max_h = self._max_client_height()
+        self.setMaximumHeight(max_h)
         if self._batch_mode:
             self._inner_fields_panel.adjustSize()
-        self.adjustSize()
         hint = self.sizeHint()
-        self.resize(
-            max(self.minimumWidth(), hint.width()),
-            hint.height(),
-        )
+        width = max(self.minimumWidth(), hint.width())
+        height = hint.height()
+        if self._batch_mode:
+            # QScrollArea sizeHint does not include full option-list height;
+            # grow so as many rows as possible fit, then scroll the rest.
+            extra = max(
+                0,
+                self._inner_fields_panel.sizeHint().height()
+                - self._inner_fields_scroll.minimumHeight(),
+            )
+            height = hint.height() + extra
+            if height > max_h:
+                width += self._inner_fields_scroll.verticalScrollBar().sizeHint().width()
+        self.resize(width, min(height, max_h))
+
+    def _clamp_to_screen(self) -> None:
+        geo = self._available_screen_geo()
+        if geo is None:
+            return
+        w = self.frameSize().width()
+        h = self.frameSize().height()
+        x = max(geo.x(), min(self.x(), geo.x() + geo.width() - w))
+        y = max(geo.y(), min(self.y(), geo.y() + geo.height() - h))
+        self.move(x, y)
 
     def _on_type_changed(self):
         is_rg = self._button_group.checkedId() == FIELD_TYPES.index("RadioGroup")
@@ -423,6 +484,7 @@ class RectangleSelectedDialog(QDialog):
         last = RectangleSelectedDialog._last_pos
         if last is not None:
             self.move(last)
+            self._clamp_to_screen()
         else:
             self._position_near_anchor()
 
@@ -453,3 +515,4 @@ class RectangleSelectedDialog(QDialog):
         else:
             x = max(geo.x(), min(geo.x() + geo.width() - w, x_right))
         self.move(x, y)
+        self._clamp_to_screen()
