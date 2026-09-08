@@ -56,6 +56,15 @@ def default_colour_tuple_for_class(field_class: type) -> tuple[int, int, int]:
     return qcolor_to_tuple(INVALID_COLOUR)
 
 
+def get_display_color_for_type(type_name: str) -> QColor:
+    """Resolve type colour from FIELD_TYPE_MAP by type name."""
+    entry = FIELD_TYPE_MAP.get(type_name)
+    if entry is None:
+        return INVALID_COLOUR
+    _field_class, color, _validator = entry
+    return color
+
+
 def get_field_display_color(field: Field) -> QColor:
     """
     Resolve overlay colour from FIELD_TYPE_MAP by concrete field class.

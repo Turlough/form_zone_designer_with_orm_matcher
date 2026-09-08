@@ -23,6 +23,7 @@ PyQt6 widgets, panels, dialogs, and layouts shared by Designer, Indexer, and rel
 - Grid Designer grid name / row / column label edits have no character max; overlay display still caps via `summary` / `display_label` (50)
 - Indexer-facing: main image panel, details panel, menus, OCR/index/comment/QC dialogs
 - Field overlay colours: resolve via `field_factory.get_field_display_color()` (shared with Indexer); do not read `field.colour` for paint
+- Designer field list Type column: cell background via `field_factory.get_display_color_for_type()` (same palette as overlays); text contrast black/white by luminance
 - Prefer extending existing widgets over duplicating paint or layout logic in entry-point apps
 
 ## Work Guidance

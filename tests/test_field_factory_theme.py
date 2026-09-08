@@ -3,8 +3,18 @@
 from fields import Field, Tickbox, IntegerField, RadioGroup, RadioButton, RadioGrid
 from field_factory import (
     default_colour_tuple_for_type,
+    get_display_color_for_type,
     get_field_display_color,
+    INVALID_COLOUR,
 )
+
+
+def test_get_display_color_for_type_matches_tuple_map():
+    for type_name in ("Tickbox", "TextField", "RadioGroup", "RadioGrid", "IntegerField"):
+        color = get_display_color_for_type(type_name)
+        assert (color.red(), color.green(), color.blue()) == default_colour_tuple_for_type(type_name)
+    unknown = get_display_color_for_type("NotAField")
+    assert unknown == INVALID_COLOUR
 
 
 def test_get_field_display_color_uses_type_map_not_json():

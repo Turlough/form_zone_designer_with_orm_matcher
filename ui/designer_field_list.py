@@ -1,10 +1,16 @@
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QMenu, QApplication
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint
-from PyQt6.QtGui import QDropEvent, QPainter, QPen
+from PyQt6.QtGui import QColor, QDropEvent, QPainter, QPen
+from field_factory import get_display_color_for_type
 import json
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _contrasting_text_color(bg: QColor) -> QColor:
+    luminance = 0.299 * bg.red() + 0.587 * bg.green() + 0.114 * bg.blue()
+    return QColor(0, 0, 0) if luminance > 160 else QColor(255, 255, 255)
 
 
 class DesignerFieldList(QTableWidget):
@@ -117,6 +123,15 @@ class DesignerFieldList(QTableWidget):
         """Return the field order as a list of (field_name, field_type) tuples."""
         return self._get_field_order_from_table()
 
+    def _make_type_item(self, field_type: str) -> QTableWidgetItem:
+        """Type cell with the shared field-type colour as background."""
+        type_item = QTableWidgetItem(field_type)
+        type_item.setFlags(type_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        color = get_display_color_for_type(field_type)
+        type_item.setBackground(color)
+        type_item.setForeground(_contrasting_text_color(color))
+        return type_item
+
     def highlight_field(self, field_name: str, field_type: str):
         """Select the row that matches the given field name and type."""
         for row in range(self.rowCount()):
@@ -191,8 +206,7 @@ class DesignerFieldList(QTableWidget):
             # This allows us to track which field belongs to which row after drag/drop
             name_item.setData(Qt.ItemDataRole.UserRole, len(self._field_order))
             
-            type_item = QTableWidgetItem(field_type)
-            type_item.setFlags(type_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            type_item = self._make_type_item(field_type)
             
             self.setItem(row, 0, name_item)
             self.setItem(row, 1, type_item)
