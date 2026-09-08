@@ -21,6 +21,7 @@ Document how this suite’s CSV delivery format relates to external survey and d
 
 - When export behavior in code changes, update `App_Export.md` first, then adjust provider comparison sections.
 - When adding a provider, add `{Provider}.md` and list it in the Child DOX Index below.
+- Designer JSON vs customer Excel heading checks: `EXAMPLES/AGENTS.md` (chat-based; sample packs are gitignored).
 - Prefer comparison tables and explicit mapping notes (column layout, selected/unselected encoding, quoting) over narrative-only prose.
 
 ## Verification

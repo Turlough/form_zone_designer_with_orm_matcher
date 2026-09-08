@@ -11,4 +11,5 @@ dist/
 .cursor/workspace/
 uv.lock
 
-EXAMPLES/
+# Customer sample packs; keep EXAMPLES/AGENTS.md tracked
+EXAMPLES/*/
