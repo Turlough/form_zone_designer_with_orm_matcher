@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Designer — Form indexing suite</title>
+  <title>Form Zone Designer — Form indexing suite</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -19,7 +19,64 @@
   </nav>
   <main class="content">
     <article class="doc">
-<p class="todo">TODO</p>
+<h1>Form Zone Designer</h1>
+<p>Use Designer to define field zones on a blank template. Complete <strong>Templates and project setup</strong> (<code>INSTRUCTIONS-1-Templates.md</code>) first.</p>
+<p>Start the app (<code>app_designer.py</code>). <strong>File → Load Config Folder</strong> (<code>Ctrl+O</code>) opens a folder picker; choose the <strong>project</strong> folder (the one that contains <code>template.pdf</code> / <code>template.tif</code>, <code>json/</code>, and <code>fiducials/</code>). The window title shows the project name.</p>
+<h2>Indexing Config</h2>
+<p>The <strong>Indexing Config</strong> menu sits immediately after <strong>File</strong>. It writes indexing keys into <code>json/project_config.json</code> and can create a sample batch for Indexer. Load a project first; the menu items stay disabled until then.</p>
+<h3>Basic Indexing Config</h3>
+<p>Opens a dialog with OK / Cancel. Existing values are loaded from <code>project_config.json</code> when present. Unrelated keys (validations, rectangle detection, review lists) are left unchanged.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Default when empty</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Project name</strong></td>
+<td>The project folder name</td>
+<td>Stored as <code>project_name</code>.</td>
+</tr>
+<tr>
+<td><strong>Batch folder</strong></td>
+<td><em>(blank)</em></td>
+<td>Folder picker. Root that will hold Indexer batch directories (<code>batch_folder</code>).</td>
+</tr>
+<tr>
+<td><strong>Import filename</strong></td>
+<td><code>EXPORT.TXT</code></td>
+<td>File name only, not a path (<code>import_filename</code>).</td>
+</tr>
+<tr>
+<td><strong>Lookup list</strong></td>
+<td><em>(blank)</em></td>
+<td>Optional file picker for a lookup CSV (<code>lookup_list</code>). Clear the field to remove the key.</td>
+</tr>
+<tr>
+<td><strong>Lookup prime index</strong></td>
+<td><code>0</code></td>
+<td>Zero-based key column in that CSV (<code>lookup_prime_index</code>).</td>
+</tr>
+<tr>
+<td><strong>Pages without fiducial</strong></td>
+<td><code>[0, 1]</code></td>
+<td>Zero-based page indices skipped during fiducial search (<code>pages_without_fiducial</code>). Use <code>[]</code> if every page has a mark. Saving this list re-runs fiducial detection on the open template.</td>
+</tr>
+</tbody>
+</table>
+<p>OK saves to <code>json/project_config.json</code>. Set <strong>batch_folder</strong> and <strong>import filename</strong> before using Indexer or <strong>Create Test Batch</strong>.</p>
+<h3>Create Test Batch</h3>
+<p>Creates a throwaway batch so you can open Indexer against the current design.</p>
+<ol>
+<li>Prefills <strong>Batch name</strong> <code>test001</code> and <strong>Number of documents</strong> <code>1</code>.</li>
+<li>OK creates <code>&lt;batch_folder&gt;/&lt;batch name&gt;/</code>.</li>
+<li>Copies <code>template.pdf</code> that many times as <code>0001.pdf</code>, <code>0002.pdf</code>, … (a TIFF/PDF template is converted if <code>template.pdf</code> is missing).</li>
+<li>Writes <strong>import_filename</strong> (for example <code>EXPORT.TXT</code>) in that folder, listing those PDFs in the <strong>File</strong> column.</li>
+</ol>
+<p>The batch folder must not already exist. Indexer then lists this batch from the project’s <code>batch_folder</code>.</p>
     </article>
   </main>
 </body>

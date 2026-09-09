@@ -6,6 +6,10 @@ from .designer_edit_panel import DesignerEditPanel
 from .designer_rectangle_selected_dialog import RectangleSelectedDialog
 from .designer_rectangle_detect_dialog import DesignerRectangleDetectDialog
 from .designer_analyse_preview_dialog import DesignerAnalysePreviewDialog
+from .designer_indexing_config_dialog import (
+    DesignerIndexingConfigDialog,
+    DesignerCreateTestBatchDialog,
+)
 from .grid_designer import GridDesigner
 from .index_main_image_panel import MainImageIndexPanel
 from .index_details_panel import IndexDetailPanel

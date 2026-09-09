@@ -97,7 +97,7 @@ Some pages (covers, instructions) may have no repeatable mark. List their **zero
 
 Here `0` is the **first** page of the template. Omit the key or use `[]` if every page uses a fiducial.
 
-Create or edit `project_config.json` **before** loading the project in Designer if you need this list; Designer reads it when detecting fiducials.
+Create or edit `project_config.json` **before** loading the project in Designer if you need this list, or set it later with **Indexing Config → Basic Indexing Config** (Designer re-runs fiducial detection when you save).
 
 ## `json/project_config.json`
 
@@ -107,11 +107,13 @@ Example (adjust paths and field names for your job):
 
 ```json
 {
+  "project_name": "MyForm",
   "batch_folder": "c:\\Jobs\\MyForm\\batches",
   "import_filename": "EXPORT.TXT",
   "always_review": ["Field3", "Another field"],
   "quick_review": ["Field 5", "Field 6"],
   "lookup_list": "optional/path/to/lookup.csv",
+  "lookup_prime_index": 0,
   "pages_without_fiducial": [0],
   "rectangle_detection": {
     "canny_low_threshold": 60,
@@ -140,16 +142,18 @@ Example (adjust paths and field names for your job):
 
 | Key | Purpose |
 |-----|---------|
+| `project_name` | Display name for the project (Designer window title). Defaults to the project folder name. |
 | `batch_folder` | Root folder for batch directories (Indexer batch menu, Exporter). **Required** for Indexer/Exporter workflows. |
 | `import_filename` | Name of each batch’s import/list file (for example `EXPORT.TXT`). **Required** for Indexer/Exporter. |
 | `always_review` | Field names that QC should always review (Field Review / QC flows). |
 | `quick_review` | Field names for quick review lists in Indexer. |
 | `lookup_list` | Optional CSV path for lookup-backed validations. |
+| `lookup_prime_index` | Zero-based key column in `lookup_list` (default `0`). |
 | `pages_without_fiducial` | Zero-based page indices with no fiducial search. |
 | `rectangle_detection` | Optional Designer-only OpenCV rectangle detection tuning (saved when you use **Detect Rectangles**). |
 | `validations` | Optional project-level rules (see validation docs / Indexer behaviour). |
 
-You can add `project_config.json` early with only the keys you need and expand it before indexing starts. **`batch_folder` and `import_filename` must be valid before operators use Indexer or Exporter.**
+You can add `project_config.json` early with only the keys you need and expand it before indexing starts. **`batch_folder` and `import_filename` must be valid before operators use Indexer or Exporter.** In Form Zone Designer, **Indexing Config → Basic Indexing Config** writes these indexing keys (and **Create Test Batch** builds a sample batch under `batch_folder`).
 
 Paths may be absolute or relative; use valid JSON escaping for Windows paths (`\\`).
 
@@ -183,7 +187,7 @@ Per-project paths such as **`batch_folder`** belong in `json/project_config.json
 2. Create the project folder and subfolders `json/` and `fiducials/` (or let Designer create them on first load).
 3. Place **`template.tif`**, **`template.tiff`**, or **`template.pdf`** (multipage blank form) in the project folder.
 4. Add a fiducial image under **`fiducials/`** using one of the supported file names; verify the app can detect that patch on each page that should use a fiducial (position may differ per page).
-5. Add **`json/project_config.json`** with at least `pages_without_fiducial` if any page lacks a mark; add `batch_folder` and `import_filename` before indexing.
+5. Add **`json/project_config.json`** with at least `pages_without_fiducial` if any page lacks a mark; add `batch_folder` and `import_filename` before indexing (or set them later in Designer **Indexing Config → Basic Indexing Config**).
 6. Confirm page count in the template matches the number of pages you will design.
 7. Open **`INSTRUCTIONS-2-Designer.md`** and start Form Zone Designer (**File → Load Config Folder** → select the project folder).
 

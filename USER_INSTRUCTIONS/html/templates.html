@@ -127,17 +127,29 @@
 <pre><code class="language-json">&quot;pages_without_fiducial&quot;: [0]
 </code></pre>
 <p>Here <code>0</code> is the <strong>first</strong> page of the template. Omit the key or use <code>[]</code> if every page uses a fiducial.</p>
-<p>Create or edit <code>project_config.json</code> <strong>before</strong> loading the project in Designer if you need this list; Designer reads it when detecting fiducials.</p>
+<p>Create or edit <code>project_config.json</code> <strong>before</strong> loading the project in Designer if you need this list, or set it later with <strong>Indexing Config → Basic Indexing Config</strong> (Designer re-runs fiducial detection when you save).</p>
 <h2><code>json/project_config.json</code></h2>
 <p>Single JSON file per project for paths, review rules, and validations. Indexer and Exporter require several keys; Designer uses it mainly for <code>pages_without_fiducial</code> (and loads the same file later for other apps).</p>
 <p>Example (adjust paths and field names for your job):</p>
 <pre><code class="language-json">{
+  &quot;project_name&quot;: &quot;MyForm&quot;,
   &quot;batch_folder&quot;: &quot;c:\\Jobs\\MyForm\\batches&quot;,
   &quot;import_filename&quot;: &quot;EXPORT.TXT&quot;,
   &quot;always_review&quot;: [&quot;Field3&quot;, &quot;Another field&quot;],
   &quot;quick_review&quot;: [&quot;Field 5&quot;, &quot;Field 6&quot;],
   &quot;lookup_list&quot;: &quot;optional/path/to/lookup.csv&quot;,
+  &quot;lookup_prime_index&quot;: 0,
   &quot;pages_without_fiducial&quot;: [0],
+  &quot;rectangle_detection&quot;: {
+    &quot;canny_low_threshold&quot;: 60,
+    &quot;canny_high_threshold&quot;: 150,
+    &quot;dilate_iterations&quot;: 7,
+    &quot;overlap_threshold_value&quot;: 0.7,
+    &quot;min_area&quot;: 500,
+    &quot;max_area&quot;: 30000,
+    &quot;include_adaptive_method&quot;: true,
+    &quot;auto_remove_inner&quot;: true
+  },
   &quot;validations&quot;: [
     {
       &quot;strategy&quot;: &quot;max_tickboxes&quot;,
@@ -161,6 +173,10 @@
 </thead>
 <tbody>
 <tr>
+<td><code>project_name</code></td>
+<td>Display name for the project (Designer window title). Defaults to the project folder name.</td>
+</tr>
+<tr>
 <td><code>batch_folder</code></td>
 <td>Root folder for batch directories (Indexer batch menu, Exporter). <strong>Required</strong> for Indexer/Exporter workflows.</td>
 </tr>
@@ -181,8 +197,16 @@
 <td>Optional CSV path for lookup-backed validations.</td>
 </tr>
 <tr>
+<td><code>lookup_prime_index</code></td>
+<td>Zero-based key column in <code>lookup_list</code> (default <code>0</code>).</td>
+</tr>
+<tr>
 <td><code>pages_without_fiducial</code></td>
 <td>Zero-based page indices with no fiducial search.</td>
+</tr>
+<tr>
+<td><code>rectangle_detection</code></td>
+<td>Optional Designer-only OpenCV rectangle detection tuning (saved when you use <strong>Detect Rectangles</strong>).</td>
 </tr>
 <tr>
 <td><code>validations</code></td>
@@ -190,7 +214,7 @@
 </tr>
 </tbody>
 </table>
-<p>You can add <code>project_config.json</code> early with only the keys you need and expand it before indexing starts. <strong><code>batch_folder</code> and <code>import_filename</code> must be valid before operators use Indexer or Exporter.</strong></p>
+<p>You can add <code>project_config.json</code> early with only the keys you need and expand it before indexing starts. <strong><code>batch_folder</code> and <code>import_filename</code> must be valid before operators use Indexer or Exporter.</strong> In Form Zone Designer, <strong>Indexing Config → Basic Indexing Config</strong> writes these indexing keys (and <strong>Create Test Batch</strong> builds a sample batch under <code>batch_folder</code>).</p>
 <p>Paths may be absolute or relative; use valid JSON escaping for Windows paths (<code>\\</code>).</p>
 <h2>Page field JSON (<code>json/1.json</code>, <code>json/2.json</code>, …)</h2>
 <p>Designer creates and updates these files when you save field work. You normally <strong>do not</strong> hand-author them, but the structure matters for downstream apps:</p>
@@ -216,7 +240,7 @@
 <li>Create the project folder and subfolders <code>json/</code> and <code>fiducials/</code> (or let Designer create them on first load).</li>
 <li>Place <strong><code>template.tif</code></strong>, <strong><code>template.tiff</code></strong>, or <strong><code>template.pdf</code></strong> (multipage blank form) in the project folder.</li>
 <li>Add a fiducial image under <strong><code>fiducials/</code></strong> using one of the supported file names; verify the app can detect that patch on each page that should use a fiducial (position may differ per page).</li>
-<li>Add <strong><code>json/project_config.json</code></strong> with at least <code>pages_without_fiducial</code> if any page lacks a mark; add <code>batch_folder</code> and <code>import_filename</code> before indexing.</li>
+<li>Add <strong><code>json/project_config.json</code></strong> with at least <code>pages_without_fiducial</code> if any page lacks a mark; add <code>batch_folder</code> and <code>import_filename</code> before indexing (or set them later in Designer <strong>Indexing Config → Basic Indexing Config</strong>).</li>
 <li>Confirm page count in the template matches the number of pages you will design.</li>
 <li>Open <strong><code>INSTRUCTIONS-2-Designer.md</code></strong> and start Form Zone Designer (<strong>File → Load Config Folder</strong> → select the project folder).</li>
 </ol>

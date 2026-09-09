@@ -9,30 +9,38 @@ from util.rectangle_detection_settings import RectangleDetectionSettings
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_IMPORT_FILENAME = "EXPORT.TXT"
+DEFAULT_LOOKUP_PRIME_INDEX = 0
+DEFAULT_PAGES_WITHOUT_FIDUCIAL = [0, 1]
+DEFAULT_TEST_BATCH_NAME = "test001"
+
 
 def _project_config_path(json_folder: Path) -> Path:
     return json_folder / "project_config.json"
 
 
-def load_rectangle_detection_settings(json_folder: str) -> RectangleDetectionSettings:
-    """Load rectangle_detection from project_config.json, or defaults."""
+def load_project_config(json_folder: str | Path) -> dict:
+    """Load project_config.json as a dict. Missing or invalid files yield {}."""
     json_folder = Path(resolve_path_or_original(json_folder))
     config_path = find_file_case_insensitive(json_folder, "project_config.json")
     if config_path is None:
-        return RectangleDetectionSettings()
+        return {}
     try:
         with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        return RectangleDetectionSettings.from_dict(config.get("rectangle_detection"))
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
     except Exception as e:
-        logger.warning("Could not read rectangle_detection from %s: %s", config_path, e)
-        return RectangleDetectionSettings()
+        logger.warning("Could not read project_config.json at %s: %s", config_path, e)
+        return {}
 
 
-def save_rectangle_detection_settings(
-    json_folder: str, settings: RectangleDetectionSettings
-) -> None:
-    """Merge rectangle_detection into project_config.json, preserving other keys."""
+def merge_project_config(
+    json_folder: str | Path,
+    updates: dict,
+    *,
+    remove_keys: tuple[str, ...] = (),
+) -> dict:
+    """Merge keys into project_config.json, preserving unrelated entries."""
     json_folder = Path(resolve_path_or_original(json_folder))
     json_folder.mkdir(parents=True, exist_ok=True)
     config_path = find_file_case_insensitive(json_folder, "project_config.json")
@@ -40,17 +48,107 @@ def save_rectangle_detection_settings(
         config_path = _project_config_path(json_folder)
         config: dict = {}
     else:
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-        except Exception as e:
-            logger.warning("Could not read %s for merge: %s", config_path, e)
-            config = {}
-    settings.normalize()
-    config["rectangle_detection"] = settings.to_dict()
+        config = load_project_config(json_folder)
+    config.update(updates)
+    for key in remove_keys:
+        config.pop(key, None)
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
-    logger.info("Saved rectangle_detection settings to %s", config_path)
+    logger.info("Updated project_config.json at %s", config_path)
+    return config
+
+
+def parse_pages_without_fiducial(text: str) -> list[int]:
+    """Parse a JSON list (or comma-separated ints) of zero-based page indices."""
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    if not raw.startswith("["):
+        raw = f"[{raw}]"
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError("pages_without_fiducial must be a JSON list of integers, e.g. [0, 1]") from e
+    if not isinstance(data, list):
+        raise ValueError("pages_without_fiducial must be a JSON list of integers, e.g. [0, 1]")
+    pages: list[int] = []
+    for item in data:
+        if isinstance(item, bool) or not isinstance(item, (int, float, str)):
+            raise ValueError("pages_without_fiducial entries must be integers")
+        try:
+            pages.append(int(item))
+        except (TypeError, ValueError) as e:
+            raise ValueError("pages_without_fiducial entries must be integers") from e
+    return pages
+
+
+def format_pages_without_fiducial(pages: list[int]) -> str:
+    return json.dumps([int(x) for x in pages])
+
+
+def indexing_config_from_project(
+    config: dict | None,
+    *,
+    default_project_name: str = "",
+) -> dict:
+    """Build Basic Indexing Config values from project_config.json (with defaults)."""
+    config = config or {}
+    raw_pages = config.get("pages_without_fiducial")
+    if raw_pages is None:
+        pages = list(DEFAULT_PAGES_WITHOUT_FIDUCIAL)
+    else:
+        try:
+            pages = [int(x) for x in raw_pages]
+        except (TypeError, ValueError):
+            pages = list(DEFAULT_PAGES_WITHOUT_FIDUCIAL)
+    try:
+        prime = int(config.get("lookup_prime_index", DEFAULT_LOOKUP_PRIME_INDEX))
+    except (TypeError, ValueError):
+        prime = DEFAULT_LOOKUP_PRIME_INDEX
+    import_filename = str(config.get("import_filename", "") or "").strip() or DEFAULT_IMPORT_FILENAME
+    project_name = str(config.get("project_name", "") or "").strip() or default_project_name
+    return {
+        "project_name": project_name,
+        "batch_folder": str(config.get("batch_folder", "") or "").strip(),
+        "import_filename": import_filename,
+        "lookup_list": str(config.get("lookup_list", "") or "").strip(),
+        "lookup_prime_index": prime,
+        "pages_without_fiducial": pages,
+    }
+
+
+def save_indexing_config(json_folder: str | Path, values: dict) -> dict:
+    """Merge Basic Indexing Config fields into project_config.json."""
+    updates = {
+        "project_name": str(values.get("project_name", "") or "").strip(),
+        "batch_folder": str(values.get("batch_folder", "") or "").strip(),
+        "import_filename": str(values.get("import_filename", "") or "").strip()
+        or DEFAULT_IMPORT_FILENAME,
+        "lookup_prime_index": int(values.get("lookup_prime_index", DEFAULT_LOOKUP_PRIME_INDEX)),
+        "pages_without_fiducial": [int(x) for x in values.get("pages_without_fiducial", [])],
+    }
+    lookup_list = str(values.get("lookup_list", "") or "").strip()
+    remove_keys: tuple[str, ...] = ()
+    if lookup_list:
+        updates["lookup_list"] = lookup_list
+    else:
+        remove_keys = ("lookup_list",)
+    return merge_project_config(json_folder, updates, remove_keys=remove_keys)
+
+
+def load_rectangle_detection_settings(json_folder: str) -> RectangleDetectionSettings:
+    """Load rectangle_detection from project_config.json, or defaults."""
+    config = load_project_config(json_folder)
+    return RectangleDetectionSettings.from_dict(config.get("rectangle_detection"))
+
+
+def save_rectangle_detection_settings(
+    json_folder: str, settings: RectangleDetectionSettings
+) -> None:
+    """Merge rectangle_detection into project_config.json, preserving other keys."""
+    settings.normalize()
+    merge_project_config(json_folder, {"rectangle_detection": settings.to_dict()})
+
 
 def load_page_fields(json_folder, page_idx, config_folder=None, *, expand_grids: bool = False):
     """Load fields for a specific page from JSON file.

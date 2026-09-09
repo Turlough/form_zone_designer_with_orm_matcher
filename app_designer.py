@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QScrollArea,
     QPushButton,
+    QDialog,
     QFileDialog,
     QMessageBox,
     QToolButton,
@@ -29,6 +30,16 @@ from util import (
     RectangleDetectionSettings,
     load_rectangle_detection_settings,
     save_rectangle_detection_settings,
+)
+from util.designer_persistence import (
+    indexing_config_from_project,
+    load_project_config,
+    save_indexing_config,
+)
+from util.test_batch import (
+    CreateTestBatchError,
+    create_test_batch,
+    resolve_template_pdf_source,
 )
 from util.fiducial_paths import find_default_logo, find_fiducial_for_page, per_page_logo_filename
 from util.field_metadata import truncate_summary, sanitize_column_title
@@ -52,6 +63,8 @@ from ui import (
     GridDesigner,
     RectangleSelectedDialog,
     DesignerAnalysePreviewDialog,
+    DesignerIndexingConfigDialog,
+    DesignerCreateTestBatchDialog,
     DesignerRectangleDetectDialog,
 )
 from fields import Field, Tickbox, RadioButton, RadioGroup, RadioGrid, TextField, FIELD_TYPE_MAP
@@ -201,6 +214,23 @@ class Designer(QMainWindow):
         load_config_action.triggered.connect(self.load_config_folder)
         file_menu.addAction(load_config_action)
 
+        indexing_menu = menubar.addMenu("Indexing Config")
+        self.indexing_config_action = QAction("Basic Indexing Config", self)
+        self.indexing_config_action.setEnabled(False)
+        self.indexing_config_action.setToolTip(
+            "Set project_name, batch_folder, import file, lookup list, and pages without fiducial."
+        )
+        self.indexing_config_action.triggered.connect(self._open_indexing_config_dialog)
+        indexing_menu.addAction(self.indexing_config_action)
+
+        self.create_test_batch_action = QAction("Create Test Batch", self)
+        self.create_test_batch_action.setEnabled(False)
+        self.create_test_batch_action.setToolTip(
+            "Create a sample batch under batch_folder for Indexer (copies of template.pdf)."
+        )
+        self.create_test_batch_action.triggered.connect(self._open_create_test_batch_dialog)
+        indexing_menu.addAction(self.create_test_batch_action)
+
         fiducials_menu = menubar.addMenu("Fiducials")
         self.fiducial_select_action = QAction("Select rectangle", self)
         self.fiducial_select_action.setCheckable(True)
@@ -276,6 +306,9 @@ class Designer(QMainWindow):
             self.fiducial_select_action.setEnabled(False)
         if hasattr(self, "analyse_action"):
             self.analyse_action.setEnabled(False)
+        if hasattr(self, "indexing_config_action"):
+            self.indexing_config_action.setEnabled(False)
+            self.create_test_batch_action.setEnabled(False)
         self._close_rectangle_detect_dialog()
 
         config_resolved = resolve_path_case_insensitive(folder_path)
@@ -303,6 +336,9 @@ class Designer(QMainWindow):
             str(self.config.json_folder)
         )
         self.load_multipage_tiff(str(self.config.template_path))
+        if hasattr(self, "indexing_config_action"):
+            self.indexing_config_action.setEnabled(True)
+            self.create_test_batch_action.setEnabled(True)
         self._update_window_title()
         return True
 
@@ -310,22 +346,101 @@ class Designer(QMainWindow):
         """Set window title to 'Form Zone Designer' with optional project name."""
         title = "Form Zone Designer"
         if self.config:
-            title += " - " + Path(self.config.config_folder).name
+            config = self._load_project_config() or {}
+            name = str(config.get("project_name") or "").strip() or Path(self.config.config_folder).name
+            title += " - " + name
         self.setWindowTitle(title)
 
     def _load_project_config(self) -> dict | None:
         """Load project_config.json for the current project, if available."""
         if not self.config:
             return None
-        config_path = find_file_case_insensitive(self.config.json_folder, "project_config.json")
-        if config_path is None:
-            return None
+        config = load_project_config(self.config.json_folder)
+        return config or None
+
+    def _open_indexing_config_dialog(self) -> None:
+        """Edit Basic Indexing Config and merge into project_config.json."""
+        if not self.config:
+            QMessageBox.warning(
+                self,
+                "Indexing Config",
+                "Load a config folder first (File → Load Config Folder).",
+            )
+            return
+        initial = indexing_config_from_project(
+            self._load_project_config() or {},
+            default_project_name=Path(self.config.config_folder).name,
+        )
+        dialog = DesignerIndexingConfigDialog(
+            self,
+            initial=initial,
+            start_dir=str(self.config.config_folder),
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        save_indexing_config(self.config.json_folder, dialog.values())
+        self._update_window_title()
+        self._refresh_fiducials_from_config()
+
+    def _open_create_test_batch_dialog(self) -> None:
+        """Create a test batch folder under the configured batch_folder."""
+        if not self.config:
+            QMessageBox.warning(
+                self,
+                "Create Test Batch",
+                "Load a config folder first (File → Load Config Folder).",
+            )
+            return
+        config = self._load_project_config() or {}
+        batch_folder = str(config.get("batch_folder", "")).strip()
+        import_filename = str(config.get("import_filename", "")).strip()
+        if not batch_folder or not import_filename:
+            QMessageBox.warning(
+                self,
+                "Create Test Batch",
+                "Set batch_folder and import_filename in Indexing Config → Basic Indexing Config first.",
+            )
+            return
+        dialog = DesignerCreateTestBatchDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        batch_root = Path(batch_folder)
+        if not batch_root.is_absolute():
+            batch_root = Path(self.config.config_folder) / batch_root
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+            template_path = resolve_template_pdf_source(self.config.config_folder)
+            dest = create_test_batch(
+                batch_folder=batch_root,
+                batch_name=dialog.batch_name(),
+                document_count=dialog.document_count(),
+                template_path=template_path,
+                import_filename=import_filename,
+            )
+        except CreateTestBatchError as e:
+            QMessageBox.warning(self, "Create Test Batch", str(e))
+            return
         except Exception as e:
-            logger.warning("Could not read project_config.json at %s: %s", config_path, e)
-            return None
+            logger.exception("Create Test Batch failed")
+            QMessageBox.critical(self, "Create Test Batch", str(e))
+            return
+        QMessageBox.information(self, "Create Test Batch", f"Created test batch:\n{dest}")
+
+    def _refresh_fiducials_from_config(self) -> None:
+        """Re-run fiducial detection after pages_without_fiducial changes."""
+        if not self.config or not self.pages:
+            return
+        config = self._load_project_config() or {}
+        pages_without = {int(x) for x in config.get("pages_without_fiducial", [])}
+        self.fiducials = []
+        for idx, page in enumerate(self.pages):
+            if idx in pages_without:
+                self.fiducials.append(None)
+                logger.info("Page %d: Skipping fiducial (pages_without_fiducial)", idx + 1)
+            else:
+                self.fiducials.append(self._detect_fiducial_on_page(idx, page))
+        self.thumbnail_panel.populate_thumbnails(self.pages, self.fiducials, self.page_field_list)
+        if self.current_page_idx is not None:
+            self.on_thumbnail_clicked(self.current_page_idx)
 
     def _try_restore_last_session(self) -> None:
         """Restore last config folder and page from AppData if valid."""
