@@ -4,6 +4,8 @@ Use Designer to define field zones on a blank template. Complete **Templates and
 
 Start the app (`app_designer.py`). **File → Load Config Folder** (`Ctrl+O`) opens a folder picker; choose the **project** folder (the one that contains `template.pdf` / `template.tif`, `json/`, and `fiducials/`). The window title shows the project name.
 
+**Help** is the last menu. **Help → Designer** (`F1`) opens these instructions in your default browser. **Help → Templates** opens the Templates and project setup instructions.
+
 ## Indexing Config
 
 The **Indexing Config** menu sits immediately after **File**. It writes indexing keys into `json/project_config.json` and can create a sample batch for Indexer. Load a project first; the menu items stay disabled until then.

@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QToolButton,
 )
 
-from PyQt6.QtGui import QPixmap, QImage, QAction
+from PyQt6.QtGui import QPixmap, QImage, QAction, QDesktopServices
 from PIL import Image
 from dotenv import load_dotenv
 from util import (
@@ -50,11 +50,16 @@ from util.field_geometry_edit import (
     restore_field_geometry,
 )
 from util.app_state import load_state, save_state
-from util.path_utils import resolve_path_case_insensitive, find_file_case_insensitive, find_project_template
+from util.path_utils import (
+    resolve_path_case_insensitive,
+    find_file_case_insensitive,
+    find_project_template,
+    user_instructions_html_path,
+)
 from util.document_loader import get_document_loader_for_path
 import logging
 
-from PyQt6.QtCore import QPoint, QThread, QTimer, pyqtSignal, Qt
+from PyQt6.QtCore import QPoint, QThread, QTimer, QUrl, pyqtSignal, Qt
 from ui import (
     ImageDisplayWidget,
     DesignerThumbnailPanel,
@@ -252,6 +257,24 @@ class Designer(QMainWindow):
         )
         self.analyse_action.triggered.connect(self.run_design_analyse)
         assistant_menu.addAction(self.analyse_action)
+
+        help_menu = menubar.addMenu("Help")
+        designer_help_action = QAction("Designer", self)
+        designer_help_action.setShortcut("F1")
+        designer_help_action.setToolTip("Open Designer user instructions in your browser.")
+        designer_help_action.triggered.connect(
+            lambda _checked=False: self._open_help_page("designer.html")
+        )
+        help_menu.addAction(designer_help_action)
+
+        templates_help_action = QAction("Templates", self)
+        templates_help_action.setToolTip(
+            "Open Templates and project setup instructions in your browser."
+        )
+        templates_help_action.triggered.connect(
+            lambda _checked=False: self._open_help_page("templates.html")
+        )
+        help_menu.addAction(templates_help_action)
         
         # Create central widget and main layout
         central_widget = QWidget()
@@ -357,6 +380,24 @@ class Designer(QMainWindow):
             return None
         config = load_project_config(self.config.json_folder)
         return config or None
+
+    def _open_help_page(self, filename: str) -> None:
+        """Open a USER_INSTRUCTIONS HTML page in the default browser."""
+        path = user_instructions_html_path(filename)
+        if path is None:
+            QMessageBox.warning(
+                self,
+                "Help",
+                f"Could not find help file '{filename}'.",
+            )
+            return
+        opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
+        if not opened:
+            QMessageBox.warning(
+                self,
+                "Help",
+                f"Could not open help file:\n{path}",
+            )
 
     def _open_indexing_config_dialog(self) -> None:
         """Edit Basic Indexing Config and merge into project_config.json."""

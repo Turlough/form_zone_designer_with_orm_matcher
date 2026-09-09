@@ -27,6 +27,7 @@ Non-UI services: ORM logo matching, document loading, persistence, CSV/index I/O
 - Document loading: `util/document_loader.py`; lazy page access for Indexer in `util/lazy_document_pages.py`
 - Fiducials: `util/fiducial_paths.py` — default logo candidates and per-page `logo-pN.png` (1-based N) overriding default when present
 - Project blank-form template: `find_project_template()` in `path_utils.py` resolves `template.tif`, `template.tiff`, or `template.pdf` (case-insensitive; first listed wins if several exist)
+- Operator help HTML: `user_instructions_html_path()` in `path_utils.py` resolves `USER_INSTRUCTIONS/html/<file>` from the repo root, or from `sys._MEIPASS` / next to the exe when frozen (PyInstaller)
 
 ## Work Guidance
 

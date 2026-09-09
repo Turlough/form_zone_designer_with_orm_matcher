@@ -5,6 +5,7 @@ refer to different files. This module provides resolution so that file operation
 work regardless of path casing.
 """
 import os
+import sys
 from pathlib import Path
 
 
@@ -105,6 +106,37 @@ def find_project_template(directory: str | Path) -> Path | None:
         found = find_file_case_insensitive(directory, name)
         if found is not None:
             return found
+    return None
+
+
+def application_root() -> Path:
+    """Repo root in source; PyInstaller extract dir (`sys._MEIPASS`) when frozen."""
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            return Path(meipass)
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+def user_instructions_html_path(filename: str) -> Path | None:
+    """
+    Locate a file under USER_INSTRUCTIONS/html/.
+
+    Source runs use the repo tree. Frozen Designer looks in the PyInstaller
+    bundle, then next to the executable (so --add-data USER_INSTRUCTIONS/html
+    or a copied html folder both work).
+    """
+    name = Path(filename).name
+    roots: list[Path] = [application_root()]
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        if exe_dir not in roots:
+            roots.append(exe_dir)
+    for root in roots:
+        candidate = root / "USER_INSTRUCTIONS" / "html" / name
+        if candidate.is_file():
+            return candidate
     return None
 
 

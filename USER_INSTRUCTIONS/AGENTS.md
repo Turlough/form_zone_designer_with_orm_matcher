@@ -23,6 +23,7 @@ End-user and operator documentation for template setup, Designer, Indexer, and E
 - Derive folder and JSON contracts from `util/designer_config.py`, `util/designer_persistence.py`, and `env.example` when documenting templates
 - Use domain terms from `.cursor/rules/domain_terms.md` for operator-facing wording
 - After editing operator `.md` files, regenerate static HTML: `python USER_INSTRUCTIONS/build_html.py` (requires `markdown` package). Output lives in `USER_INSTRUCTIONS/html/`; open `index.html` or `templates.html` in a browser.
+- Designer **Help → Designer** / **Help → Templates** open `html/designer.html` and `html/templates.html` in the default browser.
 
 ## Verification
 

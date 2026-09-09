@@ -1,6 +1,6 @@
 # Templates and project setup (before Designer)
 
-Complete this setup **before** you open Form Zone Designer. Designer, Indexer, and Exporter all use the same **project folder** (sometimes called the config folder). A project defines one form type: blank template scan, fiducial, field layouts, and settings for indexing and export.
+Complete this setup **before** you open Form Zone Designer. Designer, Indexer, and Exporter all use the same **project folder** (sometimes called the config folder). A project defines one form type: blank template scan, fiducial, field layouts, and settings for indexing and export. In Designer, **Help → Templates** opens these instructions in your browser.
 
 ## Where to put project folders (`DESIGNER_CONFIG_FOLDER`)
 
