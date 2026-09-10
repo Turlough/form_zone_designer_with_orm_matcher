@@ -2,6 +2,7 @@ import sys
 import os
 import cv2
 import numpy as np
+from collections import Counter
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication,
@@ -32,6 +33,7 @@ from util import (
     save_rectangle_detection_settings,
 )
 from util.designer_persistence import (
+    find_duplicate_field_names,
     indexing_config_from_project,
     load_project_config,
     save_indexing_config,
@@ -609,7 +611,47 @@ class Designer(QMainWindow):
         if matcher.top_left and matcher.bottom_right:
             return (matcher.top_left, matcher.bottom_right)
         return None
-    
+
+    def _save_page_fields(self, page_idx: int) -> None:
+        """Persist fields for page_idx, then warn if any field name is now a duplicate.
+
+        Centralised so every save site gets the project-wide duplicate-name check.
+        """
+        if not self.config:
+            return
+        save_page_fields(
+            str(self.config.json_folder),
+            page_idx,
+            self.page_field_list,
+            self.config.config_folder,
+        )
+        self._check_duplicate_field_names()
+
+    def _check_duplicate_field_names(self) -> None:
+        """Warn (non-blocking) if any field name is duplicated across or within pages.
+
+        Indexer and Exporter key CSV columns and values by ``field.name``, so names must
+        be unique project-wide.
+        """
+        duplicates = find_duplicate_field_names(self.page_field_list)
+        if not duplicates:
+            return
+        lines = []
+        for name, pages in sorted(duplicates.items()):
+            counts = Counter(pages)
+            page_desc = ", ".join(
+                f"page {p}" + (f" (×{n})" if n > 1 else "")
+                for p, n in sorted(counts.items())
+            )
+            lines.append(f"'{name}' — {page_desc}")
+        QMessageBox.warning(
+            self,
+            "Duplicate field names",
+            "Field names must be unique across the whole project (Indexer and Exporter "
+            "key CSV columns and values by name). Rename these before indexing:\n\n"
+            + "\n".join(lines),
+        )
+
     def on_thumbnail_clicked(self, page_idx):
         """Handle thumbnail click event to display full-size page."""
         
@@ -743,12 +785,7 @@ class Designer(QMainWindow):
         self._editing_grid_index = None
         self._grid_designer = None
         if self.config:
-            save_page_fields(
-                str(self.config.json_folder),
-                self.current_page_idx,
-                self.page_field_list,
-                self.config.config_folder,
-            )
+            self._save_page_fields(self.current_page_idx)
         self.image_display.field_list = page_fields
         self.image_display.update_display()
         self.update_thumbnail(self.current_page_idx)
@@ -886,7 +923,7 @@ class Designer(QMainWindow):
 
         # Persist to disk
         if self.config:
-            save_page_fields(str(self.config.json_folder), page_idx, self.page_field_list, self.config.config_folder)
+            self._save_page_fields(page_idx)
 
         # Update UI (image display + thumbnail)
         self.image_display.field_list = reordered_fields
@@ -1065,12 +1102,7 @@ class Designer(QMainWindow):
             rb.name = config.get("field_name", rb.name)
             # Persist and refresh
             if self.config:
-                save_page_fields(
-                    str(self.config.json_folder),
-                    self.current_page_idx,
-                    self.page_field_list,
-                    self.config.config_folder
-                )
+                self._save_page_fields(self.current_page_idx)
             if self.image_display:
                 self.image_display.update_display()
             self._update_edit_panel_json(self.current_page_idx)
@@ -1151,12 +1183,7 @@ class Designer(QMainWindow):
         
         # Persist to disk
         if self.config:
-            save_page_fields(
-                str(self.config.json_folder),
-                self.current_page_idx,
-                self.page_field_list,
-                self.config.config_folder
-            )
+            self._save_page_fields(self.current_page_idx)
         
         # Update image display
         if self.image_display:
@@ -1212,12 +1239,7 @@ class Designer(QMainWindow):
             self.image_display.detected_rects = self.page_detected_rects[self.current_page_idx]
             self.image_display.field_list = self.page_field_list[self.current_page_idx]
             if self.config:
-                save_page_fields(
-                    str(self.config.json_folder),
-                    self.current_page_idx,
-                    self.page_field_list,
-                    self.config.config_folder,
-                )
+                self._save_page_fields(self.current_page_idx)
             self.image_display.update_display()
             self.update_thumbnail(self.current_page_idx)
             self._update_edit_panel_json(self.current_page_idx)
@@ -1323,12 +1345,7 @@ class Designer(QMainWindow):
             self.image_display.field_list = page_fields
             self.image_display.update_display()
         if self.config:
-            save_page_fields(
-                str(self.config.json_folder),
-                self.current_page_idx,
-                self.page_field_list,
-                self.config.config_folder,
-            )
+            self._save_page_fields(self.current_page_idx)
         self.update_thumbnail(self.current_page_idx)
         self._update_edit_panel_json(self.current_page_idx)
         self._update_remove_inner_button_state()
@@ -1634,12 +1651,7 @@ class Designer(QMainWindow):
                 self.page_field_list[self.current_page_idx].append(new_field)
             self.image_display.field_list = self.page_field_list[self.current_page_idx]
             if self.config:
-                save_page_fields(
-                    str(self.config.json_folder),
-                    self.current_page_idx,
-                    self.page_field_list,
-                    self.config.config_folder,
-                )
+                self._save_page_fields(self.current_page_idx)
             self.image_display.update_display()
             self.update_thumbnail(self.current_page_idx)
             self._update_edit_panel_json(self.current_page_idx)
@@ -1703,7 +1715,7 @@ class Designer(QMainWindow):
                 
                 # Save updated fields to JSON
                 if self.config:
-                    save_page_fields(str(self.config.json_folder), self.current_page_idx, self.page_field_list, self.config.config_folder)
+                    self._save_page_fields(self.current_page_idx)
                 
                 self.image_display.update_display()
                 self.update_thumbnail(self.current_page_idx)
@@ -1749,12 +1761,7 @@ class Designer(QMainWindow):
         
         # Save updated fields to JSON
         if self.config:
-            save_page_fields(
-                str(self.config.json_folder), 
-                self.current_page_idx, 
-                self.page_field_list, 
-                self.config.config_folder
-            )
+            self._save_page_fields(self.current_page_idx)
         
         # Clear selected field since it was deleted
         self.selected_field_obj = None
@@ -1782,7 +1789,7 @@ class Designer(QMainWindow):
             
             # Save updated (empty) fields to JSON
             if self.config:
-                save_page_fields(str(self.config.json_folder), self.current_page_idx, self.page_field_list, self.config.config_folder)
+                self._save_page_fields(self.current_page_idx)
             
             self.image_display.update_display()
             self.update_thumbnail(self.current_page_idx)
@@ -1954,12 +1961,7 @@ class Designer(QMainWindow):
             self.page_field_list[page_idx] = existing
 
         if self.config:
-            save_page_fields(
-                str(self.config.json_folder),
-                page_idx,
-                self.page_field_list,
-                self.config.config_folder,
-            )
+            self._save_page_fields(page_idx)
         self.image_display.field_list = self.page_field_list[page_idx]
         self.image_display.update_display()
         self.update_thumbnail(page_idx)

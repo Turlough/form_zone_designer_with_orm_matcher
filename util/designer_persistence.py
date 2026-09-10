@@ -234,3 +234,32 @@ def save_page_fields(json_folder, page_idx, page_field_list, config_folder=None)
         logger.info(f"Saved {len(fields_data)} fields to {json_path}")
     except Exception as e:
         logger.error(f"Error saving fields to {json_path}: {e}")
+
+
+def find_duplicate_field_names(page_field_list: list[list]) -> dict[str, list[int]]:
+    """Return field names that are not unique across the project.
+
+    Indexer keys CSV columns and in-memory values by ``field.name``; Exporter's Validate
+    and Deliver assume the same. A name must therefore be unique across every page, not
+    just within one page.
+
+    Checks top-level fields only, after RadioGrid expansion (RadioButtons nested inside a
+    RadioGroup are values within that group's column, not separate columns).
+
+    Returns a mapping of ``name -> 1-based page numbers`` where it occurs, limited to
+    names that occur more than once overall. A page number appears twice in the list if
+    the name is repeated within that single page.
+    """
+    from util.radio_grid_layout import expand_fields_for_runtime
+
+    occurrences: dict[str, list[int]] = {}
+    for page_idx, fields in enumerate(page_field_list):
+        for field_obj in expand_fields_for_runtime(fields):
+            if type(field_obj) is Field:
+                continue
+            name = (getattr(field_obj, "name", None) or "").strip()
+            if not name:
+                continue
+            occurrences.setdefault(name, []).append(page_idx + 1)
+
+    return {name: pages for name, pages in occurrences.items() if len(pages) > 1}

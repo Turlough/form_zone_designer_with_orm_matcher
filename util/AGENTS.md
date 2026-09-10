@@ -26,6 +26,7 @@ Non-UI services: ORM logo matching, document loading, persistence, CSV/index I/O
 - Designer page VLM analysis lives under `runtime_assistants/design_assistant/` (not in this package)
 - Document loading: `util/document_loader.py`; lazy page access for Indexer in `util/lazy_document_pages.py`
 - Indexer open-document landing page: `first_page_index_with_json` in `designer_persistence.py` (first `{n}.json` in `json/`, else page 1)
+- Duplicate field names: `find_duplicate_field_names` in `designer_persistence.py` — `field.name` must be unique project-wide (Indexer/Exporter key CSV columns and values by it); checks top-level fields after RadioGrid expansion. Designer's `_save_page_fields` wrapper (`app_designer.py`) calls this after every page save and warns (non-blocking) on collisions.
 - Fiducials: `util/fiducial_paths.py` — default logo candidates and per-page `logo-pN.png` (1-based N) overriding default when present
 - Project blank-form template: `find_project_template()` in `path_utils.py` resolves `template.tif`, `template.tiff`, or `template.pdf` (case-insensitive; first listed wins if several exist)
 - Operator help HTML: `user_instructions_html_path()` in `path_utils.py` resolves `USER_INSTRUCTIONS/html/<file>` from the repo root, or from `sys._MEIPASS` / next to the exe when frozen (PyInstaller)

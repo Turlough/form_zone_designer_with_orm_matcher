@@ -21,6 +21,7 @@ Automated checks for validation and other testable project logic.
 - Indexer OCR feature flag: `test_indexing_assistant_config.py` (`INDEXING_ASSISTANT_ENABLED` defaults and truthy parsing)
 - Indexer close-up crop/overlay: `test_index_closeup.py` (`closeup_crop_and_overlay` equal padding; edge clamping)
 - Designer Help HTML paths: `test_user_instructions_html.py` (`user_instructions_html_path`, including frozen `_MEIPASS`)
+- Designer duplicate field-name check: `test_designer_persistence_duplicates.py` (`find_duplicate_field_names` — cross-page, same-page, and RadioGrid-expansion cases)
 
 ## Work Guidance
 
