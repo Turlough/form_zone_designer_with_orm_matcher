@@ -19,6 +19,7 @@ Automated checks for validation and other testable project logic.
 - Field overlay theming: `test_field_factory_theme.py` (shared Designer/Indexer palette via `field_factory`, including `get_display_color_for_type`)
 - Indexing config / test batch: `test_indexing_config.py` (`save_indexing_config` merge, `create_test_batch`, `first_page_index_with_json`)
 - Indexer OCR feature flag: `test_indexing_assistant_config.py` (`INDEXING_ASSISTANT_ENABLED` defaults and truthy parsing)
+- Indexer close-up crop/overlay: `test_index_closeup.py` (`closeup_crop_and_overlay` equal padding; edge clamping)
 - Designer Help HTML paths: `test_user_instructions_html.py` (`user_instructions_html_path`, including frozen `_MEIPASS`)
 
 ## Work Guidance

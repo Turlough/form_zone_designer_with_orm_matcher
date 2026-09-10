@@ -23,6 +23,34 @@ logger = logging.getLogger(__name__)
 
 
 _THOUSANDS_SEP = "\u202f"  # Narrow no-break space
+CLOSEUP_PADDING = 20
+
+
+def closeup_crop_and_overlay(
+    abs_x: int,
+    abs_y: int,
+    field_width: int,
+    field_height: int,
+    image_width: int,
+    image_height: int,
+    padding: int = CLOSEUP_PADDING,
+) -> tuple[int, int, int, int, int, int]:
+    """Crop around a field with equal padding, plus overlay origin in crop coords.
+
+    Returns (crop_x1, crop_y1, crop_x2, crop_y2, box_x, box_y). Overlay size is
+    field_width x field_height. Near image edges, padding on that side shrinks.
+    """
+    abs_x = int(abs_x)
+    abs_y = int(abs_y)
+    field_width = int(field_width)
+    field_height = int(field_height)
+    crop_x1 = max(0, abs_x - padding)
+    crop_y1 = max(0, abs_y - padding)
+    crop_x2 = min(image_width, abs_x + field_width + padding)
+    crop_y2 = min(image_height, abs_y + field_height + padding)
+    box_x = abs_x - crop_x1
+    box_y = abs_y - crop_y1
+    return crop_x1, crop_y1, crop_x2, crop_y2, box_x, box_y
 
 
 def _add_thousands(s: str, sep: str = _THOUSANDS_SEP) -> str:
@@ -373,16 +401,12 @@ class IndexDetailPanel(QWidget):
                 abs_x += logo_top_left[0]
                 abs_y += logo_top_left[1]
             
-            # Add padding around the rectangle - use integer arithmetic so padding is exactly equal
-            padding = 20
             img_array = np.array(self.current_page_image)
             height, width = img_array.shape[:2]
-            
-            crop_x1 = max(0, abs_x)            
-            crop_y1 = max(0, abs_y - padding)
-            crop_x2 = min(width, abs_x + field.width + padding * 2)
-            crop_y2 = min(height, abs_y + field.height + padding * 2)
-            
+            crop_x1, crop_y1, crop_x2, crop_y2, box_x, box_y = closeup_crop_and_overlay(
+                abs_x, abs_y, field.width, field.height, width, height
+            )
+
             # Extract the region and make a contiguous copy for QImage
             crop_region = img_array[crop_y1:crop_y2, crop_x1:crop_x2].copy()
             
@@ -403,9 +427,7 @@ class IndexDetailPanel(QWidget):
             )
             pixmap = QPixmap.fromImage(q_image)
             
-            # Draw the original bounding box in the field's colour
-            box_x = abs_x - crop_x1 + padding
-            box_y = abs_y - crop_y1 
+            # Draw the bounding box on the field in the crop (same pixel space as the image)
             color = self._get_field_color(field)
             painter = QPainter(pixmap)
             painter.setPen(QPen(color, 2))
