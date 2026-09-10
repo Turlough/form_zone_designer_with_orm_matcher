@@ -133,6 +133,7 @@ def test_check_applies_export_column_id(tmp_path: Path):
     updated = apply_export_proposals([field], result.proposals)
     assert updated[0].column_title == "Supplier Name"
     assert updated[0].export_column_id == "col_001"
+    assert updated[0].name == "Supplier"
 
 
 def test_check_warning_for_unmatched_form_field():

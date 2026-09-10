@@ -2,13 +2,13 @@
 
 How this suite captures and delivers indexed form data, with notes on alignment with [Qualtrics export formats](Qualtrics.md).
 
-Implementation: **Indexer** (`app_indexer.py`) writes batch CSV during data entry; **Exporter** (`app_exporter.py`) **Deliver** prepares customer-facing files. Field layout comes from project `json/` descriptors; column headings from `util/field_metadata.column_header` (`column_title`, else `name`).
+Implementation: **Indexer** (`app_indexer.py`) writes the working batch CSV keyed by `field.name`; **Exporter** (`app_exporter.py`) **Deliver** remaps those identity headers to customer-facing `column_title` (else `name`) via `util.field_metadata.export_display_title`. Field layout comes from project `json/` numbered page files (`{n}.json`; gaps are allowed).
 
 ## Pipeline
 
 1. **Indexer** — operator indexes scanned forms; each batch is a CSV beside its TIFF/PDF images.
-2. **Validate** (Exporter) — headers are checked against the project JSON field list.
-3. **Deliver** (Exporter) — TIFFs become PDFs; clean and exception rows are written to separate CSVs under `_deliveries/<job_name>/`.
+2. **Validate** (Exporter) — working-CSV headers are checked against `field.name` from project JSON.
+3. **Deliver** (Exporter) — TIFFs become PDFs; clean and exception rows are written under `_deliveries/<job_name>/`, with heading text remapped to `column_title`.
 
 ## Batch CSV (Indexer output)
 
@@ -17,7 +17,7 @@ One row per scanned document (multipage TIFF/PDF). Headers are created or normal
 | Column | Content |
 |--------|---------|
 | **File** | Relative path to the source document (legacy headers `tiff_path`, `path`, `document_path` are accepted) |
-| *field columns* | One column per field in JSON page order (first occurrence wins if names repeat) |
+| *field columns* | One column per field in JSON page order, headed by **`field.name`** (unique project-wide identity). `column_title` is not used here. |
 | **Comments** | QC comments (structured page+field keys) |
 
 Encoding: UTF-8. Python `csv` module handles quoting on save.
@@ -48,7 +48,9 @@ Output directory: `<batch_root>/_deliveries/<job_name>/`
 | `<job_name>_exceptions.csv` | Rows with one or more Comments |
 | `PDF/` | Multipage PDFs named `0001.pdf`, `0002.pdf`, … |
 
-Both CSVs share the same headers as the batch import files. The **File** column is rewritten to a relative path under `PDF/` (e.g. `PDF/0001.pdf`). Source TIFFs are never modified; PDFs are copies/conversions.
+Both CSVs keep the same **column order** as the working batch files, but field headings are remapped to `export_display_title` (`column_title` else `name`). Duplicate customer titles are allowed. **File** and **Comments** are unchanged. The **File** column values are rewritten to a relative path under `PDF/` (e.g. `PDF/0001.pdf`). Source TIFFs are never modified; PDFs are copies/conversions.
+
+Numeric/quoting decisions in `_format_cell` still use `field.name` (the working CSV header), not the remapped title.
 
 ### Cell formatting rules (`app_exporter._format_cell`)
 

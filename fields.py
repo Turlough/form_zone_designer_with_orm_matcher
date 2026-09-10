@@ -31,6 +31,7 @@ class Field:
     column_title: str = ""
     full_text: str = ""
     question_number: str = ""
+    export_column_id: str = ""
 
     def __post_init__(self):
         self.width = self.width or 10
@@ -40,6 +41,7 @@ class Field:
         self.column_title = self.column_title or ""
         self.full_text = self.full_text or ""
         self.question_number = self.question_number or ""
+        self.export_column_id = self.export_column_id or ""
         if type(self) is Field:
             normalized = _normalize_colour(self.colour)
             self.colour = normalized or (255, 0, 0)
@@ -66,6 +68,8 @@ class Field:
             meta["full_text"] = self.full_text
         if self.question_number:
             meta["question_number"] = self.question_number
+        if self.export_column_id:
+            meta["export_column_id"] = self.export_column_id
         return meta
 
     def to_dict(self):
@@ -91,6 +95,8 @@ class Field:
             data.pop("full_text", None)
         if not data.get("question_number"):
             data.pop("question_number", None)
+        if not data.get("export_column_id"):
+            data.pop("export_column_id", None)
         return data
 
     @staticmethod

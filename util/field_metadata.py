@@ -35,11 +35,23 @@ def display_label(field: Any, max_len: int = SUMMARY_MAX_LEN) -> str:
     return text
 
 
-def column_header(field: Any) -> str:
-    """CSV column heading for a field."""
+def export_display_title(field: Any) -> str:
+    """Customer-facing display text for a field: ``column_title`` else ``name``.
+
+    Display-only. Never use this to key CSV columns, ``field_values``, or any other
+    internal lookup — those must use ``field.name`` directly, since it is the single
+    project-wide identity key (see ``util.designer_persistence.find_duplicate_field_names``).
+    ``column_title`` may legitimately repeat across fields (e.g. export-format matching
+    two questions to the same customer heading text); ``name`` must not.
+    """
     title = (getattr(field, "column_title", None) or "").strip()
     name = (getattr(field, "name", None) or "").strip()
     return title or name
+
+
+def export_column_id_of(field: Any) -> str:
+    """Linked export-format column id, if set (via Designer Check → Apply)."""
+    return (getattr(field, "export_column_id", None) or "").strip()
 
 
 def full_question_text(field: Any) -> str:

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 from fields import Field, RadioGroup, RadioGrid, Tickbox
-from util.field_metadata import column_header, export_column_id_of, full_question_text
+from util.field_metadata import export_column_id_of, export_display_title, full_question_text
 
 from runtime_assistants.design_assistant.export_assistant_for_designer.schema import (
     ExportColumn,
@@ -99,7 +99,7 @@ def _best_column_match(
     *,
     used_ids: set[str],
 ) -> ExportColumn | None:
-    title = column_header(field_obj)
+    title = export_display_title(field_obj)
     full = full_question_text(field_obj)
     best: ExportColumn | None = None
     best_score = 0.0
@@ -138,7 +138,7 @@ def _proposal_for_field(
         radio_index=radio_index,
         export_column_id=col.id,
         column_title=expected,
-        name=expected if radio_index is not None else (column_header(field_obj) or expected),
+        name=expected if radio_index is not None else (field_obj.name or expected),
         full_text=full,
         summary=field_obj.summary or "",
         reason=reason,
@@ -175,11 +175,11 @@ def check_page_export_format(
             continue
         if col.page_hint != page_number and col.kind != KIND_META:
             result.warnings.append(
-                f"Field {column_header(field_obj)!r} links to {col.id} "
+                f"Field {export_display_title(field_obj)!r} links to {col.id} "
                 f"(page_hint={col.page_hint}, expected {page_number})."
             )
         expected = _expected_column_title(col)
-        current = column_header(field_obj)
+        current = export_display_title(field_obj)
         if _normalize(current) != _normalize(expected):
             result.proposals.append(
                 _proposal_for_field(
@@ -223,7 +223,7 @@ def check_page_export_format(
             full = full_question_text(field_obj)
             if full:
                 result.warnings.append(
-                    f"Form field {column_header(field_obj)!r} has no export column match; "
+                    f"Form field {export_display_title(field_obj)!r} has no export column match; "
                     f"default to full text verbatim for delivery heading."
                 )
                 result.proposals.append(
@@ -385,7 +385,7 @@ Form fields:
 
 
 def apply_export_proposals(fields: list[Field], proposals: list[FieldExportProposal]) -> list[Field]:
-    """Return updated field list with proposals applied (metadata only)."""
+    """Apply metadata proposals. Top-level ``name`` is not changed (identity key)."""
     updated = list(fields)
     for prop in proposals:
         if prop.field_index < 0 or prop.field_index >= len(updated):
@@ -407,8 +407,7 @@ def apply_export_proposals(fields: list[Field], proposals: list[FieldExportPropo
 
         if prop.column_title:
             target.column_title = prop.column_title
-        if prop.name and not isinstance(target, RadioGroup):
-            target.name = prop.name
+        # field.name is the project-wide identity key; Check/Apply must not overwrite it.
         if prop.full_text:
             target.full_text = prop.full_text
         if prop.summary:

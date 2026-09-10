@@ -1,15 +1,11 @@
 import csv
 import os
 import logging
-from fields import Field, RadioGroup
-import json
 
-from util.field_metadata import column_header
-from util.radio_grid_layout import expand_fields_for_runtime
+from util.designer_persistence import iter_runtime_fields, runtime_field_names
 from util.path_utils import (
     resolve_path_or_original,
     paths_equal_case_insensitive,
-    find_file_case_insensitive,
 )
 
 logger = logging.getLogger(__name__)
@@ -110,91 +106,31 @@ class CSVManager:
         return False
     
     def _get_field_names_from_json(self, json_folder):
-        """Extract field names from all JSON files in order.
-        Uses case-insensitive path resolution for JSON files."""
-        field_names = []
-        page_num = 1
-        
-        while True:
-            json_path = find_file_case_insensitive(json_folder, f"{page_num}.json")
-            if json_path is None:
-                break
-            
-            try:
-                with open(json_path, 'r') as f:
-                    data = json.load(f)
-                
-                # Iterate through top-level elements
-                for item in data:
-                    for field in expand_fields_for_runtime([Field.from_dict(item)]):
-                        header = column_header(field)
-                        if not header:
-                            continue
-                        # RadioGroup gets one column; regular fields likewise
-                        if header not in field_names:
-                            field_names.append(header)
-                
-            except Exception as e:
-                logger.warning(f"Error reading {json_path!s}: {e}")
-            
-            page_num += 1
-        
-        return field_names
+        """Extract field names from all numbered page JSON files in order.
+
+        Skips gaps (e.g. ``4.json`` with no ``1.json``). CSV columns are keyed by
+        ``field.name`` — the project-wide identity key that Indexer, Exporter, and
+        validation all rely on. ``column_title`` is customer-facing display text only
+        and must never be used to build or look up CSV columns.
+        """
+        return runtime_field_names(json_folder)
 
     def get_field_to_page(self, json_folder) -> dict[str, int]:
-        """Build mapping from field name to page number (1-based).
-        Mirrors _get_field_names_from_json logic."""
+        """Build mapping from field name to page number (1-based)."""
         field_to_page: dict[str, int] = {}
-        page_num = 1
-
-        while True:
-            json_path = find_file_case_insensitive(json_folder, f"{page_num}.json")
-            if json_path is None:
-                break
-
-            try:
-                with open(json_path, "r") as f:
-                    data = json.load(f)
-
-                for item in data:
-                    for field in expand_fields_for_runtime([Field.from_dict(item)]):
-                        header = column_header(field)
-                        if header and header not in field_to_page:
-                            field_to_page[header] = page_num
-
-            except Exception as e:
-                logger.warning(f"Error reading {json_path!s}: {e}")
-
-            page_num += 1
-
+        for page_num, field_obj in iter_runtime_fields(json_folder):
+            name = (getattr(field_obj, "name", None) or "").strip()
+            if name and name not in field_to_page:
+                field_to_page[name] = page_num
         return field_to_page
 
     def get_field_to_type(self, json_folder) -> dict[str, str]:
-        """Build mapping from field name to field type (e.g. 'IntegerField', 'EmailField').
-        Mirrors get_field_to_page logic but returns type name for validation."""
+        """Build mapping from field name to field type (e.g. 'IntegerField', 'EmailField')."""
         field_to_type: dict[str, str] = {}
-        page_num = 1
-
-        while True:
-            json_path = find_file_case_insensitive(json_folder, f"{page_num}.json")
-            if json_path is None:
-                break
-
-            try:
-                with open(json_path, "r") as f:
-                    data = json.load(f)
-
-                for item in data:
-                    for field in expand_fields_for_runtime([Field.from_dict(item)]):
-                        header = column_header(field)
-                        if header and header not in field_to_type:
-                            field_to_type[header] = field.__class__.__name__
-
-            except Exception as e:
-                logger.warning(f"Error reading {json_path!s}: {e}")
-
-            page_num += 1
-
+        for _, field_obj in iter_runtime_fields(json_folder):
+            name = (getattr(field_obj, "name", None) or "").strip()
+            if name and name not in field_to_type:
+                field_to_type[name] = field_obj.__class__.__name__
         return field_to_type
 
     def get_document_paths(self) -> list[str]:

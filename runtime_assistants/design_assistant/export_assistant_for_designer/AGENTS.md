@@ -35,7 +35,8 @@ Ingest customer Excel export samples into a versioned JSON descriptor, check Des
 - Stable match via `export_column_id` on fields after Apply
 - Form-only fields → **warning**; propose full text verbatim
 - Radio / option labels: full text verbatim; do not change `checked_value`
-- Preview → **Apply** writes metadata + `export_column_id` only
+- Preview → **Apply** writes `column_title`, `full_text`, `summary`, `export_column_id`; does **not** overwrite top-level `field.name` (identity). RadioButton option `name` may still update (cell values).
+- Exporter **Deliver** remaps working-CSV `name` headers to `export_display_title` (`column_title` else `name`)
 
 ### Analyse / Grid context
 

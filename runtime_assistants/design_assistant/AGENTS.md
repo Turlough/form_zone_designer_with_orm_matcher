@@ -28,8 +28,8 @@ Analyse a Designer template page image and propose backward-compatible `json/N.j
 |-----|-----|-----|
 | full_text | — | Full question text |
 | summary | 50 chars | Designer overlay when Field names enabled |
-| column_title | — | CSV column header (no short length cap) |
-| name | — | Legacy identifier; keep populated for Indexer/Exporter |
+| column_title | — | Customer-facing delivery heading (`export_display_title`); may repeat |
+| name | — | Unique project-wide identity; Indexer/Exporter working CSV columns and values |
 | question_number | — | Printed number (e.g. `1.7`); not used on answer buttons |
 
 Read fallbacks: `summary ← name`, `column_title ← name`.

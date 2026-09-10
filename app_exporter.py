@@ -3,6 +3,7 @@ import shutil
 import sys
 import json
 import csv
+import io
 from pathlib import Path
 
 from PIL import Image
@@ -24,8 +25,13 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
 )
 
-from fields import Field, IntegerField, DecimalField, NumericRadioGroup
-from util.radio_grid_layout import expand_fields_for_runtime
+from fields import IntegerField, DecimalField, NumericRadioGroup
+from util.designer_persistence import (
+    export_title_map,
+    iter_runtime_fields,
+    remap_delivery_headers,
+    runtime_field_names,
+)
 from util.app_state import load_state
 from util.path_utils import (
     resolve_path_case_insensitive,
@@ -522,6 +528,7 @@ class Exporter(QMainWindow):
                 for name, cls in field_type_map.items()
                 if issubclass(cls, (IntegerField, DecimalField, NumericRadioGroup))
             }
+            title_map = export_title_map(json_folder)
 
             # Create delivery folder structure: <batch_root>/_deliveries/<job_name>/PDF
             deliveries_root = self._batch_root / "_deliveries"
@@ -625,10 +632,14 @@ class Exporter(QMainWindow):
                         else:
                             clean_rows.append(formatted_cells)
 
-            # Write output CSV files with original headers.
+            # Write output CSV files. Cell formatting keys off identity names
+            # (working CSV headers); the written heading row uses column_title.
             job_output_dir.mkdir(parents=True, exist_ok=True)
+            delivery_headers = remap_delivery_headers(headers, title_map)
 
-            header_line = ",".join(headers) + "\n"
+            header_buf = io.StringIO()
+            csv.writer(header_buf, lineterminator="\n").writerow(delivery_headers)
+            header_line = header_buf.getvalue()
 
             with open(data_path, "w", encoding="utf-8", newline="") as f_main:
                 f_main.write(header_line)
@@ -657,33 +668,8 @@ class Exporter(QMainWindow):
     # ---- Helpers for Deliver and Validate ----
 
     def _get_expected_headers_from_json(self, json_folder: Path) -> list[str]:
-        """
-        Build the canonical header list from project JSON: File, [field names], Comments.
-        Mirrors CSVManager._get_field_names_from_json logic.
-        """
-        field_names: list[str] = []
-        page_num = 1
-
-        while True:
-            json_path = find_file_case_insensitive(json_folder, f"{page_num}.json")
-            if json_path is None:
-                break
-
-            try:
-                with open(json_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                for item in data:
-                    for field in expand_fields_for_runtime([Field.from_dict(item)]):
-                        name = getattr(field, "name", None)
-                        if name and name not in field_names:
-                            field_names.append(name)
-            except Exception:
-                pass
-
-            page_num += 1
-
-        return ["File"] + field_names + ["Comments"]
+        """Canonical working-CSV headers: File, [field.name in JSON order], Comments."""
+        return ["File"] + runtime_field_names(json_folder) + ["Comments"]
 
     def _compare_headers(self, expected: list[str], actual: list[str]) -> str | None:
         """
@@ -717,37 +703,13 @@ class Exporter(QMainWindow):
         return None
 
     def _load_field_type_map(self, json_folder: Path) -> dict[str, type]:
-        """
-        Build a mapping of field-name -> concrete field class by reading the
-        project's JSON page descriptors.
-
-        This mirrors the logic in ``CSVManager._get_field_names_from_json``
-        but preserves the concrete type for each named field.
-        """
+        """Map field.name -> concrete field class from numbered page JSON (gaps allowed)."""
         field_types: dict[str, type] = {}
-
-        page_num = 1
-        while True:
-            json_path = find_file_case_insensitive(json_folder, f"{page_num}.json")
-            if json_path is None:
-                break
-
-            try:
-                with open(json_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                for item in data:
-                    for field in expand_fields_for_runtime([Field.from_dict(item)]):
-                        name = getattr(field, "name", None)
-                        if not name or name in field_types:
-                            continue
-                        field_types[name] = type(field)
-            except Exception:
-                # If a JSON page cannot be read, continue with others.
-                pass
-
-            page_num += 1
-
+        for _, field_obj in iter_runtime_fields(json_folder):
+            name = (getattr(field_obj, "name", None) or "").strip()
+            if not name or name in field_types:
+                continue
+            field_types[name] = type(field_obj)
         return field_types
 
     def _resolve_tiff_path(self, relative_path: str, csv_dir: Path) -> str:
@@ -803,6 +765,9 @@ class Exporter(QMainWindow):
         - Numeric fields (IntegerField, NumericRadioGroup, DecimalField) ->
           never surrounded with quotes.
         - Empty cells remain empty.
+
+        ``header`` is the working-CSV identity name (``field.name``), not the
+        customer-facing ``column_title``.
         """
         if value is None:
             value = ""

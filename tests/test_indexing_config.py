@@ -9,9 +9,13 @@ import pymupdf as fitz
 from util.designer_persistence import (
     DEFAULT_IMPORT_FILENAME,
     DEFAULT_PAGES_WITHOUT_FIDUCIAL,
+    export_title_map,
     first_page_index_with_json,
     indexing_config_from_project,
+    iter_page_json_paths,
     parse_pages_without_fiducial,
+    remap_delivery_headers,
+    runtime_field_names,
     save_indexing_config,
     save_rectangle_detection_settings,
 )
@@ -194,3 +198,36 @@ def test_first_page_index_with_json_defaults_to_zero_when_none(tmp_path: Path):
     json_folder.mkdir()
     assert first_page_index_with_json(json_folder, 4) == 0
     assert first_page_index_with_json(json_folder, 0) == 0
+
+
+def test_iter_page_json_paths_skips_gaps_and_non_page_files(tmp_path: Path):
+    json_folder = tmp_path / "json"
+    json_folder.mkdir()
+    (json_folder / "4.json").write_text("[]", encoding="utf-8")
+    (json_folder / "6.json").write_text("[]", encoding="utf-8")
+    (json_folder / "project_config.json").write_text("{}", encoding="utf-8")
+    pages = [n for n, _ in iter_page_json_paths(json_folder)]
+    assert pages == [4, 6]
+
+
+def test_runtime_field_names_and_export_title_map_use_name_not_title(tmp_path: Path):
+    from fields import Tickbox
+
+    json_folder = tmp_path / "json"
+    json_folder.mkdir()
+    field = Tickbox(
+        colour=(0, 0, 0),
+        name="2.1 Other Comment",
+        x=0,
+        y=0,
+        width=10,
+        height=10,
+        column_title="Other Comment",
+    )
+    (json_folder / "4.json").write_text(json.dumps([field.to_dict()]), encoding="utf-8")
+    assert runtime_field_names(json_folder) == ["2.1 Other Comment"]
+    assert export_title_map(json_folder) == {"2.1 Other Comment": "Other Comment"}
+    assert remap_delivery_headers(
+        ["File", "2.1 Other Comment", "Comments"],
+        export_title_map(json_folder),
+    ) == ["File", "Other Comment", "Comments"]

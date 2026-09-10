@@ -3,7 +3,7 @@
 from fields import Field, Tickbox, RadioGroup, RadioButton
 from util.field_metadata import (
     display_label,
-    column_header,
+    export_display_title,
     upgrade_field_dict,
     strip_analysis_keys,
 )
@@ -31,10 +31,23 @@ def test_old_json_round_trip():
     assert field.name == "22. Consent"
     assert field.summary == ""
     assert display_label(field) == "22. Consent"
-    assert column_header(field) == "22. Consent"
+    assert export_display_title(field) == "22. Consent"
     out = field.to_dict()
     assert out["name"] == "22. Consent"
     assert "summary" not in out or not out.get("summary")
+
+
+def test_export_display_title_prefers_column_title():
+    titled = Tickbox(
+        colour=(0, 0, 0),
+        name="2.1 Other Comment",
+        x=0,
+        y=0,
+        width=10,
+        height=10,
+        column_title="Other Comment",
+    )
+    assert export_display_title(titled) == "Other Comment"
 
 
 def test_upgrade_field_dict_fills_metadata():

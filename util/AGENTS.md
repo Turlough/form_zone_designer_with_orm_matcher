@@ -19,7 +19,8 @@ Non-UI services: ORM logo matching, document loading, persistence, CSV/index I/O
 - Validation rules and strategies live in `util/validation/` (see child DOX)
 - Environment and project paths: respect `util/path_utils.py` and `util/app_state.py` conventions
 - Indexer OCR: gated by `INDEXING_ASSISTANT_ENABLED` in `.env` (default off; see `util/indexing_assistant_config.py`); `util/gemini_ocr_client.py` (`GOOGLE_API_KEY` or `GEMINI_API_KEY` when enabled); text normalization in `util/ocr_text_utils.py`
-- Field display/CSV metadata helpers: `util/field_metadata.py` (`summary`, `column_title`, `full_text`, `question_number` with `name` fallbacks; summary overlay ≤50; column titles not short-capped)
+- Field display/CSV metadata helpers: `util/field_metadata.py` — overlay `display_label` (`summary` else `name`, ≤50); customer delivery heading `export_display_title` (`column_title` else `name`); `full_text` / `question_number` with `name` fallbacks. Working CSV columns and lookups always use `field.name`, never `export_display_title`.
+- Numbered page JSON scan: `iter_page_json_paths` / `iter_runtime_fields` / `runtime_field_names` / `export_title_map` in `designer_persistence.py` — collect `{n}.json` in numeric order, **skipping gaps** (e.g. first fields on `4.json`). CSVManager and Exporter must use these rather than stopping at the first missing page file.
 
 - Designer field reshape: `util/field_geometry_edit.py` (grid division drag, resize handles, snapshots for cancel)
 - Radio grid layout: `util/radio_grid_layout.py` — expand `RadioGrid` to `RadioGroup`s for Indexer/Exporter; `build_radio_group_from_frame` for a single irregular RadioGroup from a question frame (group name from question text)

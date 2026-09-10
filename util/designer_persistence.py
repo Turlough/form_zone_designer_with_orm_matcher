@@ -1,5 +1,6 @@
 import os
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from fields import Field
 import logging
@@ -159,6 +160,84 @@ def first_page_index_with_json(json_folder: str | Path, page_count: int) -> int:
         if find_file_case_insensitive(json_folder, f"{idx + 1}.json") is not None:
             return idx
     return 0
+
+
+def iter_page_json_paths(json_folder: str | Path) -> list[tuple[int, Path]]:
+    """Return ``(1-based page number, path)`` for every ``{n}.json``, sorted.
+
+    Skips gaps (e.g. ``4.json`` with no ``1.json``). Ignores ``project_config.json``
+    and other non-numeric stems. Indexer/Exporter/CSV header generation must use this
+    rather than stopping at the first missing page file.
+    """
+    folder = Path(resolve_path_or_original(json_folder))
+    if not folder.is_dir():
+        return []
+    found: list[tuple[int, Path]] = []
+    for path in folder.iterdir():
+        if not path.is_file() or path.suffix.lower() != ".json":
+            continue
+        if not path.stem.isdigit():
+            continue
+        page_num = int(path.stem)
+        if page_num < 1:
+            continue
+        found.append((page_num, path))
+    found.sort(key=lambda item: item[0])
+    return found
+
+
+def iter_runtime_fields(json_folder: str | Path) -> Iterator[tuple[int, Field]]:
+    """Yield ``(1-based page_num, field)`` after RadioGrid expansion.
+
+    Used by Indexer CSV headers, Exporter Validate/Deliver, and related maps.
+    """
+    from util.radio_grid_layout import expand_fields_for_runtime
+
+    for page_num, json_path in iter_page_json_paths(json_folder):
+        try:
+            with open(json_path, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.warning("Error reading %s: %s", json_path, e)
+            continue
+        if not isinstance(data, list):
+            continue
+        for item in data:
+            try:
+                for field_obj in expand_fields_for_runtime([Field.from_dict(item)]):
+                    if type(field_obj) is Field:
+                        continue
+                    yield page_num, field_obj
+            except Exception as e:
+                logger.warning("Error parsing field in %s: %s", json_path, e)
+
+
+def runtime_field_names(json_folder: str | Path) -> list[str]:
+    """Ordered unique ``field.name`` values from numbered page JSON (gaps allowed)."""
+    names: list[str] = []
+    for _, field_obj in iter_runtime_fields(json_folder):
+        name = (getattr(field_obj, "name", None) or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def export_title_map(json_folder: str | Path) -> dict[str, str]:
+    """Map ``field.name`` → customer-facing ``export_display_title`` (first wins)."""
+    from util.field_metadata import export_display_title
+
+    mapping: dict[str, str] = {}
+    for _, field_obj in iter_runtime_fields(json_folder):
+        name = (getattr(field_obj, "name", None) or "").strip()
+        if not name or name in mapping:
+            continue
+        mapping[name] = export_display_title(field_obj)
+    return mapping
+
+
+def remap_delivery_headers(headers: list[str], title_map: dict[str, str]) -> list[str]:
+    """Replace working-CSV identity headers with customer titles; unknown names pass through."""
+    return [title_map.get(h, h) for h in headers]
 
 
 def load_page_fields(json_folder, page_idx, config_folder=None, *, expand_grids: bool = False):
