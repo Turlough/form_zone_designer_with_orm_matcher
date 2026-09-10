@@ -17,6 +17,7 @@ from typing import Tuple
 
 from PIL import Image
 
+from util.indexing_assistant_config import indexing_assistant_enabled
 from util.ocr_text_utils import normalize_ocr_text
 
 Rect = Tuple[int, int, int, int]
@@ -41,8 +42,15 @@ def ocr_image_region(pil_image: Image.Image, rect: Rect) -> str:
         Normalized OCR text (may be empty string).
 
     Raises:
-        RuntimeError: If google-genai is not available or the API call fails.
+        RuntimeError: If the assistant is disabled, google-genai is not available,
+        or the API call fails.
     """
+    if not indexing_assistant_enabled():
+        raise RuntimeError(
+            "Indexer Gemini OCR is disabled.\n"
+            "Set INDEXING_ASSISTANT_ENABLED=true in your environment (or .env) to enable it."
+        )
+
     try:
         from google import genai
         from google.genai import types

@@ -37,6 +37,7 @@ from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerFi
 import logging
 from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog, QcCommentDialog, QcSpecialFieldReviewDialog, QcTextReviewWindow
 from util.gemini_ocr_client import ocr_image_region
+from util.indexing_assistant_config import indexing_assistant_enabled
 from util.csv_save_queue import CsvSaveQueue
 
 logging.basicConfig(level=logging.INFO)
@@ -412,6 +413,7 @@ class Indexer(QMainWindow):
         
         # Load environment variables
         load_dotenv()
+        self._indexing_assistant_enabled = indexing_assistant_enabled()
 
         # Project folder under DESIGNER_CONFIG_FOLDER; json_folder and logo_path derived when set.
         self.config_folder: str | None = None
@@ -701,7 +703,10 @@ class Indexer(QMainWindow):
         self.ocr_page_button.setToolTip("OCR all text fields on this page")
         self.ocr_page_button.clicked.connect(self._on_ocr_page_requested)
         self.ocr_page_button.setEnabled(False)
+        self.ocr_page_button.setVisible(self._indexing_assistant_enabled)
         nav_layout.addWidget(self.ocr_page_button)
+
+        self.detail_panel.ocr_button.setVisible(self._indexing_assistant_enabled)
 
         center_panel.addWidget(nav_widget)
 
@@ -1653,7 +1658,11 @@ class Indexer(QMainWindow):
         """Track the currently selected field and update OCR button state."""
         self.current_field = field
         has_text_fields = any(isinstance(f, TextField) for f in self.page_fields)
-        can_ocr_page = bool(self.current_page_images) and has_text_fields
+        can_ocr_page = (
+            self._indexing_assistant_enabled
+            and bool(self.current_page_images)
+            and has_text_fields
+        )
         if hasattr(self, "ocr_page_button"):
             self.ocr_page_button.setEnabled(can_ocr_page)
 
@@ -2537,6 +2546,8 @@ class Indexer(QMainWindow):
 
     def _on_ocr_requested(self) -> None:
         """Handle OCR for the current text field: region dialog, then Gemini OCR."""
+        if not self._indexing_assistant_enabled:
+            return
         if not isinstance(self.current_field, TextField):
             QMessageBox.warning(self, "OCR", "OCR is only available for text fields.")
             return
@@ -2607,6 +2618,8 @@ class Indexer(QMainWindow):
 
     def _on_ocr_page_requested(self) -> None:
         """OCR all TextFields on the current page asynchronously using Gemini."""
+        if not self._indexing_assistant_enabled:
+            return
         text_fields = [f for f in self.page_fields if isinstance(f, TextField)]
         if not text_fields:
             QMessageBox.warning(self, "OCR", "No text fields on this page.")

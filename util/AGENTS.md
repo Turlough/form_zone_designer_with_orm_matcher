@@ -18,7 +18,7 @@ Non-UI services: ORM logo matching, document loading, persistence, CSV/index I/O
 - Indexer test batches: `util/test_batch.py` (`create_test_batch`) copies `template.pdf` (or converts `template.tif` / `template.tiff`) to `0001.pdf`–`nnnn.pdf` under `batch_folder/<batch name>/` and writes `import_filename` listing those files
 - Validation rules and strategies live in `util/validation/` (see child DOX)
 - Environment and project paths: respect `util/path_utils.py` and `util/app_state.py` conventions
-- Indexer OCR: `util/gemini_ocr_client.py` (`GOOGLE_API_KEY` or `GEMINI_API_KEY` in `.env`); text normalization in `util/ocr_text_utils.py`
+- Indexer OCR: gated by `INDEXING_ASSISTANT_ENABLED` in `.env` (default off; see `util/indexing_assistant_config.py`); `util/gemini_ocr_client.py` (`GOOGLE_API_KEY` or `GEMINI_API_KEY` when enabled); text normalization in `util/ocr_text_utils.py`
 - Field display/CSV metadata helpers: `util/field_metadata.py` (`summary`, `column_title`, `full_text`, `question_number` with `name` fallbacks; summary overlay ≤50; column titles not short-capped)
 
 - Designer field reshape: `util/field_geometry_edit.py` (grid division drag, resize handles, snapshots for cancel)

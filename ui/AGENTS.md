@@ -23,7 +23,7 @@ PyQt6 widgets, panels, dialogs, and layouts shared by Designer, Indexer, and rel
 - Grid Designer **Assistant** (right of orientation toggles): requires drawn ROI + ≥2 detected answer rects in ROI; autofills/overwrites labels and metadata via `runtime_assistants/design_assistant/grid_assistant/`; shrinks `grid_rect` to tightly frame answer boxes (stem/headings excluded); shows wait cursor while analysing
 
 - Grid Designer grid name / row / column label edits have no character max; overlay display still caps via `summary` / `display_label` (50)
-- Indexer-facing: main image panel, details panel, menus, OCR/index/comment/QC dialogs
+- Indexer-facing: main image panel, details panel, menus, OCR/index/comment/QC dialogs; per-field and page OCR buttons hidden unless `INDEXING_ASSISTANT_ENABLED` is truthy in `.env` (Indexer shell owns visibility)
 - Field overlay colours: resolve via `field_factory.get_field_display_color()` (shared with Indexer); do not read `field.colour` for paint
 - Designer field list Type column: cell background via `field_factory.get_display_color_for_type()` (same palette as overlays); text contrast black/white by luminance
 - Prefer extending existing widgets over duplicating paint or layout logic in entry-point apps
