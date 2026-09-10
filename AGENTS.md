@@ -83,6 +83,8 @@ Default section order:
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 
+- Indexer: opening a document jumps to the first page that has a `{n}.json` file (1-based page JSON in the project `json/` folder). If none exist, stay on page 1. Session restore and QC navigation still go to the requested page after open.
+
 ## Child DOX Index
 
 - `ui/AGENTS.md` — PyQt6 widgets, panels, and dialogs

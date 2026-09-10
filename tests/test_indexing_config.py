@@ -9,6 +9,7 @@ import pymupdf as fitz
 from util.designer_persistence import (
     DEFAULT_IMPORT_FILENAME,
     DEFAULT_PAGES_WITHOUT_FIDUCIAL,
+    first_page_index_with_json,
     indexing_config_from_project,
     parse_pages_without_fiducial,
     save_indexing_config,
@@ -170,3 +171,26 @@ def test_create_test_batch_rejects_invalid_name(tmp_path: Path):
         pass
     else:
         raise AssertionError("expected CreateTestBatchError")
+
+
+def test_first_page_index_with_json_skips_pages_without_files(tmp_path: Path):
+    json_folder = tmp_path / "json"
+    json_folder.mkdir()
+    (json_folder / "3.json").write_text("[]", encoding="utf-8")
+    (json_folder / "project_config.json").write_text("{}", encoding="utf-8")
+    assert first_page_index_with_json(json_folder, 5) == 2
+
+
+def test_first_page_index_with_json_uses_page_one_when_present(tmp_path: Path):
+    json_folder = tmp_path / "json"
+    json_folder.mkdir()
+    (json_folder / "1.json").write_text("[]", encoding="utf-8")
+    (json_folder / "2.json").write_text("[]", encoding="utf-8")
+    assert first_page_index_with_json(json_folder, 2) == 0
+
+
+def test_first_page_index_with_json_defaults_to_zero_when_none(tmp_path: Path):
+    json_folder = tmp_path / "json"
+    json_folder.mkdir()
+    assert first_page_index_with_json(json_folder, 4) == 0
+    assert first_page_index_with_json(json_folder, 0) == 0

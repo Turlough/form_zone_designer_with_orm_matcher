@@ -150,6 +150,17 @@ def save_rectangle_detection_settings(
     merge_project_config(json_folder, {"rectangle_detection": settings.to_dict()})
 
 
+def first_page_index_with_json(json_folder: str | Path, page_count: int) -> int:
+    """Return 0-based index of the first page that has `{n}.json`, or 0 if none."""
+    if page_count <= 0:
+        return 0
+    json_folder = Path(resolve_path_or_original(json_folder))
+    for idx in range(page_count):
+        if find_file_case_insensitive(json_folder, f"{idx + 1}.json") is not None:
+            return idx
+    return 0
+
+
 def load_page_fields(json_folder, page_idx, config_folder=None, *, expand_grids: bool = False):
     """Load fields for a specific page from JSON file.
     

@@ -28,7 +28,10 @@ from util.path_utils import (
 )
 from util.document_loader import get_document_loader_for_path, load_page_dimensions
 from util.lazy_document_pages import LazyDocumentPages
-from util.designer_persistence import load_page_fields as load_page_fields_from_json
+from util.designer_persistence import (
+    first_page_index_with_json,
+    load_page_fields as load_page_fields_from_json,
+)
 from util.fiducial_paths import find_fiducial_for_page
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField, FIELD_TYPE_MAP
 import logging
@@ -949,6 +952,8 @@ class Indexer(QMainWindow):
         
         try:
             self.load_document(absolute_path)
+            page_count = len(self.current_page_images) if self.current_page_images else 0
+            self.current_page_index = first_page_index_with_json(self.json_folder, page_count)
             self.display_current_page()
             save_state(last_indexer_tiff_index=index, last_indexer_page_index=self.current_page_index)
         except Exception as e:
