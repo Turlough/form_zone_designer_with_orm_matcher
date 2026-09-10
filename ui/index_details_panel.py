@@ -209,8 +209,9 @@ class IndexDetailPanel(QWidget):
         self.fields_table = QTableWidget()
         self.fields_table.setColumnCount(2)
         self.fields_table.setHorizontalHeaderLabels(["Field Name", "Field Value"])
-        self.fields_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.fields_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.fields_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.fields_table.setWordWrap(False)
+        self.fields_table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.fields_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Read-only
         self.fields_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         # Single-click activates the field (thumbnail + text editor)
@@ -474,11 +475,11 @@ class IndexDetailPanel(QWidget):
         current_field_name = self.current_field.name if self.current_field else None
         
         for row, field in enumerate(self.page_fields):
-            # Field name
-            name_item = QTableWidgetItem(field.name or "Unnamed")
+            name_text = field.name or "Unnamed"
+            name_item = QTableWidgetItem(name_text)
+            name_item.setToolTip(name_text)
             self.fields_table.setItem(row, 0, name_item)
-            
-            # Field value (truncated if long)
+
             value = self.field_values.get(field.name, "")
             if isinstance(field, Tickbox) and isinstance(value, bool):
                 value_str = field.checked_value if value else ""
@@ -490,13 +491,9 @@ class IndexDetailPanel(QWidget):
                 value_str = _format_irish_mobile_for_display(value_str)
             elif isinstance(field, EircodeField):
                 value_str = _format_eircode_for_display(value_str)
-            
-            # Truncate if too long
-            max_length = 50
-            if len(value_str) > max_length:
-                value_str = value_str[:max_length] + "..."
-            
+
             value_item = QTableWidgetItem(value_str)
+            value_item.setToolTip(value_str)
             self.fields_table.setItem(row, 1, value_item)
 
             has_comment = bool(self.field_comments.get(field.name or "", "").strip())
