@@ -21,10 +21,12 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QScrollArea,
     QFrame,
+    QFormLayout,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QTimer
 from PyQt6.QtGui import QGuiApplication
 from fields import FIELD_TYPE_MAP
+from util.field_edit import format_geometry, parse_geometry, type_has_checked_value
 
 FIELD_TYPES = list(FIELD_TYPE_MAP.keys())
 
@@ -77,11 +79,13 @@ class RectangleSelectedDialog(QDialog):
     """
     Dialog shown when a rectangle is selected (clicked within rect, drawn rect,
     or clicked within existing field). Provides name, type pick list, and
-    Delete / Submit / Cancel. For drawn rect with inner rects, batch mode lists
-    each answer with type and name plus Assistant autofill; answer rows scroll
-    when the dialog would exceed the screen so Assistant / Radio group /
-    Radio grid / Submit stay reachable. **Radio group** creates one RadioGroup
-    from the frame; **Radio grid…** opens Grid Designer.
+    Delete / Submit / Cancel. Existing-field edit shows JSON keys except colour
+    (type palette); geometry is one compact x, y, width, height field.
+    For drawn rect with inner rects, batch mode lists each answer with type and
+    name plus Assistant autofill; answer rows scroll when the dialog would
+    exceed the screen so Assistant / Radio group / Radio grid / Submit stay
+    reachable. **Radio group** creates one RadioGroup from the frame;
+    **Radio grid…** opens Grid Designer.
     """
 
     _last_pos = None  # Persists last position within app session
@@ -91,6 +95,7 @@ class RectangleSelectedDialog(QDialog):
     cancelled = pyqtSignal()
     assistant_requested = pyqtSignal()
     radio_grid_requested = pyqtSignal(str)
+    geometry_edited = pyqtSignal(int, int, int, int)
 
     def __init__(
         self,
@@ -136,6 +141,57 @@ class RectangleSelectedDialog(QDialog):
             hint.setWordWrap(True)
             hint.setStyleSheet("color: #666; font-size: 11px;")
             layout.addWidget(hint)
+
+        self._existing_meta_widget = QWidget()
+        meta_form = QFormLayout(self._existing_meta_widget)
+        meta_form.setContentsMargins(0, 0, 0, 0)
+        meta_form.setSpacing(6)
+
+        self._edit_geometry_edit = QLineEdit()
+        self._edit_geometry_edit.setPlaceholderText("x, y, width, height")
+        self._edit_geometry_edit.setToolTip("Fiducial-relative x, y, width, height")
+        self._edit_geometry_edit.editingFinished.connect(self._on_geometry_editing_finished)
+        meta_form.addRow("Rect:", self._edit_geometry_edit)
+
+        self._edit_question_number_edit = QLineEdit()
+        self._edit_question_number_edit.setPlaceholderText("e.g. 1.4")
+        meta_form.addRow("Q#:", self._edit_question_number_edit)
+
+        self._edit_summary_edit = QLineEdit()
+        self._edit_summary_edit.setPlaceholderText("Overlay label (max 50)")
+        self._edit_summary_edit.setToolTip(
+            "Shown next to the rectangle when Field names is on (up to 50 characters)."
+        )
+        meta_form.addRow("Summary:", self._edit_summary_edit)
+
+        self._edit_column_title_edit = QLineEdit()
+        self._edit_column_title_edit.setPlaceholderText("Customer export heading")
+        self._edit_column_title_edit.setToolTip(
+            "Customer-facing delivery heading. May repeat across fields; name must not."
+        )
+        meta_form.addRow("Column title:", self._edit_column_title_edit)
+
+        self._edit_full_text_edit = QTextEdit()
+        self._edit_full_text_edit.setPlaceholderText("Full question wording as printed")
+        self._edit_full_text_edit.setMaximumHeight(56)
+        self._edit_full_text_edit.setAcceptRichText(False)
+        meta_form.addRow("Full text:", self._edit_full_text_edit)
+
+        self._edit_checked_value_edit = QLineEdit()
+        self._edit_checked_value_edit.setPlaceholderText("Ticked")
+        meta_form.addRow("Checked value:", self._edit_checked_value_edit)
+        self._checked_value_row = meta_form.rowCount() - 1
+
+        self._edit_export_column_id_edit = QLineEdit()
+        self._edit_export_column_id_edit.setPlaceholderText("From Export Check → Apply")
+        self._edit_export_column_id_edit.setToolTip(
+            "Linked export-format column id (set by Designer Check → Apply)."
+        )
+        meta_form.addRow("Export column:", self._edit_export_column_id_edit)
+
+        self._meta_form = meta_form
+        self._existing_meta_widget.setVisible(existing_field is not None)
+        layout.addWidget(self._existing_meta_widget)
 
         self._single_type_widget = QWidget()
         type_outer = QVBoxLayout(self._single_type_widget)
@@ -268,6 +324,7 @@ class RectangleSelectedDialog(QDialog):
                 t = type(existing_field).__name__
                 if t in self._type_radios:
                     self._type_radios[t].setChecked(True)
+                self._fill_existing_metadata(existing_field)
                 self._on_type_changed()
             else:
                 default = default_field_type if default_field_type in self._type_radios else "Tickbox"
@@ -276,7 +333,13 @@ class RectangleSelectedDialog(QDialog):
                 self._type_radios[default].setChecked(True)
                 self._on_type_changed()
 
-        self.setMinimumWidth(380 if self._batch_mode else 220)
+        if self._batch_mode:
+            min_w = 380
+        elif existing_field is not None:
+            min_w = 340
+        else:
+            min_w = 220
+        self.setMinimumWidth(min_w)
         self._fit_vertical_size()
 
     def _available_screen_geo(self):
@@ -334,7 +397,55 @@ class RectangleSelectedDialog(QDialog):
         self._inner_name_widget.setVisible(
             is_rg and self._inner_rect_count > 0 and not self._batch_mode
         )
+        self._update_checked_value_visible()
         self._fit_vertical_size()
+
+    def _fill_existing_metadata(self, field) -> None:
+        self.sync_geometry_from_field(field)
+        self._edit_question_number_edit.setText(getattr(field, "question_number", "") or "")
+        self._edit_summary_edit.setText(getattr(field, "summary", "") or "")
+        self._edit_column_title_edit.setText(getattr(field, "column_title", "") or "")
+        self._edit_full_text_edit.setPlainText(getattr(field, "full_text", "") or "")
+        self._edit_checked_value_edit.setText(getattr(field, "checked_value", "") or "")
+        self._edit_export_column_id_edit.setText(getattr(field, "export_column_id", "") or "")
+
+    def sync_geometry_from_field(self, field) -> None:
+        if self._edit_geometry_edit.hasFocus():
+            return
+        text = format_geometry(field.x, field.y, field.width, field.height)
+        if self._edit_geometry_edit.text() == text:
+            return
+        self._edit_geometry_edit.blockSignals(True)
+        self._edit_geometry_edit.setText(text)
+        self._edit_geometry_edit.blockSignals(False)
+
+    def _selected_type_name(self) -> str:
+        idx = self._button_group.checkedId()
+        if 0 <= idx < len(FIELD_TYPES):
+            return FIELD_TYPES[idx]
+        if self._existing_field is not None:
+            return type(self._existing_field).__name__
+        return "Tickbox"
+
+    def _update_checked_value_visible(self) -> None:
+        if self._existing_field is None:
+            return
+        show = type_has_checked_value(self._selected_type_name())
+        self._meta_form.setRowVisible(self._checked_value_row, show)
+        if show and not self._edit_checked_value_edit.text().strip():
+            default = "Signed" if self._selected_type_name() == "SignatureField" else "Ticked"
+            self._edit_checked_value_edit.setText(
+                getattr(self._existing_field, "checked_value", "") or default
+            )
+
+    def _on_geometry_editing_finished(self) -> None:
+        if self._existing_field is None:
+            return
+        geo = parse_geometry(self._edit_geometry_edit.text())
+        if geo is None:
+            self.sync_geometry_from_field(self._existing_field)
+            return
+        self.geometry_edited.emit(*geo)
 
     def set_assistant_running(self, running: bool):
         self._assistant_running = running
@@ -449,9 +560,45 @@ class RectangleSelectedDialog(QDialog):
                 e.text().strip() or f"Option {i+1}"
                 for i, e in enumerate(self._inner_name_edits)
             ]
+        if self._existing_field is not None:
+            extra = self._existing_field_config()
+            if extra is None:
+                return
+            config.update(extra)
         self._finished_action = True
         self.submitted.emit(config)
         self._close_dialog()
+
+    def _existing_field_config(self) -> dict | None:
+        geo = parse_geometry(self._edit_geometry_edit.text())
+        if geo is None and self._existing_field is not None:
+            geo = (
+                self._existing_field.x,
+                self._existing_field.y,
+                self._existing_field.width,
+                self._existing_field.height,
+            )
+        if geo is None:
+            return None
+        x, y, width, height = geo
+        config = {
+            "x": x,
+            "y": y,
+            "width": width,
+            "height": height,
+            "question_number": self._edit_question_number_edit.text().strip(),
+            "summary": self._edit_summary_edit.text().strip(),
+            "column_title": self._edit_column_title_edit.text().strip(),
+            "full_text": self._edit_full_text_edit.toPlainText().strip(),
+            "export_column_id": self._edit_export_column_id_edit.text().strip(),
+        }
+        if type_has_checked_value(self._selected_type_name()):
+            checked = self._edit_checked_value_edit.text().strip()
+            if self._selected_type_name() == "SignatureField":
+                config["checked_value"] = checked or "Signed"
+            else:
+                config["checked_value"] = checked or "Ticked"
+        return config
 
     def _close_dialog(self):
         if self._non_modal:

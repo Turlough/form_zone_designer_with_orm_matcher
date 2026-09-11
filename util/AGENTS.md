@@ -23,6 +23,7 @@ Non-UI services: ORM logo matching, document loading, persistence, CSV/index I/O
 - Numbered page JSON scan: `iter_page_json_paths` / `iter_runtime_fields` / `runtime_field_names` / `export_title_map` in `designer_persistence.py` — collect `{n}.json` in numeric order, **skipping gaps** (e.g. first fields on `4.json`). CSVManager and Exporter must use these rather than stopping at the first missing page file.
 
 - Designer field reshape: `util/field_geometry_edit.py` (grid division drag, resize handles, snapshots for cancel)
+- Designer field-editor apply: `util/field_edit.py` — `apply_field_edit` rebuilds a field from dialog config without dropping JSON metadata; `colour` is always the type-map colour, never user-edited
 - Radio grid layout: `util/radio_grid_layout.py` — expand `RadioGrid` to `RadioGroup`s for Indexer/Exporter; `build_radio_group_from_frame` for a single irregular RadioGroup from a question frame (group name from question text)
 - Designer page VLM analysis lives under `runtime_assistants/design_assistant/` (not in this package)
 - Document loading: `util/document_loader.py`; lazy page access for Indexer in `util/lazy_document_pages.py`

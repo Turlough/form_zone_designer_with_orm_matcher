@@ -46,6 +46,7 @@ from util.test_batch import (
 from util.fiducial_paths import find_default_logo, find_fiducial_for_page, per_page_logo_filename
 from util.field_metadata import truncate_summary, sanitize_column_title
 from util.radio_grid_layout import build_radio_group_from_frame
+from util.field_edit import apply_field_edit
 from util.field_geometry_edit import (
     geometry_edit_target,
     snapshot_field_geometry,
@@ -963,6 +964,21 @@ class Designer(QMainWindow):
         """Refresh JSON preview while reshaping a field (dialog stays open)."""
         if self.current_page_idx is not None:
             self._update_edit_panel_json(self.current_page_idx)
+        if self._field_edit_dialog is not None and self.selected_field_obj is not None:
+            self._field_edit_dialog.sync_geometry_from_field(self.selected_field_obj)
+
+    def _on_field_edit_geometry_typed(self, x: int, y: int, width: int, height: int):
+        field = self.selected_field_obj
+        if field is None:
+            return
+        field.x = x
+        field.y = y
+        field.width = width
+        field.height = height
+        if self.image_display:
+            self.image_display.update_display()
+        if self.current_page_idx is not None:
+            self._update_edit_panel_json(self.current_page_idx)
 
     def _close_field_edit_dialog(self, *, revert: bool = False):
         if self._field_edit_dialog is not None:
@@ -1074,6 +1090,7 @@ class Designer(QMainWindow):
         dialog.submitted.connect(self._on_field_edit_submitted)
         dialog.deleted.connect(self._on_field_edit_deleted)
         dialog.cancelled.connect(self._on_field_edit_cancelled)
+        dialog.geometry_edited.connect(self._on_field_edit_geometry_typed)
         self._field_edit_dialog = dialog
         dialog.show()
 
@@ -1099,86 +1116,54 @@ class Designer(QMainWindow):
                 isinstance(self.selected_field_obj, RadioButton) and
                 self.selected_field_obj in field_at_index.radio_buttons):
             rb = self.selected_field_obj
-            rb.name = config.get("field_name", rb.name)
-            # Persist and refresh
+            nested_config = dict(config)
+            nested_config["field_type"] = type(rb).__name__
+            updated = apply_field_edit(rb, nested_config)
+            idx = field_at_index.radio_buttons.index(rb)
+            field_at_index.radio_buttons[idx] = updated
+            self.selected_field_obj = updated
             if self.config:
                 self._save_page_fields(self.current_page_idx)
             if self.image_display:
                 self.image_display.update_display()
             self._update_edit_panel_json(self.current_page_idx)
             return
-        
-        # Get the old field to preserve position, dimensions, and other properties
+
         old_field = field_at_index
-        
-        # Extract new type and name from config
-        field_type = config.get("field_type")
-        field_name = config.get("field_name")
-        
-        # Create a new field of the correct type, preserving position and dimensions
-        field_kwargs = {
-            "colour": default_colour_tuple_for_type(field_type),
-            "name": field_name,
-            "x": old_field.x,
-            "y": old_field.y,
-            "width": old_field.width,
-            "height": old_field.height,
-        }
-        
-        # Create appropriate field type based on selection
-        field_class = FIELD_TYPE_MAP.get(field_type)
-
-        if not field_class:
-            logger.error(f"Invalid field type: {field_type}")
+        try:
+            new_field = apply_field_edit(old_field, config)
+        except ValueError:
+            logger.error("Invalid field type: %s", config.get("field_type"))
             return
-        
-        # Set default value based on field type
-        if field_class == RadioGroup:
-            field_kwargs["radio_buttons"] = []
 
-        
-        # Create new field instance
-        new_field = field_class(**field_kwargs)
-        
-        # If the new field is a RadioGroup, find and move RadioButtons within its bounds
-        if isinstance(new_field, RadioGroup):
+        # Converting into a RadioGroup: scoop top-level RadioButtons inside the frame.
+        # Existing RadioGroups keep nested buttons via apply_field_edit.
+        if isinstance(new_field, RadioGroup) and not isinstance(old_field, RadioGroup):
             page_fields = self.page_field_list[self.current_page_idx]
             radio_buttons_to_remove = []
-            
-            # Find all RadioButtons that lie within the RadioGroup's bounds
+
             for i, field in enumerate(page_fields):
-                # Skip the field being converted (at selected_field_index)
                 if i == self.selected_field_index:
                     continue
-                
+
                 if isinstance(field, RadioButton):
-                    # Check if the RadioButton's center point is within the RadioGroup's bounds
                     rb_center_x = field.x + field.width // 2
                     rb_center_y = field.y + field.height // 2
-                    
-                    # Check if center is within RadioGroup bounds
                     if (new_field.x <= rb_center_x <= new_field.x + new_field.width and
                         new_field.y <= rb_center_y <= new_field.y + new_field.height):
-                        # Add to RadioGroup
                         new_field.add_radio_button(field)
                         radio_buttons_to_remove.append(i)
                         logger.info(
                             f"Page {self.current_page_idx + 1}: Moved RadioButton '{field.name}' "
                             f"into RadioGroup '{new_field.name}'"
                         )
-            
-            # Remove RadioButtons from top-level list (in reverse order to maintain indices)
-            # Also adjust selected_field_index if we remove items before it
+
             for i in reversed(radio_buttons_to_remove):
                 page_fields.pop(i)
-                # Adjust selected_field_index if we removed an item before it
                 if i < self.selected_field_index:
                     self.selected_field_index -= 1
-        
-        # Replace the field in the data structure
+
         self.page_field_list[self.current_page_idx][self.selected_field_index] = new_field
-        
-        # Update stored reference
         self.selected_field_obj = new_field
         
         # Persist to disk
@@ -1197,8 +1182,12 @@ class Designer(QMainWindow):
         self._update_edit_panel_json(self.current_page_idx)
         
         logger.info(
-            f"Page {self.current_page_idx + 1}: Updated field to {field_type} '{field_name}' "
-            f"at ({new_field.x}, {new_field.y})"
+            "Page %s: Updated field to %s '%s' at (%s, %s)",
+            self.current_page_idx + 1,
+            type(new_field).__name__,
+            new_field.name,
+            new_field.x,
+            new_field.y,
         )
 
     def _on_detected_rect_clicked(self, rect_index: int, rect_xywh_abs, global_pos):
