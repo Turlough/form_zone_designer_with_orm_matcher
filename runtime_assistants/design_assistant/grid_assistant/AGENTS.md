@@ -27,6 +27,7 @@ Fill Grid Designer metadata and row/column labels from a drawn ROI crop plus Ope
 - Autofill overwrites Grid Designer fields on success
 - After analysis, **shrink** `grid_rect` to tightly frame answer boxes (stem/headings excluded); outer margins match each outer button’s inner gap to the first/last split — see `samples/framed three column grid.md`
 - Cluster counts win over VLM label counts (pad/truncate with warnings)
+- Single-question grids: if orientation is `vertical` and `n_cols == 1`, or `horizontal` and `n_rows == 1`, a missing or padded (`Column N` / `Row N`) question-axis label is replaced with `full_text`
 - `question_number` never appears in answer / `RadioButton` labels
 
 ### Field metadata (persisted on RadioGrid)
@@ -54,7 +55,7 @@ Fill Grid Designer metadata and row/column labels from a drawn ROI crop plus Ope
 
 ## Verification
 
-- `tests/test_grid_assistant_geometry.py` — clustering, schema parse (no live API)
+- `tests/test_grid_assistant_geometry.py` — clustering, schema parse, question-axis label fill (no live API)
 - `tests/test_radio_grid_layout.py` — long labels, `question_number` on groups not buttons
 
 ## Child DOX Index

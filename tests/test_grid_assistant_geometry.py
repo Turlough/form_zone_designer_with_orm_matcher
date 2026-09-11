@@ -4,10 +4,12 @@ from runtime_assistants.design_assistant.grid_assistant.geometry import (
     align_labels_to_counts,
     cluster_grid_rects,
     fiducial_rect_to_page,
+    fill_question_axis_label,
     filter_rects_in_roi,
     frame_answer_rects,
     page_rect_to_fiducial,
 )
+from runtime_assistants.design_assistant.grid_assistant.prompt import build_user_prompt
 from runtime_assistants.design_assistant.grid_assistant.schema import (
     parse_vlm_response,
     validate_grid_analysis,
@@ -100,6 +102,72 @@ def test_align_labels_pad_and_truncate():
     assert len(cols) == 3
     assert cols[0] == "X"
     assert warnings
+
+
+def _axis_kwargs(**overrides):
+    base = dict(
+        orientation="horizontal",
+        n_rows=1,
+        n_cols=4,
+        full_text="What is your preferred contact method?",
+        row_labels=["Row 1"],
+        col_labels=["Phone", "Email", "Post", "None"],
+    )
+    base.update(overrides)
+    return base
+
+
+def test_fill_question_axis_horizontal_single_row_uses_full_text():
+    rows, cols = fill_question_axis_label(**_axis_kwargs())
+    assert rows == ["What is your preferred contact method?"]
+    assert cols == ["Phone", "Email", "Post", "None"]
+
+
+def test_fill_question_axis_vertical_single_column_uses_full_text():
+    rows, cols = fill_question_axis_label(
+        **_axis_kwargs(
+            orientation="vertical",
+            n_rows=5,
+            n_cols=1,
+            full_text="What age group do you fall into?",
+            row_labels=["Under 35", "35 to 44", "45 to 54", "55 to 64", "Over 65"],
+            col_labels=["Column 1"],
+        )
+    )
+    assert cols == ["What age group do you fall into?"]
+    assert rows[0] == "Under 35"
+
+
+def test_fill_question_axis_keeps_real_question_label():
+    rows, cols = fill_question_axis_label(
+        **_axis_kwargs(row_labels=["Preferred contact"])
+    )
+    assert rows == ["Preferred contact"]
+    assert cols[0] == "Phone"
+
+
+def test_fill_question_axis_skips_multi_row_and_empty_stem():
+    rows, cols = fill_question_axis_label(
+        **_axis_kwargs(n_rows=2, row_labels=["Row 1", "Row 2"])
+    )
+    assert rows == ["Row 1", "Row 2"]
+
+    rows, cols = fill_question_axis_label(**_axis_kwargs(full_text=""))
+    assert rows == ["Row 1"]
+
+
+def test_horizontal_single_row_prompt_asks_for_full_text_row_label():
+    text = build_user_prompt(
+        orientation="horizontal",
+        n_rows=1,
+        n_cols=4,
+        image_width=100,
+        image_height=40,
+        candidate_rects=[],
+    )
+    assert "single-row option list" in text
+    assert "row label is the full question text" in text
+    assert "sub-question texts top-to-bottom" not in text
 
 
 def test_parse_and_validate_grid_json():

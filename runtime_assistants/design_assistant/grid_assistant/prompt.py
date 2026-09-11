@@ -6,7 +6,7 @@ from typing import Sequence
 
 SYSTEM_INSTRUCTIONS = """\
 You analyse a cropped region of a scanned paper survey form that contains one
-radio / checkbox grid (matrix or single-column options).
+radio / checkbox grid (matrix or a single row or column of options).
 
 Return a single JSON object only (no markdown). Read printed text carefully.
 Never invent options that are not visible. Do not put question numbers inside
@@ -33,19 +33,37 @@ def build_user_prompt(
     rect_block = "\n".join(rect_lines) if rect_lines else "  (none)"
 
     if orient == "vertical":
-        layout_rules = """\
+        if n_cols == 1:
+            question_axis = (
+                "- col_labels: one entry. For this single-column option list, "
+                "the column label is the full question text (same as full_text)."
+            )
+        else:
+            question_axis = (
+                "- col_labels: one question text per column, left to right."
+            )
+        layout_rules = f"""\
 Orientation is VERTICAL (column = question / RadioGroup; rows = answer options):
-- col_labels: one entry per column (usually 1). For a single-column age/option list,
-  the column label is the full question text (same as full_text).
+{question_axis}
 - row_labels: the answer option texts (e.g. Under 35, 35 to 44, …), top to bottom.
 - Do not put the question number in row_labels or col_labels.
 """
     else:
-        layout_rules = """\
+        if n_rows == 1:
+            question_axis = (
+                "- row_labels: one entry. For this single-row option list, "
+                "the row label is the full question text (same as full_text)."
+            )
+        else:
+            question_axis = (
+                "- row_labels: sub-question texts top-to-bottom "
+                "(no question-number prefix)."
+            )
+        layout_rules = f"""\
 Orientation is HORIZONTAL (row = question / RadioGroup; columns = answer options):
 - col_labels: shared answer headings left-to-right (e.g. Good, Average, Poor).
-- row_labels: sub-question texts top-to-bottom (no question-number prefix).
-- full_text is the stem above the matrix; summary is a short overlay title.
+{question_axis}
+- full_text is the stem / question wording as printed; summary is a short overlay title.
 - Do not put the question number in row_labels or col_labels.
 """
 

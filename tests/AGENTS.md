@@ -12,7 +12,7 @@ Automated checks for validation and other testable project logic.
 
 - Prefer tests that assert real validation and business rules, not PyQt widget smoke unless explicitly requested
 - Design assistant: schema/match tests only — no live VLM API in CI (`test_design_assistant_*.py`)
-- Grid assistant: geometry/schema tests only — no live VLM API in CI (`test_grid_assistant_geometry.py`)
+- Grid assistant: geometry/schema tests only — no live VLM API in CI (`test_grid_assistant_geometry.py`, including question-axis label fill)
 - Question assistant: geometry/schema tests only — no live API in CI (`test_question_assistant.py`)
 - Radio group from question frame: `test_radio_grid_layout.py` (`build_radio_group_from_frame`)
 

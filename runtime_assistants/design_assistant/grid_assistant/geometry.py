@@ -395,3 +395,31 @@ def align_labels_to_counts(
     # Deduplicate padding warnings
     warnings = list(dict.fromkeys(warnings))
     return rows, cols, warnings
+
+
+def fill_question_axis_label(
+    *,
+    orientation: str,
+    n_rows: int,
+    n_cols: int,
+    full_text: str,
+    row_labels: list[str],
+    col_labels: list[str],
+) -> tuple[list[str], list[str]]:
+    """Replace a padded 1-question axis label with ``full_text``.
+
+    Vertical 1-column grids use the column as the RadioGroup; horizontal 1-row
+    grids use the row. Dummy ``Column N`` / ``Row N`` pads from
+    ``align_labels_to_counts`` are treated as missing.
+    """
+    stem = (full_text or "").strip()
+    if not stem:
+        return row_labels, col_labels
+    orient = (orientation or "").strip().lower()
+    if orient == "vertical" and n_cols == 1:
+        if not col_labels or col_labels[0].startswith("Column "):
+            return list(row_labels), [stem]
+    if orient == "horizontal" and n_rows == 1:
+        if not row_labels or row_labels[0].startswith("Row "):
+            return [stem], list(col_labels)
+    return row_labels, col_labels

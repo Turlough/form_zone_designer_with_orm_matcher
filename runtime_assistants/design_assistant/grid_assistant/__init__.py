@@ -18,6 +18,7 @@ from runtime_assistants.design_assistant.grid_assistant.geometry import (
     align_labels_to_counts,
     cluster_grid_rects,
     fiducial_rect_to_page,
+    fill_question_axis_label,
     filter_rects_in_roi,
     page_rect_to_fiducial,
 )
@@ -116,10 +117,14 @@ def analyse_grid(
     summary = parsed.summary or truncate_summary(parsed.full_text or "Grid")
     name = summary
     full_text = parsed.full_text
-    # Single-column vertical: column label should be full question text
-    if orientation == "vertical" and cluster.n_cols == 1 and full_text:
-        if not col_labels or col_labels[0].startswith("Column "):
-            col_labels = [full_text]
+    row_labels, col_labels = fill_question_axis_label(
+        orientation=orientation,
+        n_rows=cluster.n_rows,
+        n_cols=cluster.n_cols,
+        full_text=full_text,
+        row_labels=row_labels,
+        col_labels=col_labels,
+    )
 
     framed_page = cluster.framed_rect_page
     grid_rect_fiducial = (
