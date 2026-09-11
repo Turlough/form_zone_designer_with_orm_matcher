@@ -61,7 +61,7 @@ A dummy two-row xlsx is enough for **headings and types**. It is not enough for 
 
 Report only mismatches, leftovers, and order drift. Do not dump a full mapping table unless asked.
 
-RoI (parked until new sample or live data): 3km land follow-up still a tickbox vs Excel `Response`; page 21 / AgNav / consent / BTE split; duplicate `Full Name` if those columns are delivered.
+RoI (parked until new sample or live data): 3km land follow-up still a tickbox vs Excel `Response`; page 21 Excel-only consent / AgNav / data access / Herd Designator; BTE parts present but JSON order is 6-digit → check → county (Excel is country → 6-digit → check).
 
 ## Verification
 
