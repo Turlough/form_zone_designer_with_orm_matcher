@@ -99,7 +99,7 @@ When the user requests a durable behavior change, record it here or in the relev
   - `tests/validations/AGENTS.md` — validation pytest modules
 - `USER_INSTRUCTIONS/AGENTS.md` — operator docs (templates setup, Designer, Indexer, Exporter); static HTML in `USER_INSTRUCTIONS/html/`
 - `OUTPUT_FORMATS/AGENTS.md` — export compatibility reference (provider formats vs app delivery CSV); documentation only
-- `EXAMPLES/AGENTS.md` — local customer sample packs; Designer JSON vs export-header checks (survey folders gitignored)
+- `EXAMPLES/AGENTS.md` — local customer sample packs; Designer JSON vs export-header checks (survey folders gitignored; `utils/` dump helpers tracked)
 - `.cursor/AGENTS.md` — Cursor rules, notes, samples (non-runtime)
   - `.cursor/rules/AGENTS.md` — `.mdc` rule modules
   - `.cursor/mIsc/AGENTS.md` — misc design notes

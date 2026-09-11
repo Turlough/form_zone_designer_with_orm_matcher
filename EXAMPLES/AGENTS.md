@@ -2,13 +2,14 @@
 
 ## Purpose
 
-Local sample packs for Designer JSON vs customer export-header checks. Not runtime. Survey subfolders are gitignored; this file is tracked.
+Local sample packs for Designer JSON vs customer export-header checks. Not runtime. Survey subfolders are gitignored; this file and `utils/` are tracked.
 
 ## Ownership
 
 - One first-level subfolder per survey
 - `RoI/` — Republic of Ireland Milk Planning Census
 - `NI/` — Northern Ireland survey
+- `utils/` — heading-check dump helpers (tracked; see `utils/AGENTS.md`)
 
 Each survey folder typically contains:
 
@@ -41,6 +42,8 @@ Print-only fields (cover litres, overflow comments, date signed, extra ticks) ma
 
 ## Work Guidance
 
+Dump both sequences first (`python EXAMPLES/utils/dump_headings.py EXAMPLES/<survey>`). Do not auto-pair from that dump.
+
 When the user points at a survey folder (or `json/` + an xlsx):
 
 1. Map JSON fields to export columns (question stem, then options)
@@ -68,3 +71,4 @@ No automated test. Re-run this checklist after Designer JSON changes, or when a 
 
 - `RoI/` — gitignored pack (JSON + `ExportSampleROI.xlsx`)
 - `NI/` — gitignored pack (fill when samples exist)
+- `utils/AGENTS.md` — dump helpers for JSON fields and Excel headings
