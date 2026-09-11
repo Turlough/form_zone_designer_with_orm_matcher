@@ -44,11 +44,15 @@ Print-only fields (cover litres, overflow comments, date signed, extra ticks) ma
 When the user points at a survey folder (or `json/` + an xlsx):
 
 1. Map JSON fields to export columns (question stem, then options)
-2. Check field **order**: JSON sequence vs Excel columns (skip meta). Flag any swap, insertion, or skip
+2. Check field **order**: JSON sequence vs Excel columns (skip meta). Flag any swap, insertion, or skip. Include the second Excel row in sequence matching.
 3. List JSON-only (missing from Excel) and Excel-only (extra) headings
 4. Flag radio vs tickbox mismatches (JSON type vs Excel `Response` vs option columns)
 5. Note wording / Other-specify / split-vs-combined extras; do not block on unconfirmed radio **labels** (`Response` columns do not list choices)
 6. Say whether a new sample is needed, or live data is enough
+7. Say where **name** has been duplicated
+8. Say where **column_title** is missing
+9. Include Page numbers when reporting, where possible.
+
 
 A dummy two-row xlsx is enough for **headings and types**. It is not enough for radio option text. Ask for a filled sample or live data when labels must be verified.
 
