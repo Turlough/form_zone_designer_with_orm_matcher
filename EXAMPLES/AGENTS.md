@@ -16,6 +16,7 @@ Each survey folder typically contains:
 - `json/` — Designer page files (`N.json`) and `project_config.json`
 - Customer export sample (`.xlsx`, Qualtrics two-row headers)
 - Optional: `template.pdf` / `fiducials/`
+- `current_status.md` — gitignored, overwriteable scratch after each heading check. Outstanding leftovers for the next run, plus long-term pack notes (sample file, sheet, page coverage). Not tracked. Do not park run leftovers in this `AGENTS.md`.
 
 ## Local Contracts
 
@@ -44,6 +45,8 @@ Print-only fields (cover litres, overflow comments, date signed, extra ticks) ma
 
 Dump both sequences first (`python EXAMPLES/utils/dump_headings.py EXAMPLES/<survey>`). Do not auto-pair from that dump.
 
+Read `EXAMPLES/<survey>/current_status.md` at the start of a check if it exists. After reporting in chat, overwrite that file with current leftovers and useful pack notes. Keep survey-specific run notes out of this `AGENTS.md`.
+
 When the user points at a survey folder (or `json/` + an xlsx):
 
 1. Map JSON fields to export columns (question stem, then options)
@@ -56,12 +59,9 @@ When the user points at a survey folder (or `json/` + an xlsx):
 8. Say where **column_title** is missing
 9. Include Page numbers when reporting, where possible.
 
-
 A dummy two-row xlsx is enough for **headings and types**. It is not enough for radio option text. Ask for a filled sample or live data when labels must be verified.
 
 Report only mismatches, leftovers, and order drift. Do not dump a full mapping table unless asked.
-
-RoI (parked until new sample or live data): 3km land follow-up still a tickbox vs Excel `Response`; page 21 Excel-only consent / AgNav / data access / Herd Designator; BTE parts present but JSON order is 6-digit → check → county (Excel is country → 6-digit → check).
 
 ## Verification
 
@@ -69,6 +69,6 @@ No automated test. Re-run this checklist after Designer JSON changes, or when a 
 
 ## Child DOX Index
 
-- `RoI/` — gitignored pack (JSON + `ExportSampleROI.xlsx`)
-- `NI/` — gitignored pack (fill when samples exist)
+- `RoI/` — gitignored pack (JSON + `ExportSampleROI.xlsx`; `current_status.md`)
+- `NI/` — gitignored pack (JSON `4.json`–`19.json` + `ExportSampleNI.xlsx`; `current_status.md`)
 - `utils/AGENTS.md` — dump helpers for JSON fields and Excel headings
