@@ -115,6 +115,7 @@ Example (adjust paths and field names for your job):
   "lookup_list": "optional/path/to/lookup.csv",
   "lookup_prime_index": 0,
   "pages_without_fiducial": [0],
+  "all_uppercase": false,
   "rectangle_detection": {
     "canny_low_threshold": 60,
     "canny_high_threshold": 150,
@@ -150,6 +151,7 @@ Example (adjust paths and field names for your job):
 | `lookup_list` | Optional CSV path for lookup-backed validations. |
 | `lookup_prime_index` | Zero-based key column in `lookup_list` (default `0`). |
 | `pages_without_fiducial` | Zero-based page indices with no fiducial search. |
+| `all_uppercase` | When `true`, Indexer converts typed and OCR text to uppercase. Missing or `false` keeps the original case (Eircode fields stay uppercase). |
 | `rectangle_detection` | Optional Designer-only OpenCV rectangle detection tuning (saved when you use **Detect Rectangles**). |
 | `validations` | Optional project-level rules (see validation docs / Indexer behaviour). |
 

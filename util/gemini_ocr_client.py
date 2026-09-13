@@ -31,12 +31,18 @@ OCR_PROMPT = (
 )
 
 
-def ocr_image_region(pil_image: Image.Image, rect: Rect) -> str:
+def ocr_image_region(
+    pil_image: Image.Image,
+    rect: Rect,
+    *,
+    all_uppercase: bool = False,
+) -> str:
     """Run Gemini vision OCR on a rectangular region of a page.
 
     Args:
         pil_image: Full page image at original scan resolution.
         rect: (x, y, width, height) in page pixel coordinates.
+        all_uppercase: When True, fold OCR text to uppercase (project_config).
 
     Returns:
         Normalized OCR text (may be empty string).
@@ -91,6 +97,6 @@ def ocr_image_region(pil_image: Image.Image, rect: Rect) -> str:
     finally:
         client.close()
 
-    text = (getattr(response, "text", "") or "").strip().upper()
-    return normalize_ocr_text(text)
+    text = (getattr(response, "text", "") or "").strip()
+    return normalize_ocr_text(text, all_uppercase=all_uppercase)
 

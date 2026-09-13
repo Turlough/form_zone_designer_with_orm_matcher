@@ -22,6 +22,7 @@ Opens a dialog with OK / Cancel. Existing values are loaded from `project_config
 | **Lookup list** | *(blank)* | Optional file picker for a lookup CSV (`lookup_list`). Clear the field to remove the key. |
 | **Lookup prime index** | `0` | Zero-based key column in that CSV (`lookup_prime_index`). |
 | **Pages without fiducial** | `[0, 1]` | Zero-based page indices skipped during fiducial search (`pages_without_fiducial`). Use `[]` if every page has a mark. Saving this list re-runs fiducial detection on the open template. |
+| **All uppercase** | `False` | Dropdown. When `True`, Indexer stores typed and OCR text in uppercase (`all_uppercase`). Missing key is treated as `False`. |
 
 OK saves to `json/project_config.json`. Set **batch_folder** and **import filename** before using Indexer or **Create Test Batch**.
 

@@ -13,6 +13,7 @@ from util.designer_persistence import (
     first_page_index_with_json,
     indexing_config_from_project,
     iter_page_json_paths,
+    parse_all_uppercase,
     parse_pages_without_fiducial,
     remap_delivery_headers,
     runtime_field_names,
@@ -54,6 +55,26 @@ def test_indexing_config_defaults_when_keys_missing():
     assert values["pages_without_fiducial"] == DEFAULT_PAGES_WITHOUT_FIDUCIAL
     assert values["batch_folder"] == ""
     assert values["lookup_list"] == ""
+    assert values["all_uppercase"] is False
+
+
+def test_parse_all_uppercase_defaults_and_coercion():
+    assert parse_all_uppercase(None) is False
+    assert parse_all_uppercase(False) is False
+    assert parse_all_uppercase(True) is True
+    assert parse_all_uppercase("true") is True
+    assert parse_all_uppercase("True") is True
+    assert parse_all_uppercase("yes") is True
+    assert parse_all_uppercase("1") is True
+    assert parse_all_uppercase("false") is False
+    assert parse_all_uppercase("no") is False
+    assert parse_all_uppercase(0) is False
+    assert parse_all_uppercase(1) is True
+
+
+def test_indexing_config_reads_all_uppercase_true():
+    values = indexing_config_from_project({"all_uppercase": True})
+    assert values["all_uppercase"] is True
 
 
 def test_save_indexing_config_merges_and_removes_blank_lookup(tmp_path: Path):
@@ -80,6 +101,7 @@ def test_save_indexing_config_merges_and_removes_blank_lookup(tmp_path: Path):
             "lookup_list": "",
             "lookup_prime_index": 2,
             "pages_without_fiducial": [0, 1],
+            "all_uppercase": True,
         },
     )
 
@@ -93,6 +115,7 @@ def test_save_indexing_config_merges_and_removes_blank_lookup(tmp_path: Path):
     assert on_disk["import_filename"] == "EXPORT.TXT"
     assert on_disk["lookup_prime_index"] == 2
     assert on_disk["pages_without_fiducial"] == [0, 1]
+    assert on_disk["all_uppercase"] is True
     assert "lookup_list" not in on_disk
 
 
@@ -108,6 +131,7 @@ def test_save_indexing_config_then_rectangle_detection_preserves_keys(tmp_path: 
             "lookup_list": "lookup.csv",
             "lookup_prime_index": 0,
             "pages_without_fiducial": [0],
+            "all_uppercase": False,
         },
     )
     save_rectangle_detection_settings(
@@ -117,6 +141,7 @@ def test_save_indexing_config_then_rectangle_detection_preserves_keys(tmp_path: 
         saved = json.load(f)
     assert saved["batch_folder"] == "batches"
     assert saved["lookup_list"] == "lookup.csv"
+    assert saved["all_uppercase"] is False
     assert saved["rectangle_detection"]["canny_low_threshold"] == 75
 
 

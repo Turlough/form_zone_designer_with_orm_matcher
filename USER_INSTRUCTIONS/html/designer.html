@@ -66,6 +66,11 @@
 <td><code>[0, 1]</code></td>
 <td>Zero-based page indices skipped during fiducial search (<code>pages_without_fiducial</code>). Use <code>[]</code> if every page has a mark. Saving this list re-runs fiducial detection on the open template.</td>
 </tr>
+<tr>
+<td><strong>All uppercase</strong></td>
+<td><code>False</code></td>
+<td>Dropdown. When <code>True</code>, Indexer stores typed and OCR text in uppercase (<code>all_uppercase</code>). Missing key is treated as <code>False</code>.</td>
+</tr>
 </tbody>
 </table>
 <p>OK saves to <code>json/project_config.json</code>. Set <strong>batch_folder</strong> and <strong>import filename</strong> before using Indexer or <strong>Create Test Batch</strong>.</p>

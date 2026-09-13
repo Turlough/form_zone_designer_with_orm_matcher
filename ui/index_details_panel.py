@@ -144,6 +144,7 @@ class IndexDetailPanel(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.all_uppercase = False
         
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(4, 4, 4, 4)
@@ -564,7 +565,7 @@ class IndexDetailPanel(QWidget):
                 cursor.movePosition(QTextCursor.MoveOperation.End)
                 self.value_text_edit.setTextCursor(cursor)
                 self.value_text_edit.blockSignals(False)
-        else:
+        elif self.all_uppercase:
             new_value = new_value.upper()
         field_name = self.current_field.name
         

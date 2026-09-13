@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -23,6 +24,7 @@ from util.designer_persistence import (
     DEFAULT_LOOKUP_PRIME_INDEX,
     DEFAULT_TEST_BATCH_NAME,
     format_pages_without_fiducial,
+    parse_all_uppercase,
     parse_pages_without_fiducial,
 )
 
@@ -107,6 +109,18 @@ class DesignerIndexingConfigDialog(QDialog):
         )
         form.addRow("Pages without fiducial", self._pages_without_fiducial)
 
+        self._all_uppercase = QComboBox()
+        self._all_uppercase.addItem("False", False)
+        self._all_uppercase.addItem("True", True)
+        self._all_uppercase.setCurrentIndex(
+            1 if parse_all_uppercase(initial.get("all_uppercase")) else 0
+        )
+        self._all_uppercase.setToolTip(
+            "all_uppercase — when True, Indexer converts typed and OCR text to uppercase. "
+            "Default False if the key is missing."
+        )
+        form.addRow("All uppercase", self._all_uppercase)
+
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(
@@ -163,6 +177,7 @@ class DesignerIndexingConfigDialog(QDialog):
             "pages_without_fiducial": parse_pages_without_fiducial(
                 self._pages_without_fiducial.text()
             ),
+            "all_uppercase": parse_all_uppercase(self._all_uppercase.currentData()),
         }
 
     def accept(self) -> None:

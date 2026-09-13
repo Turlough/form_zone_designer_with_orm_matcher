@@ -29,6 +29,7 @@ class IndexTextDialog(QDialog):
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         self._field_name = ""
         self._field = None
+        self.all_uppercase = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         self._line_edit = QLineEdit()
@@ -71,7 +72,8 @@ class IndexTextDialog(QDialog):
             self._line_edit.blockSignals(False)
             text = formatted
 
-        text = text.upper()
+        if self.all_uppercase:
+            text = text.upper()
         self.text_changed.emit(self._field_name, text)
 
     def _on_return_pressed(self):

@@ -140,6 +140,7 @@
   &quot;lookup_list&quot;: &quot;optional/path/to/lookup.csv&quot;,
   &quot;lookup_prime_index&quot;: 0,
   &quot;pages_without_fiducial&quot;: [0],
+  &quot;all_uppercase&quot;: false,
   &quot;rectangle_detection&quot;: {
     &quot;canny_low_threshold&quot;: 60,
     &quot;canny_high_threshold&quot;: 150,
@@ -203,6 +204,10 @@
 <tr>
 <td><code>pages_without_fiducial</code></td>
 <td>Zero-based page indices with no fiducial search.</td>
+</tr>
+<tr>
+<td><code>all_uppercase</code></td>
+<td>When <code>true</code>, Indexer converts typed and OCR text to uppercase. Missing or <code>false</code> keeps the original case (Eircode fields stay uppercase).</td>
 </tr>
 <tr>
 <td><code>rectangle_detection</code></td>

@@ -31,6 +31,7 @@ from util.lazy_document_pages import LazyDocumentPages
 from util.designer_persistence import (
     first_page_index_with_json,
     load_page_fields as load_page_fields_from_json,
+    parse_all_uppercase,
 )
 from util.fiducial_paths import find_fiducial_for_page
 from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField, FIELD_TYPE_MAP
@@ -62,8 +63,8 @@ def _sanitize_irish_mobile_ocr(text: str) -> str:
     return "".join(c for c in text if c.isdigit())
 
 def _sanitize_eircode_ocr(text: str) -> str:
-    """For EircodeField: remove any characters except alphanumeric."""
-    return "".join(c for c in text if c.isalnum())
+    """For EircodeField: remove any characters except alphanumeric; always uppercase."""
+    return "".join(c for c in text if c.isalnum()).upper()
 
 def _sanitize_decimal_ocr(text: str) -> str:
     """For DecimalField: remove any characters except digits and period."""
@@ -235,12 +236,14 @@ class PageOcrWorker(QObject):
         pil_image: Image.Image,
         logo_tl: tuple[int, int],
         text_fields: list,
+        all_uppercase: bool = False,
     ):
         super().__init__()
         self.document_index = document_index
         self.pil_image = pil_image
         self.logo_tl = logo_tl
         self.text_fields = text_fields
+        self.all_uppercase = all_uppercase
 
     def run(self) -> None:
         """Process each TextField concurrently and emit results as they complete."""
@@ -252,7 +255,9 @@ class PageOcrWorker(QObject):
                 field.height,
             )
             try:
-                text = ocr_image_region(self.pil_image, rect)
+                text = ocr_image_region(
+                    self.pil_image, rect, all_uppercase=self.all_uppercase
+                )
             except Exception as e:  # noqa: BLE001
                 self.error_occurred.emit(f"OCR failed for '{field.name}': {e}")
                 text = ""
@@ -420,6 +425,7 @@ class Indexer(QMainWindow):
         self.json_folder = ""
         self.logo_path: str | None = None
         self.matcher = None
+        self._all_uppercase = False
         
         # CSV manager
         self.csv_manager = CSVManager()
@@ -524,6 +530,7 @@ class Indexer(QMainWindow):
             self._index_menu_bar.set_current_project_path(self.config_folder)
         save_state(last_indexer_config_folder=self.config_folder)
         logger.info("Project selected: %s (json=%s, logo=%s)", self.config_folder, self.json_folder, self.logo_path)
+        self._sync_all_uppercase_from_config()
         # New project invalidates current batch; clear documents and display
         self._clear_batch()
         self._update_window_title()
@@ -809,6 +816,7 @@ class Indexer(QMainWindow):
             else:
                 self.project_validations = None
 
+            self._sync_all_uppercase_from_config()
             self._update_window_title()
             self._refresh_qc_text_review_window_if_open()
             return True
@@ -900,6 +908,16 @@ class Indexer(QMainWindow):
         except Exception as e:
             logger.warning("Could not read project_config.json at %s: %s", config_path, e)
             return None
+
+    def _sync_all_uppercase_from_config(self) -> None:
+        """Apply project_config all_uppercase to Indexer widgets (default False)."""
+        config = self._load_project_config() or {}
+        enabled = parse_all_uppercase(config.get("all_uppercase"))
+        self._all_uppercase = enabled
+        if hasattr(self, "detail_panel"):
+            self.detail_panel.all_uppercase = enabled
+        if hasattr(self, "_index_text_dialog"):
+            self._index_text_dialog.all_uppercase = enabled
 
     def _get_default_import_folder(self) -> str:
         """
@@ -2586,7 +2604,9 @@ class Indexer(QMainWindow):
         # Run OCR with a wait cursor
         try:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-            text = ocr_image_region(pil_image, rect)
+            text = ocr_image_region(
+                pil_image, rect, all_uppercase=self._all_uppercase
+            )
         except Exception as e:  # noqa: BLE001 - show any OCR failure to the user
             QMessageBox.information(
                 self,
@@ -2638,6 +2658,7 @@ class Indexer(QMainWindow):
             pil_image=pil_image,
             logo_tl=logo_tl,
             text_fields=text_fields,
+            all_uppercase=self._all_uppercase,
         )
         thread = QThread(self)
         worker.moveToThread(thread)

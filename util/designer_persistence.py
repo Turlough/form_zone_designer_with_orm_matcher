@@ -14,6 +14,18 @@ DEFAULT_IMPORT_FILENAME = "EXPORT.TXT"
 DEFAULT_LOOKUP_PRIME_INDEX = 0
 DEFAULT_PAGES_WITHOUT_FIDUCIAL = [0, 1]
 DEFAULT_TEST_BATCH_NAME = "test001"
+DEFAULT_ALL_UPPERCASE = False
+
+
+def parse_all_uppercase(value) -> bool:
+    """Coerce project_config all_uppercase; missing or invalid values are False."""
+    if value is True or value is False:
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes"}
+    return False
 
 
 def _project_config_path(json_folder: Path) -> Path:
@@ -115,6 +127,7 @@ def indexing_config_from_project(
         "lookup_list": str(config.get("lookup_list", "") or "").strip(),
         "lookup_prime_index": prime,
         "pages_without_fiducial": pages,
+        "all_uppercase": parse_all_uppercase(config.get("all_uppercase", DEFAULT_ALL_UPPERCASE)),
     }
 
 
@@ -127,6 +140,7 @@ def save_indexing_config(json_folder: str | Path, values: dict) -> dict:
         or DEFAULT_IMPORT_FILENAME,
         "lookup_prime_index": int(values.get("lookup_prime_index", DEFAULT_LOOKUP_PRIME_INDEX)),
         "pages_without_fiducial": [int(x) for x in values.get("pages_without_fiducial", [])],
+        "all_uppercase": parse_all_uppercase(values.get("all_uppercase", DEFAULT_ALL_UPPERCASE)),
     }
     lookup_list = str(values.get("lookup_list", "") or "").strip()
     remove_keys: tuple[str, ...] = ()
