@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QPushButton,
     QStyle,
+    QAbstractItemView,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
 from PyQt6.QtGui import QPixmap, QImage, QFont, QIcon, QTextCursor, QPainter, QPen, QColor
@@ -322,6 +323,8 @@ class IndexDetailPanel(QWidget):
         # Schedule a delayed update of the closeup to ensure the widget is laid out
         # This helps when the widget size isn't available immediately
         QTimer.singleShot(10, self._update_closeup)
+        # Table viewport geometry may still be stale in this event; scroll after layout
+        QTimer.singleShot(0, self._scroll_current_field_into_view)
     
     def _update_display(self):
         """Update all UI elements based on current state."""
@@ -516,7 +519,23 @@ class IndexDetailPanel(QWidget):
                 name_item.setForeground(Qt.GlobalColor.white)
                 value_item.setBackground(Qt.GlobalColor.red)
                 value_item.setForeground(Qt.GlobalColor.white)
-    
+
+        self._scroll_current_field_into_view()
+
+    def _scroll_current_field_into_view(self) -> None:
+        """Scroll the fields table so the activated field row is visible."""
+        if not self.current_field:
+            return
+        current_name = self.current_field.name
+        for row, field in enumerate(self.page_fields):
+            if field.name == current_name:
+                item = self.fields_table.item(row, 0)
+                if item is not None:
+                    self.fields_table.scrollToItem(
+                        item, QAbstractItemView.ScrollHint.EnsureVisible
+                    )
+                return
+
     def _on_value_changed(self):
         """Handle changes to the value text area."""
         if not self.current_field:
