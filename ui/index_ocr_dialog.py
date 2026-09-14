@@ -5,9 +5,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
 )
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
-from PyQt6.QtWidgets import QApplication
 
 from .designer_main_image_widget import ImageDisplayWidget
 

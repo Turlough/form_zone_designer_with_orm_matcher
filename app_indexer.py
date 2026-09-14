@@ -1,7 +1,6 @@
 import sys
 import os
 import json
-import csv
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import cv2
@@ -10,14 +9,16 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QListWidget, QListWidgetItem, QLabel, QScrollArea, QPushButton,
-    QDialog, QLineEdit, QDialogButtonBox, QFileDialog, QMessageBox,
+    QDialog, QLineEdit, QMessageBox,
     QStyledItemDelegate, QStyle, QFrame, QCheckBox, QTextEdit, QProgressDialog,
 )
 from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QObject, QThread, pyqtSignal
-from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent, QFont, QIcon, QShortcut, QKeySequence
+from PyQt6.QtGui import QPixmap, QImage, QColor, QIcon, QShortcut, QKeySequence
 from PIL import Image
 from dotenv import load_dotenv
-from util import ORMMatcher, CSVManager, ProjectValidations
+from util.orm_matcher import ORMMatcher
+from util.csv_manager import CSVManager
+from util.validation import ProjectValidations
 from util.index_comments import Comment, Comments
 from util.app_state import load_state, save_state
 from util.path_utils import (
@@ -34,9 +35,16 @@ from util.designer_persistence import (
     parse_all_uppercase,
 )
 from util.fiducial_paths import find_fiducial_for_page
-from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField, FIELD_TYPE_MAP
+from fields import Field, Tickbox, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField, FIELD_TYPE_MAP
 import logging
-from ui import MainImageIndexPanel, IndexDetailPanel, IndexTextDialog, IndexCommentDialog, IndexMenuBar, IndexOcrDialog, QcCommentDialog, QcSpecialFieldReviewDialog, QcTextReviewWindow
+from ui.index_main_image_panel import MainImageIndexPanel
+from ui.index_details_panel import IndexDetailPanel
+from ui.index_text_dialog import IndexTextDialog
+from ui.index_comment_dialog import IndexCommentDialog
+from ui.index_menu_bar import IndexMenuBar
+from ui.index_ocr_dialog import IndexOcrDialog
+from ui.qc_comment_dialog import QcCommentDialog, QcSpecialFieldReviewDialog
+from ui.qc_text_review_window import QcTextReviewWindow
 from util.gemini_ocr_client import ocr_image_region
 from util.indexing_assistant_config import indexing_assistant_enabled
 from util.csv_save_queue import CsvSaveQueue
@@ -186,7 +194,6 @@ class DocumentListDelegate(QStyledItemDelegate):
     """Paints document list items with filename and a small completion bar (green=filled, red=blank)."""
 
     def paint(self, painter, option, index):
-        text = index.data(Qt.ItemDataRole.DisplayRole) or ""
         data = index.data(Qt.ItemDataRole.UserRole)
         filled, total = data if isinstance(data, tuple) and len(data) == 2 else (0, 0)
 

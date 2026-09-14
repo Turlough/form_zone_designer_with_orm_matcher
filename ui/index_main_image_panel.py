@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import QLabel
 from PyQt6.QtCore import Qt, QRect
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QFont, QFontMetrics
 
-from fields import Field, RadioGroup, RadioButton, Tickbox, TextField, IntegerField, DecimalField
+from fields import Field, RadioGroup, Tickbox, TextField, IntegerField, DecimalField
 from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP, get_field_display_color, INVALID_COLOUR
 from .index_details_panel import _format_number_for_display
 
@@ -199,7 +199,6 @@ class MainImageIndexPanel(QLabel):
         font.setBold(True)
         metrics = QFontMetrics(font)
         pad_h = 8
-        pad_v = 4
 
         def vertical_overlap(y1: int, h1: int, y2: int, h2: int) -> bool:
             return y1 < y2 + h2 and y2 < y1 + h1

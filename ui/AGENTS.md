@@ -6,7 +6,7 @@ PyQt6 widgets, panels, dialogs, and layouts shared by Designer, Indexer, and rel
 
 ## Ownership
 
-- Widgets under `ui/`; re-export public surfaces from `ui/__init__.py`
+- Widgets under `ui/`; re-export public surfaces from `ui/__init__.py` (lazy `__getattr__` so Indexer/PyInstaller do not import Designer-only modules unless used)
 - Application shells and orchestration stay in repo-root `app_*.py` files
 
 ## Local Contracts

@@ -16,7 +16,7 @@ from PyQt6.QtGui import QPixmap, QImage, QFont, QIcon, QTextCursor, QPainter, QP
 from PIL import Image
 import numpy as np
 from datetime import datetime
-from fields import Field, Tickbox, RadioButton, RadioGroup, TextField, DateField, IntegerField, DecimalField, IrishMobileField, EircodeField
+from fields import Field, Tickbox, RadioGroup, TextField, DateField, IntegerField, DecimalField, IrishMobileField, EircodeField
 from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP, get_field_display_color, INVALID_COLOUR
 import logging
 
