@@ -133,3 +133,19 @@ def move_rect(
 ) -> PrintCrop:
     x, y, w, h = crop
     return clamp_print_crop((x + dx, y + dy, w, h), page_size)
+
+
+def crop_uv_to_canvas(u: float, v: float, crop: PrintCrop) -> tuple[float, float]:
+    """Map crop-normalised (u, v) to template/canvas pixels."""
+    cx, cy, cw, ch = crop
+    return cx + u * cw, cy + v * ch
+
+
+def canvas_to_crop_uv(x: float, y: float, crop: PrintCrop) -> tuple[float, float] | None:
+    """Map canvas pixels to crop-normalised (u, v), or None if outside the crop."""
+    cx, cy, cw, ch = crop
+    if cw <= 0 or ch <= 0:
+        return None
+    if x < cx or y < cy or x > cx + cw or y > cy + ch:
+        return None
+    return (x - cx) / cw, (y - cy) / ch

@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 from PIL import Image
 from PyQt6.QtCore import Qt, QRect, QTimer, pyqtSignal
-from PyQt6.QtGui import QAction, QBrush, QColor, QImage, QMouseEvent, QPainter, QPen, QPixmap
+from PyQt6.QtGui import QAction, QBrush, QColor, QFont, QImage, QMouseEvent, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -36,7 +36,9 @@ from util.field_geometry_edit import hit_resize_handle
 from util.orm_matcher import ORMMatcher
 from util.print_crop import (
     PrintCrop,
+    canvas_to_crop_uv,
     clamp_print_crop,
+    crop_uv_to_canvas,
     default_print_crop,
     move_rect,
     prepare_scan_page,
@@ -57,6 +59,14 @@ HANDLE_CURSORS = {
     "e": Qt.CursorShape.SizeHorCursor,
     "w": Qt.CursorShape.SizeHorCursor,
 }
+
+MARK_COLORS = (
+    QColor(255, 40, 120),
+    QColor(255, 170, 0),
+    QColor(40, 220, 180),
+    QColor(160, 80, 255),
+    QColor(255, 90, 40),
+)
 
 
 def _pil_to_pixmap(image: Image.Image) -> QPixmap:
@@ -80,6 +90,39 @@ def _handle_points(rect: QRect) -> dict[str, tuple[int, int]]:
         "sw": (rect.x(), rect.y() + rect.height()),
         "w": (rect.x(), cy),
     }
+
+
+def _draw_registration_marks(
+    painter: QPainter,
+    scale: float,
+    marks_uv: list[tuple[float, float]],
+    crop: PrintCrop | None,
+) -> None:
+    if not crop or not marks_uv:
+        return
+    font = QFont()
+    font.setBold(True)
+    font.setPixelSize(12)
+    painter.setFont(font)
+    arm = 8
+    for i, (u, v) in enumerate(marks_uv):
+        x, y = crop_uv_to_canvas(u, v, crop)
+        px = int(x * scale)
+        py = int(y * scale)
+        color = MARK_COLORS[i % len(MARK_COLORS)]
+        painter.setPen(QPen(QColor(0, 0, 0), 4))
+        painter.drawLine(px - arm, py, px + arm, py)
+        painter.drawLine(px, py - arm, px, py + arm)
+        painter.setPen(QPen(color, 2))
+        painter.drawLine(px - arm, py, px + arm, py)
+        painter.drawLine(px, py - arm, px, py + arm)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(px - 5, py - 5, 10, 10)
+        label = str(i + 1)
+        painter.setPen(QPen(QColor(0, 0, 0), 1))
+        painter.drawText(px + 8, py - 8, label)
+        painter.setPen(QPen(color, 1))
+        painter.drawText(px + 7, py - 9, label)
 
 
 class LinkedZoomPageWidget(QLabel):
@@ -153,6 +196,7 @@ class PrintCropTemplateWidget(LinkedZoomPageWidget):
         self._handle: Optional[str] = None
         self._start_crop: Optional[PrintCrop] = None
         self._last_pos: Optional[tuple[int, int]] = None
+        self.reg_marks: list[tuple[float, float]] = []
 
     def set_page(self, pixmap: QPixmap, crop: PrintCrop) -> None:
         self.page_size = (pixmap.width(), pixmap.height())
@@ -178,6 +222,7 @@ class PrintCropTemplateWidget(LinkedZoomPageWidget):
             hs = 6
             for hx, hy in _handle_points(QRect(rx, ry, rw, rh)).values():
                 painter.drawRect(hx - hs, hy - hs, hs * 2, hs * 2)
+            _draw_registration_marks(painter, self.scale, self.reg_marks, self.crop)
             painter.end()
         self.setPixmap(disp)
 
@@ -259,11 +304,17 @@ class PrintCropTemplateWidget(LinkedZoomPageWidget):
 class PrintCropPreviewWidget(LinkedZoomPageWidget):
     """Prepared scan canvas with fiducial and field overlays."""
 
+    point_clicked = pyqtSignal(int, int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.bbox = None
         self.field_list = []
         self.placeholder = "Load a cropped scan (File → Load cropped version)"
+        self.preview_crop: Optional[PrintCrop] = None
+        self.reg_marks: list[tuple[float, float]] = []
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setToolTip("Click punctuation, corners, or other sharp marks to place registration points.")
 
     def set_preview(self, pixmap: Optional[QPixmap], bbox=None, field_list=None) -> None:
         self.bbox = bbox
@@ -315,8 +366,17 @@ class PrintCropPreviewWidget(LinkedZoomPageWidget):
                         int(radio_button.width * self.scale),
                         int(radio_button.height * self.scale),
                     )
+        _draw_registration_marks(painter, self.scale, self.reg_marks, self.preview_crop)
         painter.end()
         self.setPixmap(disp)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() != Qt.MouseButton.LeftButton or not self.base_pixmap:
+            return
+        pos = event.position().toPoint()
+        ix, iy = self.to_image(pos.x(), pos.y())
+        if 0 <= ix < self.base_pixmap.width() and 0 <= iy < self.base_pixmap.height():
+            self.point_clicked.emit(ix, iy)
 
 
 class PrintCropWindow(QMainWindow):
@@ -355,8 +415,12 @@ class PrintCropWindow(QMainWindow):
 
         self.left_page = PrintCropTemplateWidget(self)
         self.right_page = PrintCropPreviewWidget(self)
+        self._reg_marks: list[tuple[float, float]] = []
+        self.left_page.reg_marks = self._reg_marks
+        self.right_page.reg_marks = self._reg_marks
         self.left_page.crop_changed.connect(self._on_crop_dragged)
         self.left_page.crop_released.connect(self._refresh_preview)
+        self.right_page.point_clicked.connect(self._on_registration_clicked)
 
         self.left_scroll = QScrollArea()
         self.left_scroll.setWidgetResizable(False)
@@ -378,7 +442,7 @@ class PrintCropWindow(QMainWindow):
         right_wrap = QWidget()
         right_layout = QVBoxLayout(right_wrap)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.addWidget(QLabel("Prepared scan (fiducial + fields)"))
+        right_layout.addWidget(QLabel("Prepared scan — click punctuation or corners"))
         right_layout.addWidget(self.right_scroll, stretch=1)
         splitter.addWidget(left_wrap)
         splitter.addWidget(right_wrap)
@@ -423,16 +487,23 @@ class PrintCropWindow(QMainWindow):
         save_btn = QPushButton("Save print crop")
         save_btn.setToolTip("Write print_crop to json/project_config.json for Indexer.")
         save_btn.clicked.connect(self._save)
+        self.clear_marks_btn = QPushButton("Clear registration marks")
+        self.clear_marks_btn.setToolTip(
+            "Remove clicked registration points so you can mark again."
+        )
+        self.clear_marks_btn.setEnabled(False)
+        self.clear_marks_btn.clicked.connect(self._clear_registration_marks)
         clear_btn = QPushButton("Clear")
         clear_btn.setToolTip("Remove print_crop so Indexer stretches scans to the full template again.")
         clear_btn.clicked.connect(self._clear)
         controls.addWidget(save_btn)
+        controls.addWidget(self.clear_marks_btn)
         controls.addWidget(clear_btn)
         main.addLayout(controls)
 
         self.statusBar().showMessage(
-            "Drag the rectangle to the crop marks. On mouseup the right page applies "
-            "the same paste Indexer will use, then draws the fiducial and fields."
+            "Click sharp marks on the right-hand scan. Matching numbered crosses appear "
+            "on the template; adjust the crop until they sit on the same printed features."
         )
         self._show_current_page(run_preview=True)
         QTimer.singleShot(0, self._sync_zoom)
@@ -472,10 +543,31 @@ class PrintCropWindow(QMainWindow):
         if self.left_page.crop:
             self.crop = self.left_page.crop
 
+    def _on_registration_clicked(self, x: int, y: int) -> None:
+        crop = self.right_page.preview_crop
+        if crop is None:
+            return
+        uv = canvas_to_crop_uv(x, y, crop)
+        if uv is None:
+            return
+        self._reg_marks.append(uv)
+        self._paint_registration()
+
+    def _clear_registration_marks(self) -> None:
+        self._reg_marks.clear()
+        self._paint_registration()
+
+    def _paint_registration(self) -> None:
+        self.clear_marks_btn.setEnabled(bool(self._reg_marks))
+        self.left_page._paint_overlays()
+        self.right_page._paint_overlays()
+
     def _step_page(self, delta: int) -> None:
         nxt = self.page_index + delta
         if 0 <= nxt < len(self.template_pages):
             self.page_index = nxt
+            self._reg_marks.clear()
+            self.clear_marks_btn.setEnabled(False)
             self._show_current_page(run_preview=True)
 
     def _show_current_page(self, run_preview: bool) -> None:
@@ -524,6 +616,8 @@ class PrintCropWindow(QMainWindow):
             return
         self.sample_pages = pages
         self.setWindowTitle(f"Print crop — {Path(path).name}")
+        self._reg_marks.clear()
+        self.clear_marks_btn.setEnabled(False)
         self._refresh_preview()
         self._sync_zoom()
 
@@ -531,10 +625,12 @@ class PrintCropWindow(QMainWindow):
         if self.left_page.crop:
             self.crop = self.left_page.crop
         if not self.sample_pages:
+            self.right_page.preview_crop = None
             self.right_page.set_preview(None)
             self.status_label.setText("Load a cropped scan to preview fiducial matching.")
             return
         if self.page_index >= len(self.sample_pages):
+            self.right_page.preview_crop = None
             self.right_page.set_preview(None)
             self.status_label.setText("No sample page for this template page.")
             return
@@ -576,6 +672,7 @@ class PrintCropWindow(QMainWindow):
                         self.status_label.setText(
                             f"Fiducial match: {score:.3f} (weak — adjust the crop)"
                         )
+            self.right_page.preview_crop = self.crop
             self.right_page.set_preview(_pil_to_pixmap(prepared), bbox, fields)
         except Exception as e:
             logger.exception("Print crop preview failed")

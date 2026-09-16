@@ -55,7 +55,8 @@ Use this when production sheets are trimmed inside crop marks that still appear 
 2. Left: template page. Drag the cyan rectangle onto the crop marks (same rectangle is used for every page).
 3. **File → Load cropped version** (in this window) opens a sample scanned PDF/TIFF of a finished sheet. The picker starts in the project’s **batch_folder** (from Basic Indexing Config).
 4. Page, zoom, and scroll at the bottom (and scrolling either pane) move **both** images together. Dragging the crop rectangle only moves the overlay; the template image stays at the current zoom.
-5. On mouseup, the right pane pastes the sample into the crop rectangle on a template-sized canvas (the same step Indexer will run), then draws the fiducial (green) and field zones. The match score is shown at the bottom. Page through to confirm every page.
-6. **Save print crop** writes `print_crop` to `json/project_config.json`. **Clear** removes the key so Indexer stretches scans to the full template again.
+5. Click punctuation, box corners, or other sharp marks on the **right** scan. Numbered crosses appear on both panes. Adjust the crop until each left-hand cross sits on the same printed feature as the matching right-hand click. **Clear registration marks** removes them (also cleared when you change page or load another sample).
+6. On mouseup, the right pane pastes the sample into the crop rectangle on a template-sized canvas (the same step Indexer will run), then draws the fiducial (green) and field zones. The match score is shown at the bottom. Page through to confirm every page.
+7. **Save print crop** writes `print_crop` to `json/project_config.json`. **Clear** removes the key so Indexer stretches scans to the full template again.
 
 Do not redesign fields on a filled scan; keep the original template and use Print crop for finish size.

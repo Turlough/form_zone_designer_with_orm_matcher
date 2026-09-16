@@ -95,6 +95,7 @@
 <li>Left: template page. Drag the cyan rectangle onto the crop marks (same rectangle is used for every page).</li>
 <li><strong>File → Load cropped version</strong> (in this window) opens a sample scanned PDF/TIFF of a finished sheet. The picker starts in the project’s <strong>batch_folder</strong> (from Basic Indexing Config).</li>
 <li>Page, zoom, and scroll at the bottom (and scrolling either pane) move <strong>both</strong> images together. Dragging the crop rectangle only moves the overlay; the template image stays at the current zoom.</li>
+<li>Click punctuation, box corners, or other sharp marks on the <strong>right</strong> scan. Numbered crosses appear on both panes. Adjust the crop until each left-hand cross sits on the same printed feature as the matching right-hand click. <strong>Clear registration marks</strong> removes them (also cleared when you change page or load another sample).</li>
 <li>On mouseup, the right pane pastes the sample into the crop rectangle on a template-sized canvas (the same step Indexer will run), then draws the fiducial (green) and field zones. The match score is shown at the bottom. Page through to confirm every page.</li>
 <li><strong>Save print crop</strong> writes <code>print_crop</code> to <code>json/project_config.json</code>. <strong>Clear</strong> removes the key so Indexer stretches scans to the full template again.</li>
 </ol>

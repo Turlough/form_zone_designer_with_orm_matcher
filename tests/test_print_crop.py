@@ -7,7 +7,9 @@ from PIL import Image
 from util.designer_persistence import load_print_crop, merge_project_config, save_print_crop
 from util.print_crop import (
     MIN_PRINT_CROP_SIZE,
+    canvas_to_crop_uv,
     clamp_print_crop,
+    crop_uv_to_canvas,
     default_print_crop,
     move_rect,
     parse_print_crop,
@@ -77,6 +79,19 @@ def test_resize_and_move_rect():
     assert east == (20, 20, 60, 40)
     moved = move_rect(start, 10, -5, (100, 100))
     assert moved == (30, 15, 40, 40)
+
+
+def test_crop_uv_round_trip():
+    crop = (20, 10, 40, 30)
+    u, v = canvas_to_crop_uv(40, 25, crop)
+    assert u == 0.5
+    assert v == 0.5
+    x, y = crop_uv_to_canvas(u, v, crop)
+    assert (x, y) == (40.0, 25.0)
+    assert canvas_to_crop_uv(0, 0, crop) is None
+    wider = (10, 10, 80, 30)
+    x2, y2 = crop_uv_to_canvas(0.5, 0.5, wider)
+    assert (x2, y2) == (50.0, 25.0)
 
 
 def test_save_print_crop_merges_and_clears(tmp_path: Path):
