@@ -32,11 +32,12 @@ from PyQt6.QtWidgets import (
 
 from dotenv import load_dotenv
 from fields import Field
-from util.document_loader import get_document_loader_for_path
+from util.document_loader import get_document_loader_for_path, load_page_dimensions
 from util.fiducial_paths import find_default_logo, find_fiducial_for_page
 from util.orm_matcher import ORMMatcher
-from util.path_utils import find_file_case_insensitive, resolve_path_case_insensitive
+from util.path_utils import find_file_case_insensitive, find_project_template, resolve_path_case_insensitive
 from util.csv_manager import CSVManager
+from util.print_crop import parse_print_crop, prepare_scan_page
 
 VALUE_FONT_SIZE = 14
 VALUE_OFFSET = 8  # Gap between thumbnail and value (matches index_main_image_panel)
@@ -129,6 +130,8 @@ def _generate_one_thumbnail(
     page_idx: int,
     config_folder: Path | None,
     pages_without_fiducial: set[int],
+    print_crop=None,
+    template_size: tuple[int, int] | None = None,
 ) -> np.ndarray | None:
     """
     Generate thumbnail for one document. Runs in worker thread.
@@ -141,15 +144,17 @@ def _generate_one_thumbnail(
             return None
 
         pil_page = pages[page_idx]
+        if template_size is not None:
+            pil_page = prepare_scan_page(pil_page, template_size, print_crop)
         bbox = None
         if config_folder is not None and page_idx not in pages_without_fiducial:
             logo_path = find_fiducial_for_page(config_folder / "fiducials", page_idx)
             if logo_path is not None:
                 matcher = ORMMatcher(str(logo_path))
-            img_cv = cv2.cvtColor(np.array(pil_page), cv2.COLOR_RGB2BGR)
-            matcher.locate_from_cv2_image(img_cv)
-            if matcher.top_left and matcher.bottom_right:
-                bbox = (matcher.top_left, matcher.bottom_right)
+                img_cv = cv2.cvtColor(np.array(pil_page), cv2.COLOR_RGB2BGR)
+                matcher.locate_from_cv2_image(img_cv)
+                if matcher.top_left and matcher.bottom_right:
+                    bbox = (matcher.top_left, matcher.bottom_right)
 
         cropped = _crop_field_thumbnail(pil_page, field_obj, bbox)
         return np.array(cropped.convert("RGB"))
@@ -277,6 +282,17 @@ class LoadBatchWorker(QThread):
         self.progress.emit(f"Loading {len(items)} thumbnails...")
 
         pages_without = self.pages_without_fiducial
+        config = _load_project_config(self.config_folder) or {}
+        print_crop = parse_print_crop(config.get("print_crop"))
+        template_size = None
+        template_path = find_project_template(self.config_folder)
+        if template_path is not None:
+            try:
+                dims = load_page_dimensions(str(template_path))
+                if page_idx < len(dims):
+                    template_size = dims[page_idx]
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Could not read template dimensions: %s", exc)
         max_workers = min(8, os.cpu_count() or 4)
 
         def make_thumbnail(idx: int) -> tuple[int, np.ndarray | None]:
@@ -287,6 +303,8 @@ class LoadBatchWorker(QThread):
                 page_idx=page_idx,
                 config_folder=self.config_folder,
                 pages_without_fiducial=pages_without,
+                print_crop=print_crop,
+                template_size=template_size,
             )
             return (idx, arr)
 

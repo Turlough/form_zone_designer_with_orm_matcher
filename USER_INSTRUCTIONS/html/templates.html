@@ -97,7 +97,7 @@
 <ul>
 <li><strong>Format:</strong> Multipage TIFF (<code>.tif</code> / <code>.tiff</code>) or multipage PDF (<code>.pdf</code>); one file, one page per frame or PDF page.</li>
 <li><strong>Content:</strong> Use a clean <strong>unfilled</strong> form. The same layout will be used to define zones; indexed batches use filled scans with the same page count and layout.</li>
-<li><strong>Quality:</strong> Scan at consistent resolution and orientation. Skew and scale differences are partly corrected via the fiducial, but poor scans make matching and OCR harder.</li>
+<li><strong>Quality:</strong> Scan at consistent resolution and orientation. Skew and scale differences are partly corrected via the fiducial, but poor scans make matching and OCR harder. If production sheets are trimmed inside crop marks that still appear on the template, do not redesign on a filled scan — set <strong>print_crop</strong> in Designer (<strong>Fiducials → Print crop</strong>) so Indexer pastes each scan into that rectangle before matching.</li>
 <li><strong>Page count:</strong> Every page that will appear on live forms should be present in the template. Page JSON files use <strong>1-based</strong> names: first page → <code>1.json</code>, second → <code>2.json</code>, and so on.</li>
 </ul>
 <h2>Fiducial image</h2>
@@ -129,7 +129,7 @@
 <p>Here <code>0</code> is the <strong>first</strong> page of the template. Omit the key or use <code>[]</code> if every page uses a fiducial.</p>
 <p>Create or edit <code>project_config.json</code> <strong>before</strong> loading the project in Designer if you need this list, or set it later with <strong>Indexing Config → Basic Indexing Config</strong> (Designer re-runs fiducial detection when you save).</p>
 <h2><code>json/project_config.json</code></h2>
-<p>Single JSON file per project for paths, review rules, and validations. Indexer and Exporter require several keys; Designer uses it mainly for <code>pages_without_fiducial</code> (and loads the same file later for other apps).</p>
+<p>Single JSON file per project for paths, review rules, and validations. Indexer and Exporter require several keys; Designer uses it mainly for <code>pages_without_fiducial</code> and <code>print_crop</code> (and loads the same file later for other apps).</p>
 <p>Example (adjust paths and field names for your job):</p>
 <pre><code class="language-json">{
   &quot;project_name&quot;: &quot;MyForm&quot;,
@@ -141,6 +141,7 @@
   &quot;lookup_prime_index&quot;: 0,
   &quot;pages_without_fiducial&quot;: [0],
   &quot;all_uppercase&quot;: false,
+  &quot;print_crop&quot;: { &quot;x&quot;: 40, &quot;y&quot;: 50, &quot;width&quot;: 1600, &quot;height&quot;: 2200 },
   &quot;rectangle_detection&quot;: {
     &quot;canny_low_threshold&quot;: 60,
     &quot;canny_high_threshold&quot;: 150,
@@ -208,6 +209,10 @@
 <tr>
 <td><code>all_uppercase</code></td>
 <td>When <code>true</code>, Indexer converts typed and OCR text to uppercase. Missing or <code>false</code> keeps the original case (Eircode fields stay uppercase).</td>
+</tr>
+<tr>
+<td><code>print_crop</code></td>
+<td>Optional finished-page rectangle in <strong>template pixels</strong> (<code>x</code>, <code>y</code>, <code>width</code>, <code>height</code>), shared by every page. Set in Designer <strong>Fiducials → Print crop</strong>. When present, Indexer resizes each scan to that size and pastes it at <code>(x, y)</code> on a white canvas the size of the template page, then finds the fiducial. Omit the key (or Clear in the Print crop window) if production scans include the same margins as the template.</td>
 </tr>
 <tr>
 <td><code>rectangle_detection</code></td>

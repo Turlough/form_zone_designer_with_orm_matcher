@@ -83,6 +83,22 @@
 <li>Writes <strong>import_filename</strong> (for example <code>EXPORT.TXT</code>) in that folder, listing those PDFs in the <strong>File</strong> column.</li>
 </ol>
 <p>The batch folder must not already exist. Indexer then lists this batch from the project’s <code>batch_folder</code>.</p>
+<p>If the project has a <strong>print crop</strong> (trimmed production scans), a test batch made from the untrimmed template will not match live forms. Use a real trimmed scan to check Print crop, or clear <code>print_crop</code> before indexing a test batch built from the template.</p>
+<h2>Fiducials</h2>
+<p>The <strong>Fiducials</strong> menu is enabled after a project is loaded.</p>
+<h3>Select rectangle</h3>
+<p>Draw a rectangle on the current template page to save <code>fiducials/logo-pN.png</code> for that page (1-based N). That patch overrides the default <code>logo.png</code> when matching.</p>
+<h3>Print crop</h3>
+<p>Use this when production sheets are trimmed inside crop marks that still appear on the <strong>template</strong>.</p>
+<ol>
+<li><strong>Fiducials → Print crop…</strong> opens a two-pane window.</li>
+<li>Left: template page. Drag the cyan rectangle onto the crop marks (same rectangle is used for every page).</li>
+<li><strong>File → Load cropped version</strong> (in this window) opens a sample scanned PDF/TIFF of a finished sheet. The picker starts in the project’s <strong>batch_folder</strong> (from Basic Indexing Config).</li>
+<li>Page, zoom, and scroll at the bottom (and scrolling either pane) move <strong>both</strong> images together. Dragging the crop rectangle only moves the overlay; the template image stays at the current zoom.</li>
+<li>On mouseup, the right pane pastes the sample into the crop rectangle on a template-sized canvas (the same step Indexer will run), then draws the fiducial (green) and field zones. The match score is shown at the bottom. Page through to confirm every page.</li>
+<li><strong>Save print crop</strong> writes <code>print_crop</code> to <code>json/project_config.json</code>. <strong>Clear</strong> removes the key so Indexer stretches scans to the full template again.</li>
+</ol>
+<p>Do not redesign fields on a filled scan; keep the original template and use Print crop for finish size.</p>
     </article>
   </main>
 </body>

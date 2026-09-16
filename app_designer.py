@@ -69,6 +69,7 @@ from ui import (
     DesignerButtonLayout,
     DesignerEditPanel,
     GridDesigner,
+    PrintCropWindow,
     RectangleSelectedDialog,
     DesignerAnalysePreviewDialog,
     DesignerIndexingConfigDialog,
@@ -202,6 +203,7 @@ class Designer(QMainWindow):
         self._field_geometry_snapshot = None
         self._grid_designer: GridDesigner | None = None
         self._editing_grid_index: int | None = None
+        self._print_crop_window: PrintCropWindow | None = None
         
         # Initialize UI
         self.init_ui()
@@ -249,6 +251,15 @@ class Designer(QMainWindow):
         )
         self.fiducial_select_action.triggered.connect(self._on_fiducial_select_toggled)
         fiducials_menu.addAction(self.fiducial_select_action)
+
+        self.print_crop_action = QAction("Print crop…", self)
+        self.print_crop_action.setEnabled(False)
+        self.print_crop_action.setToolTip(
+            "Align a finished-page rectangle to crop marks. Indexer pastes trimmed "
+            "scans into that rect before fiducial matching."
+        )
+        self.print_crop_action.triggered.connect(self._open_print_crop_window)
+        fiducials_menu.addAction(self.print_crop_action)
 
         assistant_menu = menubar.addMenu("Assistant")
         self.analyse_action = QAction("Analyse", self)
@@ -335,6 +346,9 @@ class Designer(QMainWindow):
         if hasattr(self, "indexing_config_action"):
             self.indexing_config_action.setEnabled(False)
             self.create_test_batch_action.setEnabled(False)
+        if hasattr(self, "print_crop_action"):
+            self.print_crop_action.setEnabled(False)
+        self._close_print_crop_window()
         self._close_rectangle_detect_dialog()
 
         config_resolved = resolve_path_case_insensitive(folder_path)
@@ -365,6 +379,8 @@ class Designer(QMainWindow):
         if hasattr(self, "indexing_config_action"):
             self.indexing_config_action.setEnabled(True)
             self.create_test_batch_action.setEnabled(True)
+        if hasattr(self, "print_crop_action"):
+            self.print_crop_action.setEnabled(True)
         self._update_window_title()
         return True
 
@@ -810,6 +826,37 @@ class Designer(QMainWindow):
             )
         else:
             self.statusBar().clearMessage()
+
+    def _close_print_crop_window(self) -> None:
+        win = getattr(self, "_print_crop_window", None)
+        if win is not None:
+            try:
+                win.close()
+            except RuntimeError:
+                pass
+            self._print_crop_window = None
+
+    def _open_print_crop_window(self) -> None:
+        if not self.config or not self.pages:
+            return
+        if self._print_crop_window is not None:
+            self._print_crop_window.raise_()
+            self._print_crop_window.activateWindow()
+            return
+        win = PrintCropWindow(
+            template_pages=self.pages,
+            page_fields=self.page_field_list,
+            json_folder=str(self.config.json_folder),
+            config_folder=str(self.config.config_folder),
+            initial_page=self.current_page_idx or 0,
+            parent=self,
+        )
+        win.destroyed.connect(self._on_print_crop_window_destroyed)
+        self._print_crop_window = win
+        win.show()
+
+    def _on_print_crop_window_destroyed(self, *args) -> None:
+        self._print_crop_window = None
 
     def _on_fiducial_rect_drawn(self, rect: tuple[int, int, int, int]) -> None:
         """Save cropped template region as fiducials/logo-pN.png and refresh fiducial on this page."""

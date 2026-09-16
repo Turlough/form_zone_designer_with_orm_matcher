@@ -35,6 +35,7 @@ from util.designer_persistence import (
     parse_all_uppercase,
 )
 from util.fiducial_paths import find_fiducial_for_page
+from util.print_crop import parse_print_crop, prepare_scan_page
 from fields import Field, Tickbox, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField, FIELD_TYPE_MAP
 import logging
 from ui.index_main_image_panel import MainImageIndexPanel
@@ -122,6 +123,7 @@ class BatchDocumentCacheWorker(QObject):
         template_page_dimensions: list[tuple[int, int]],
         pages_without_fiducial: set[int],
         config_folder: str | None,
+        print_crop=None,
     ):
         super().__init__()
         self.document_paths = document_paths
@@ -130,6 +132,7 @@ class BatchDocumentCacheWorker(QObject):
         self.template_page_dimensions = template_page_dimensions or []
         self.pages_without_fiducial = pages_without_fiducial or set()
         self.config_folder = config_folder
+        self.print_crop = print_crop
 
     def run(self) -> None:
         """Load each document, prepare each page, and emit as they complete."""
@@ -149,12 +152,9 @@ class BatchDocumentCacheWorker(QObject):
                             and page_idx < len(self.template_page_dimensions)
                         ):
                             target_w, target_h = self.template_page_dimensions[page_idx]
-                            w, h = pil_image.size
-                            if (w, h) != (target_w, target_h):
-                                pil_image = pil_image.resize(
-                                    (target_w, target_h),
-                                    Image.Resampling.LANCZOS,
-                                )
+                            pil_image = prepare_scan_page(
+                                pil_image, (target_w, target_h), self.print_crop
+                            )
                         if page_idx in self.pages_without_fiducial:
                             page_bbox = None
                         elif fiducials_folder is not None:
@@ -443,6 +443,7 @@ class Indexer(QMainWindow):
         
         # Template page dimensions (width, height) per page, loaded when project is selected
         self.template_page_dimensions: list[tuple[int, int]] = []
+        self.print_crop = None
         
         # Current state
         # NOTE: Historically this indexer worked only with TIFFs. These fields
@@ -519,6 +520,7 @@ class Indexer(QMainWindow):
 
         # Load template page dimensions for rescaling survey pages
         self._load_template_page_dimensions(config_path)
+        self._load_print_crop()
 
         # Find logo in fiducials subfolder (same convention as form_zone_designer)
         fiducials = config_path / 'fiducials'
@@ -570,6 +572,11 @@ class Indexer(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not read template dimensions from %s: %s", template_path, exc)
             self.template_page_dimensions = []
+
+    def _load_print_crop(self) -> None:
+        """Load print_crop from project_config.json (None = stretch to full template)."""
+        config = self._load_project_config() or {}
+        self.print_crop = parse_print_crop(config.get("print_crop"))
 
     def _clear_batch(self) -> None:
         """Clear current batch, document list, and displayed images."""
@@ -1078,16 +1085,13 @@ class Indexer(QMainWindow):
         else:
             # Synchronous path: rescale, detect logo, load fields
             pil_image = self._get_page_image(page_num)
+            self._load_print_crop()
             if (self.template_page_dimensions and
                     page_num < len(self.template_page_dimensions)):
                 target_w, target_h = self.template_page_dimensions[page_num]
-                w, h = pil_image.size
-                if (w, h) != (target_w, target_h):
-                    pil_image = pil_image.resize(
-                        (target_w, target_h),
-                        Image.Resampling.LANCZOS,
-                    )
-                    logger.debug("Rescaled page %d from %dx%d to %dx%d", page_num + 1, w, h, target_w, target_h)
+                pil_image = prepare_scan_page(
+                    pil_image, (target_w, target_h), self.print_crop
+                )
             config = self._load_project_config()
             raw = config.get("pages_without_fiducial", []) if config else []
             pages_without_fiducial = {int(x) for x in raw}
@@ -2484,6 +2488,7 @@ class Indexer(QMainWindow):
             template_page_dimensions=self.template_page_dimensions,
             pages_without_fiducial=pages_without_fiducial,
             config_folder=self.config_folder,
+            print_crop=parse_print_crop(config.get("print_crop") if config else None),
         )
         thread = QThread(self)
         worker.moveToThread(thread)

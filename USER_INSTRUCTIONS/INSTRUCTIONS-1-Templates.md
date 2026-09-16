@@ -59,7 +59,7 @@ File names are matched **without regard to case** (for example `Template.TIF` or
 
 - **Format:** Multipage TIFF (`.tif` / `.tiff`) or multipage PDF (`.pdf`); one file, one page per frame or PDF page.
 - **Content:** Use a clean **unfilled** form. The same layout will be used to define zones; indexed batches use filled scans with the same page count and layout.
-- **Quality:** Scan at consistent resolution and orientation. Skew and scale differences are partly corrected via the fiducial, but poor scans make matching and OCR harder.
+- **Quality:** Scan at consistent resolution and orientation. Skew and scale differences are partly corrected via the fiducial, but poor scans make matching and OCR harder. If production sheets are trimmed inside crop marks that still appear on the template, do not redesign on a filled scan — set **print_crop** in Designer (**Fiducials → Print crop**) so Indexer pastes each scan into that rectangle before matching.
 - **Page count:** Every page that will appear on live forms should be present in the template. Page JSON files use **1-based** names: first page → `1.json`, second → `2.json`, and so on.
 
 ## Fiducial image
@@ -101,7 +101,7 @@ Create or edit `project_config.json` **before** loading the project in Designer 
 
 ## `json/project_config.json`
 
-Single JSON file per project for paths, review rules, and validations. Indexer and Exporter require several keys; Designer uses it mainly for `pages_without_fiducial` (and loads the same file later for other apps).
+Single JSON file per project for paths, review rules, and validations. Indexer and Exporter require several keys; Designer uses it mainly for `pages_without_fiducial` and `print_crop` (and loads the same file later for other apps).
 
 Example (adjust paths and field names for your job):
 
@@ -116,6 +116,7 @@ Example (adjust paths and field names for your job):
   "lookup_prime_index": 0,
   "pages_without_fiducial": [0],
   "all_uppercase": false,
+  "print_crop": { "x": 40, "y": 50, "width": 1600, "height": 2200 },
   "rectangle_detection": {
     "canny_low_threshold": 60,
     "canny_high_threshold": 150,
@@ -152,6 +153,7 @@ Example (adjust paths and field names for your job):
 | `lookup_prime_index` | Zero-based key column in `lookup_list` (default `0`). |
 | `pages_without_fiducial` | Zero-based page indices with no fiducial search. |
 | `all_uppercase` | When `true`, Indexer converts typed and OCR text to uppercase. Missing or `false` keeps the original case (Eircode fields stay uppercase). |
+| `print_crop` | Optional finished-page rectangle in **template pixels** (`x`, `y`, `width`, `height`), shared by every page. Set in Designer **Fiducials → Print crop**. When present, Indexer resizes each scan to that size and pastes it at `(x, y)` on a white canvas the size of the template page, then finds the fiducial. Omit the key (or Clear in the Print crop window) if production scans include the same margins as the template. |
 | `rectangle_detection` | Optional Designer-only OpenCV rectangle detection tuning (saved when you use **Detect Rectangles**). |
 | `validations` | Optional project-level rules (see validation docs / Indexer behaviour). |
 

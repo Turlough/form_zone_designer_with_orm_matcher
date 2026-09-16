@@ -25,6 +25,7 @@ Automated checks for validation and other testable project logic.
 - Designer Help HTML paths: `test_user_instructions_html.py` (`user_instructions_html_path`, including frozen `_MEIPASS`)
 - Designer duplicate field-name check: `test_designer_persistence_duplicates.py` (`find_duplicate_field_names` — cross-page, same-page, and RadioGrid-expansion cases)
 - Designer field editor apply: `test_field_edit.py` (`apply_field_edit` preserves JSON metadata; geometry parse)
+- Print crop: `test_print_crop.py` (`parse_print_crop`, `prepare_scan_page` paste-into-canvas, `save_print_crop` merge/clear)
 
 ## Work Guidance
 

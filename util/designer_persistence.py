@@ -165,6 +165,26 @@ def save_rectangle_detection_settings(
     merge_project_config(json_folder, {"rectangle_detection": settings.to_dict()})
 
 
+def load_print_crop(json_folder: str | Path) -> tuple[int, int, int, int] | None:
+    """Return print_crop (x, y, width, height) from project_config.json, or None."""
+    from util.print_crop import parse_print_crop
+
+    config = load_project_config(json_folder)
+    return parse_print_crop(config.get("print_crop"))
+
+
+def save_print_crop(
+    json_folder: str | Path,
+    crop: tuple[int, int, int, int] | None,
+) -> dict:
+    """Merge or remove print_crop in project_config.json."""
+    from util.print_crop import print_crop_to_dict
+
+    if crop is None:
+        return merge_project_config(json_folder, {}, remove_keys=("print_crop",))
+    return merge_project_config(json_folder, {"print_crop": print_crop_to_dict(crop)})
+
+
 def first_page_index_with_json(json_folder: str | Path, page_count: int) -> int:
     """Return 0-based index of the first page that has `{n}.json`, or 0 if none."""
     if page_count <= 0:

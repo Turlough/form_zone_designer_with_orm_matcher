@@ -36,3 +36,26 @@ Creates a throwaway batch so you can open Indexer against the current design.
 4. Writes **import_filename** (for example `EXPORT.TXT`) in that folder, listing those PDFs in the **File** column.
 
 The batch folder must not already exist. Indexer then lists this batch from the project’s `batch_folder`.
+
+If the project has a **print crop** (trimmed production scans), a test batch made from the untrimmed template will not match live forms. Use a real trimmed scan to check Print crop, or clear `print_crop` before indexing a test batch built from the template.
+
+## Fiducials
+
+The **Fiducials** menu is enabled after a project is loaded.
+
+### Select rectangle
+
+Draw a rectangle on the current template page to save `fiducials/logo-pN.png` for that page (1-based N). That patch overrides the default `logo.png` when matching.
+
+### Print crop
+
+Use this when production sheets are trimmed inside crop marks that still appear on the **template**.
+
+1. **Fiducials → Print crop…** opens a two-pane window.
+2. Left: template page. Drag the cyan rectangle onto the crop marks (same rectangle is used for every page).
+3. **File → Load cropped version** (in this window) opens a sample scanned PDF/TIFF of a finished sheet. The picker starts in the project’s **batch_folder** (from Basic Indexing Config).
+4. Page, zoom, and scroll at the bottom (and scrolling either pane) move **both** images together. Dragging the crop rectangle only moves the overlay; the template image stays at the current zoom.
+5. On mouseup, the right pane pastes the sample into the crop rectangle on a template-sized canvas (the same step Indexer will run), then draws the fiducial (green) and field zones. The match score is shown at the bottom. Page through to confirm every page.
+6. **Save print crop** writes `print_crop` to `json/project_config.json`. **Clear** removes the key so Indexer stretches scans to the full template again.
+
+Do not redesign fields on a filled scan; keep the original template and use Print crop for finish size.
