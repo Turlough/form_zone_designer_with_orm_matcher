@@ -27,6 +27,7 @@ PyQt6 widgets, panels, dialogs, and layouts shared by Designer, Indexer, and rel
 - Indexer-facing: main image panel, details panel, menus, OCR/index/comment/QC dialogs; per-field and page OCR buttons hidden unless `INDEXING_ASSISTANT_ENABLED` is truthy in `.env` (Indexer shell owns visibility)
 - Indexer text case: `IndexDetailPanel` / `IndexTextDialog` `all_uppercase` follows `project_config.json` `all_uppercase` (default False). Eircode display/storage stays uppercase regardless.
 - Indexer field list (`fields_table`): two equal-width Stretch columns; cell text elides (hover tooltip shows full name/value); on field activation, the table scrolls so the current row is in view
+- Indexer columns: after a page is shown, centre width is page-fit (`page_fit_panel_width`); right panel keeps the remaining width. Recalculate only on window resize, not on field/page/document change. `IndexDetailPanel` field-name label elides (tooltip has the full name) and must not expand the panel
 - Indexer close-up (`closeup_crop_and_overlay`): equal padding around the field in the crop; overlay is drawn at the field’s position in that crop (not independently recentred)
 - Field overlay colours: resolve via `field_factory.get_field_display_color()` (shared with Indexer); do not read `field.colour` for paint
 - Designer field list Type column: cell background via `field_factory.get_display_color_for_type()` (same palette as overlays); text contrast black/white by luminance

@@ -14,6 +14,27 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def page_fit_panel_width(
+    page_width: int,
+    page_height: int,
+    available_height: int,
+    available_width: int,
+    min_trailing_width: int,
+) -> int:
+    """Width of the centre page pane so the page fits without upscaling.
+
+    Matches MainImageIndexPanel scaling: scale = min(width_ratio, height_ratio, 1.0).
+    min_trailing_width is reserved for the detail panel so a large page cannot
+    consume the whole row.
+    """
+    if page_width <= 0 or page_height <= 0 or available_height <= 0:
+        return 0
+    scale = min(1.0, available_height / float(page_height))
+    needed = int(round(page_width * scale))
+    max_center = max(0, available_width - max(0, min_trailing_width))
+    return max(0, min(needed, max_center))
+
+
 class MainImageIndexPanel(QLabel):
     """Custom QLabel for displaying form pages with field overlays."""
     

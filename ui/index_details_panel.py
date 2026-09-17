@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QStyle,
     QAbstractItemView,
+    QSizePolicy,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
 from PyQt6.QtGui import QPixmap, QImage, QFont, QIcon, QTextCursor, QPainter, QPen, QColor
@@ -151,7 +152,10 @@ class IndexDetailPanel(QWidget):
         main_layout.setContentsMargins(4, 4, 4, 4)
         main_layout.setSpacing(8)
         self.setLayout(main_layout)
-        
+        # Content (long field names, table cells) must not widen this panel.
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+        self.setMinimumWidth(200)
+
         # ---- 1. Field name label ----
         self.field_name_label = QLabel("No field selected")
         self.field_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -159,6 +163,11 @@ class IndexDetailPanel(QWidget):
         font.setPointSize(12)
         font.setBold(True)
         self.field_name_label.setFont(font)
+        self.field_name_label.setWordWrap(True)
+        self.field_name_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        self.field_name_label.setMinimumWidth(0)
         self.field_name_label.setStyleSheet(
             "QLabel { background-color: #3c3f41; color: #dddddd; padding: 8px; border: 1px solid #555555; }"
         )
@@ -172,6 +181,10 @@ class IndexDetailPanel(QWidget):
         self.closeup_label.setMinimumHeight(350)
         self.closeup_label.setMaximumHeight(350)
         self.closeup_label.setScaledContents(False)  # We'll handle scaling manually
+        self.closeup_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed
+        )
+        self.closeup_label.setMinimumWidth(0)
         self.closeup_label.setStyleSheet(
             "QLabel { background-color: #3c3f41; color: #dddddd; border: 1px solid #555555; }"
         )
@@ -183,6 +196,9 @@ class IndexDetailPanel(QWidget):
         self.value_text_edit.setPlaceholderText("Enter field value...")
         self.value_text_edit.setMinimumHeight(100)
         self.value_text_edit.setFont(QFont("Arial", 14))
+        self.value_text_edit.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
         self.value_text_edit.textChanged.connect(self._on_value_changed)
         # Catch Enter presses so we can advance to the next TextField without inserting a newline
         self.value_text_edit.installEventFilter(self)
@@ -214,6 +230,10 @@ class IndexDetailPanel(QWidget):
         self.fields_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.fields_table.setWordWrap(False)
         self.fields_table.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.fields_table.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding
+        )
+        self.fields_table.setMinimumWidth(0)
         self.fields_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Read-only
         self.fields_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         # Single-click activates the field (thumbnail + text editor)
@@ -230,6 +250,20 @@ class IndexDetailPanel(QWidget):
         self.field_values = {}
         # Mapping of field_name -> comment string for the current page
         self.field_comments = {}
+        self._field_name_full_text = "No field selected"
+
+    def _set_field_name_text(self, text: str) -> None:
+        """Show the field name in the current width; long names wrap/elide, never expand."""
+        self._field_name_full_text = text
+        self.field_name_label.setToolTip(text)
+        width = max(0, self.field_name_label.width() - 16)
+        if width <= 0:
+            self.field_name_label.setText(text)
+            return
+        metrics = self.field_name_label.fontMetrics()
+        self.field_name_label.setText(
+            metrics.elidedText(text, Qt.TextElideMode.ElideRight, width)
+        )
 
     def _get_field_color(self, field: Field) -> QColor:
         """Resolve display colour for a field from field_factory (matches main image panel)."""
@@ -328,11 +362,12 @@ class IndexDetailPanel(QWidget):
     
     def _update_display(self):
         """Update all UI elements based on current state."""
-        # Update field name
+        # Update field name (wrap/elide inside current width; do not widen the panel)
         if self.current_field:
-            self.field_name_label.setText(self.current_field.name or "Unnamed Field")
+            name_text = self.current_field.name or "Unnamed Field"
         else:
-            self.field_name_label.setText("No field selected")
+            name_text = "No field selected"
+        self._set_field_name_text(name_text)
         
         # Update close-up image
         self._update_closeup()
@@ -599,8 +634,9 @@ class IndexDetailPanel(QWidget):
         self._update_value_edit_style()
     
     def resizeEvent(self, event):
-        """Handle resize events to update close-up image."""
+        """Handle resize events to update close-up image and elided field name."""
         super().resizeEvent(event)
+        self._set_field_name_text(self._field_name_full_text)
         if self.current_field:
             self._update_closeup()
 

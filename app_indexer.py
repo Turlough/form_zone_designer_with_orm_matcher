@@ -11,8 +11,9 @@ from PyQt6.QtWidgets import (
     QListWidget, QListWidgetItem, QLabel, QScrollArea, QPushButton,
     QDialog, QLineEdit, QMessageBox,
     QStyledItemDelegate, QStyle, QFrame, QCheckBox, QTextEdit, QProgressDialog,
+    QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QObject, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QPoint, QRect, QObject, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QPixmap, QImage, QColor, QIcon, QShortcut, QKeySequence
 from PIL import Image
 from dotenv import load_dotenv
@@ -38,7 +39,7 @@ from util.fiducial_paths import find_fiducial_for_page
 from util.print_crop import parse_print_crop, prepare_scan_page
 from fields import Field, Tickbox, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField, FIELD_TYPE_MAP
 import logging
-from ui.index_main_image_panel import MainImageIndexPanel
+from ui.index_main_image_panel import MainImageIndexPanel, page_fit_panel_width
 from ui.index_details_panel import IndexDetailPanel
 from ui.index_text_dialog import IndexTextDialog
 from ui.index_comment_dialog import IndexCommentDialog
@@ -54,6 +55,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 nav_widget_height = 80 # pixels
+INDEXER_DETAIL_GAP_PX = 38  # ~1 cm at 96 DPI between image and detail panel
+_MIN_DETAIL_PANEL_WIDTH = 280
+_MIN_LEFT_PANEL_WIDTH = 160
 
 # Bar dimensions for document list completion indicator
 
@@ -477,6 +481,8 @@ class Indexer(QMainWindow):
         self._validation_worker: BatchValidationWorker | None = None
         self._page_prefetch_thread: QThread | None = None
         self._page_prefetch_worker: PagePrefetchWorker | None = None
+        self._page_columns_have_been_sized = False
+        self._syncing_column_widths = False
 
         # Initialize UI
         self.init_ui()
@@ -632,24 +638,38 @@ class Indexer(QMainWindow):
         
         main_layout = QHBoxLayout()
         central_widget.setLayout(main_layout)
+        self._main_layout = main_layout
         
         # Left panel - document list
-        left_panel = QVBoxLayout()
+        self._left_column = QWidget()
+        self._left_column.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+        )
+        left_panel = QVBoxLayout(self._left_column)
+        left_panel.setContentsMargins(0, 0, 0, 0)
         
         self.tiff_list = QListWidget()
         self.tiff_list.setItemDelegate(DocumentListDelegate(self.tiff_list))
         self.tiff_list.currentRowChanged.connect(self.on_document_selected)
         left_panel.addWidget(self.tiff_list)
         
-        main_layout.addLayout(left_panel, 1)
+        main_layout.addWidget(self._left_column, 1)
         
         # Center panel - Image display and navigation
-        center_panel = QVBoxLayout()
+        self._center_column = QWidget()
+        self._center_column.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        center_panel = QVBoxLayout(self._center_column)
+        center_panel.setContentsMargins(0, 0, 0, 0)
         
         # Page info label and Show Value toggle
         page_info_row = QHBoxLayout()
         self.page_info_label = QLabel("No file loaded")
         self.page_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.page_info_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
         page_info_row.addWidget(self.page_info_label, 1)
         self.show_value_check = QCheckBox("Show Value")
         self.show_value_check.setChecked(True)
@@ -658,24 +678,25 @@ class Indexer(QMainWindow):
         center_panel.addLayout(page_info_row)
         
         # Image display
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._image_scroll_area = QScrollArea()
+        self._image_scroll_area.setWidgetResizable(True)
+        self._image_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._image_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
         self.image_label = MainImageIndexPanel()
+        self.image_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored
+        )
         self.image_label.show_field_values = self.show_value_check.isChecked()
         self.image_label.on_field_click = self.on_field_click
-        scroll_area.setWidget(self.image_label)
+        self._image_scroll_area.setWidget(self.image_label)
         
-        center_panel.addWidget(scroll_area)
+        center_panel.addWidget(self._image_scroll_area)
         
-        main_layout.addLayout(center_panel, 4)  # Same visual width; left halved
-        # ~1 cm padding between image and detail panel
-        _cm_px = 38  # 1 cm at 96 DPI
-        main_layout.addSpacing(_cm_px)
+        main_layout.addWidget(self._center_column, 4)
+        main_layout.addSpacing(INDEXER_DETAIL_GAP_PX)
         
-        # Right panel - Field detail panel (expands to fill space from narrower left)
+        # Right panel - Field detail panel
         self.detail_panel = IndexDetailPanel()
         self.detail_panel.field_value_changed.connect(self.on_detail_panel_value_changed)
         # Enter in the detail panel's value editor completes the current TextField
@@ -1006,6 +1027,74 @@ class Indexer(QMainWindow):
         self.image_label.show_field_values = checked
         self.image_label.update_display()
 
+    def _usable_main_row_width(self) -> int:
+        """Content width available for left, centre, and right columns."""
+        central = self.centralWidget()
+        layout = self._main_layout
+        if central is None:
+            return 0
+        margins = layout.contentsMargins()
+        return (
+            central.width()
+            - margins.left()
+            - margins.right()
+            - layout.spacing() * 3
+            - INDEXER_DETAIL_GAP_PX
+        )
+
+    def _sync_page_column_widths(self) -> None:
+        """Size centre to fit the page; lock centre and right until the window resizes."""
+        if self._syncing_column_widths:
+            return
+        pixmap = self.image_label.base_pixmap
+        if pixmap is None or pixmap.isNull():
+            return
+        usable = self._usable_main_row_width()
+        if usable <= 0:
+            return
+
+        self._syncing_column_widths = True
+        try:
+            # Document list keeps a stable preferred width; do not freeze the
+            # pre-maximize size. Centre is page-fit; right takes the remainder.
+            left_w = max(_MIN_LEFT_PANEL_WIDTH, self._left_column.sizeHint().width())
+            left_w = min(left_w, max(_MIN_LEFT_PANEL_WIDTH, usable // 5))
+
+            image_h = self._image_scroll_area.height()
+            if image_h < 50:
+                image_h = max(1, self._center_column.height() - nav_widget_height - 40)
+            image_h = max(1, image_h - 2 * self._image_scroll_area.frameWidth())
+
+            remaining = usable - left_w
+            center_w = page_fit_panel_width(
+                pixmap.width(),
+                pixmap.height(),
+                image_h,
+                remaining,
+                _MIN_DETAIL_PANEL_WIDTH,
+            )
+            min_center = min(400, max(0, remaining - _MIN_DETAIL_PANEL_WIDTH))
+            center_w = max(center_w, min_center)
+            right_w = remaining - center_w
+            if right_w < _MIN_DETAIL_PANEL_WIDTH:
+                right_w = min(_MIN_DETAIL_PANEL_WIDTH, max(0, remaining))
+                center_w = remaining - right_w
+            if center_w < 1 or right_w < 1:
+                return
+
+            self._left_column.setFixedWidth(left_w)
+            self._center_column.setFixedWidth(center_w)
+            self.detail_panel.setFixedWidth(right_w)
+            self._page_columns_have_been_sized = True
+        finally:
+            self._syncing_column_widths = False
+
+    def resizeEvent(self, event):
+        """Recalculate centre/right column widths when the window size changes."""
+        super().resizeEvent(event)
+        if self.image_label.base_pixmap:
+            self._sync_page_column_widths()
+
     def _get_page_image(self, page_index: int) -> Image.Image:
         if self.current_page_images is None:
             raise RuntimeError("No document loaded")
@@ -1121,6 +1210,8 @@ class Indexer(QMainWindow):
         
         # Display
         self.image_label.set_image(pixmap, self.page_bbox, self.page_fields, self.field_values, self.page_comments)
+        if not self._page_columns_have_been_sized:
+            QTimer.singleShot(0, self._sync_page_column_widths)
         
         # Update detail panel (clear selection when page changes)
         if hasattr(self, 'detail_panel'):
