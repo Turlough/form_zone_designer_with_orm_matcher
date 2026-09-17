@@ -87,6 +87,7 @@ When the user requests a durable behavior change, record it here or in the relev
 - Indexer: typed and OCR text is converted to uppercase only when `project_config.json` `all_uppercase` is true (default false if missing). Eircode fields stay uppercase regardless.
 - Designer: after every field save, warn (non-blocking dialog, does not block the save) if any `field.name` is duplicated across pages or repeated within a page. `field.name` is the single project-wide identity key Indexer and Exporter rely on; `column_title` may legitimately repeat (e.g. export-format matching) but `name` must not.
 - Designer/Indexer: optional `print_crop` `{x, y, width, height}` in `json/project_config.json` (Designer **Fiducials → Print crop**). When set, Indexer and Field Review resize each scan to that size and paste it at `(x, y)` on a template-sized canvas before fiducial matching. Missing key keeps the previous full-page resize.
+- Designer Print crop: **Save detected fiducial** overwrites the project default logo (`fiducial.png` / `logo.png`) with the matched patch from the prepared scan. Use a page where the green box is on the mark; the app does not back up the previous file.
 
 ## Child DOX Index
 

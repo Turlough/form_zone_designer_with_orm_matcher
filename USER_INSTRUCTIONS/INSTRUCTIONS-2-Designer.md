@@ -57,6 +57,7 @@ Use this when production sheets are trimmed inside crop marks that still appear 
 4. Page, zoom, and scroll at the bottom (and scrolling either pane) move **both** images together. Dragging the crop rectangle only moves the overlay; the template image stays at the current zoom.
 5. Click punctuation, box corners, or other sharp marks on the **right** scan. Numbered crosses appear on both panes. Adjust the crop until each left-hand cross sits on the same printed feature as the matching right-hand click. **Clear registration marks** removes them (also cleared when you change page or load another sample).
 6. On mouseup, the right pane pastes the sample into the crop rectangle on a template-sized canvas (the same step Indexer will run), then draws the fiducial (green) and field zones. The match score is shown at the bottom. Page through to confirm every page.
-7. **Save print crop** writes `print_crop` to `json/project_config.json`. **Clear** removes the key so Indexer stretches scans to the full template again.
+7. If some pages miss the fiducial even when registration marks line up, go to a page where the **green box** sits on the mark and click **Save detected fiducial**. That overwrites the default file in `fiducials/` (`fiducial.png` or `logo.png`) with the patch from the scan. Confirm first — the app does not keep a backup. Then page through again; other pages that use the default fiducial now match this scanned appearance.
+8. **Save print crop** writes `print_crop` to `json/project_config.json`. **Clear** removes the key so Indexer stretches scans to the full template again.
 
 Do not redesign fields on a filled scan; keep the original template and use Print crop for finish size.

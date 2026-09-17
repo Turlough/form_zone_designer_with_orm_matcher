@@ -31,7 +31,11 @@ from field_factory import get_field_display_color
 from fields import RadioGroup
 from util.designer_persistence import load_print_crop, load_project_config, save_print_crop
 from util.document_loader import get_document_loader_for_path
-from util.fiducial_paths import find_fiducial_for_page
+from util.fiducial_paths import (
+    default_logo_write_path,
+    find_fiducial_for_page,
+    save_detected_fiducial,
+)
 from util.field_geometry_edit import hit_resize_handle
 from util.orm_matcher import ORMMatcher
 from util.print_crop import (
@@ -400,6 +404,9 @@ class PrintCropWindow(QMainWindow):
         self.json_folder = json_folder
         self.config_folder = config_folder
         self.sample_pages: list = []
+        self._prepared: Optional[Image.Image] = None
+        self._detected_bbox = None
+        self._detected_score: Optional[float] = None
         self.page_index = max(0, min(initial_page, len(template_pages) - 1)) if template_pages else 0
         self.zoom_mode = "autofit"
         self.zoom_factor = 1.0
@@ -487,6 +494,15 @@ class PrintCropWindow(QMainWindow):
         save_btn = QPushButton("Save print crop")
         save_btn.setToolTip("Write print_crop to json/project_config.json for Indexer.")
         save_btn.clicked.connect(self._save)
+        self.save_fiducial_btn = QPushButton("Save detected fiducial")
+        self.save_fiducial_btn.setToolTip(
+            "Overwrite the default fiducial (fiducial.png or logo.png) with this "
+            "page's detected patch from the scan. Enabled when the green box is a "
+            "match (score 0.7 or higher). Use a page where the box sits on the mark "
+            "so later pages match the scanned appearance."
+        )
+        self.save_fiducial_btn.setEnabled(False)
+        self.save_fiducial_btn.clicked.connect(self._save_detected_fiducial)
         self.clear_marks_btn = QPushButton("Clear registration marks")
         self.clear_marks_btn.setToolTip(
             "Remove clicked registration points so you can mark again."
@@ -497,6 +513,7 @@ class PrintCropWindow(QMainWindow):
         clear_btn.setToolTip("Remove print_crop so Indexer stretches scans to the full template again.")
         clear_btn.clicked.connect(self._clear)
         controls.addWidget(save_btn)
+        controls.addWidget(self.save_fiducial_btn)
         controls.addWidget(self.clear_marks_btn)
         controls.addWidget(clear_btn)
         main.addLayout(controls)
@@ -625,11 +642,13 @@ class PrintCropWindow(QMainWindow):
         if self.left_page.crop:
             self.crop = self.left_page.crop
         if not self.sample_pages:
+            self._clear_detected_fiducial()
             self.right_page.preview_crop = None
             self.right_page.set_preview(None)
             self.status_label.setText("Load a cropped scan to preview fiducial matching.")
             return
         if self.page_index >= len(self.sample_pages):
+            self._clear_detected_fiducial()
             self.right_page.preview_crop = None
             self.right_page.set_preview(None)
             self.status_label.setText("No sample page for this template page.")
@@ -672,10 +691,12 @@ class PrintCropWindow(QMainWindow):
                         self.status_label.setText(
                             f"Fiducial match: {score:.3f} (weak — adjust the crop)"
                         )
+            self._set_detected_fiducial(prepared, bbox, score)
             self.right_page.preview_crop = self.crop
             self.right_page.set_preview(_pil_to_pixmap(prepared), bbox, fields)
         except Exception as e:
             logger.exception("Print crop preview failed")
+            self._clear_detected_fiducial()
             self.status_label.setText(f"Preview failed: {e}")
         finally:
             QApplication.restoreOverrideCursor()
@@ -741,6 +762,65 @@ class PrintCropWindow(QMainWindow):
             return
         if self.zoom_mode != "manual":
             self._sync_zoom()
+
+    def _clear_detected_fiducial(self) -> None:
+        self._prepared = None
+        self._detected_bbox = None
+        self._detected_score = None
+        if hasattr(self, "save_fiducial_btn"):
+            self.save_fiducial_btn.setEnabled(False)
+
+    def _set_detected_fiducial(
+        self,
+        prepared: Image.Image,
+        bbox,
+        score: Optional[float],
+    ) -> None:
+        self._prepared = prepared
+        self._detected_bbox = bbox
+        self._detected_score = score
+        self.save_fiducial_btn.setEnabled(
+            bbox is not None and score is not None and score >= 0.7
+        )
+
+    def _fiducials_folder(self) -> Path:
+        return Path(self.config_folder) / "fiducials"
+
+    def _save_detected_fiducial(self) -> None:
+        if self._prepared is None or self._detected_bbox is None:
+            return
+        folder = self._fiducials_folder()
+        out_path = default_logo_write_path(folder)
+        score_text = (
+            f"{self._detected_score:.3f}" if self._detected_score is not None else "unknown"
+        )
+        exists = out_path.is_file()
+        action = "Overwrite" if exists else "Save"
+        reply = QMessageBox.question(
+            self,
+            "Save detected fiducial",
+            (
+                f"{action} {out_path.name} with the detected patch from this scan "
+                f"(page {self.page_index + 1}, score {score_text})?\n\n"
+                "Indexer will then match against this scanned appearance. "
+                "The app does not keep a backup of the current file."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            saved = save_detected_fiducial(folder, self._prepared, self._detected_bbox)
+        except (OSError, ValueError) as e:
+            QMessageBox.warning(self, "Save detected fiducial", f"Could not save {out_path.name}:\n{e}")
+            return
+        self.statusBar().showMessage(
+            f"Saved {saved.name} from page {self.page_index + 1}. "
+            "Page through to check pages that still use the default fiducial.",
+            8000,
+        )
+        self._refresh_preview()
 
     def _save(self) -> None:
         if self.left_page.crop:
