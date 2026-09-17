@@ -5,12 +5,13 @@ import json
 from pathlib import Path
 
 from PyQt6.QtCore import pyqtSignal
+from util.batch_log import COORDINATION_FOLDERS, EVENT_OPEN_BATCH, log_batch_move
 from util.path_utils import resolve_path_case_insensitive, find_file_case_insensitive
 from PyQt6.QtWidgets import QMenuBar, QMenu, QMessageBox
 
 
 class IndexMenuBar(QMenuBar):
-    """Menu bar with Project and Batch menus. Project lists config folders from DESIGNER_CONFIG_FOLDER."""
+    """Menu bar with Project, Batch, Log, and QC menus."""
 
     project_selected = pyqtSignal(str)  # Emits the selected project config folder path
     batch_import_selected = pyqtSignal(str)  # Emits full path to selected batch import file
@@ -21,9 +22,10 @@ class IndexMenuBar(QMenuBar):
     review_document_comments_requested = pyqtSignal()  # User chose QC > Review document comments
     validate_document_requested = pyqtSignal()  # User chose QC > Validate document
     validate_batch_requested = pyqtSignal()  # User chose QC > Validate batch
+    view_log_requested = pyqtSignal()  # User chose Log > View log
 
     # Special batch folder names (used for "Other batch" submenu and filtering)
-    _OTHER_BATCH_FOLDERS = ("_in_progress", "_complete", "_qc")
+    _OTHER_BATCH_FOLDERS = COORDINATION_FOLDERS
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -32,6 +34,7 @@ class IndexMenuBar(QMenuBar):
         self._batch_source_folder: str | None = None  # None = main folder; else _in_progress/_complete/_qc
         self._init_project_menu()
         self._init_batch_menu()
+        self._init_log_menu()
         self._init_qc_menu()
 
     def _init_project_menu(self) -> None:
@@ -236,6 +239,7 @@ class IndexMenuBar(QMenuBar):
             )
             return
 
+        log_batch_move(batch_dir, dest_dir, EVENT_OPEN_BATCH)
         new_import_file_path = dest_dir / path.name
         self.batch_import_selected.emit(str(new_import_file_path))
 
@@ -246,6 +250,16 @@ class IndexMenuBar(QMenuBar):
     def set_current_project_path(self, path: str | None) -> None:
         """Set the current project path (e.g. when restoring from session)."""
         self._current_project_path = path
+
+    def _init_log_menu(self) -> None:
+        """Build Log menu."""
+        log_menu = QMenu("Log", self)
+        self.addMenu(log_menu)
+        action = log_menu.addAction("View log")
+        action.triggered.connect(self._on_view_log_triggered)
+
+    def _on_view_log_triggered(self) -> None:
+        self.view_log_requested.emit()
 
     def _init_qc_menu(self) -> None:
         """Build QC (Quality Control) menu."""

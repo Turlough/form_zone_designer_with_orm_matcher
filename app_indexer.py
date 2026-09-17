@@ -50,10 +50,12 @@ from ui.index_text_dialog import IndexTextDialog
 from ui.index_comment_dialog import IndexCommentDialog
 from ui.index_menu_bar import IndexMenuBar
 from ui.index_ocr_dialog import IndexOcrDialog
+from ui.index_batch_log_dialog import IndexBatchLogDialog
 from ui.qc_comment_dialog import QcCommentDialog, QcSpecialFieldReviewDialog
 from ui.qc_text_review_window import QcTextReviewWindow
 from util.gemini_ocr_client import ocr_image_region
 from util.indexing_assistant_config import indexing_assistant_enabled
+from util.batch_log import EVENT_COMPLETE_BATCH, current_user, log_batch_move, read_batch_log
 from util.csv_save_queue import CsvSaveQueue
 
 logging.basicConfig(level=logging.INFO)
@@ -496,8 +498,8 @@ class Indexer(QMainWindow):
         self._update_window_title()
 
     def _update_window_title(self) -> None:
-        """Set window title to 'Field Indexer' with optional project and batch name."""
-        title = "Field Indexer"
+        """Set window title to 'Field Indexer' with user, project, and batch name."""
+        title = f"Field Indexer - {current_user()}"
         parts = []
         if self.config_folder:
             parts.append(Path(self.config_folder).name)
@@ -635,6 +637,7 @@ class Indexer(QMainWindow):
         self._index_menu_bar.review_special_fields_requested.connect(self._on_review_special_fields_requested)
         self._index_menu_bar.quick_review_special_fields_requested.connect(self._on_quick_review_special_fields_requested)
         self._index_menu_bar.review_text_and_numeric_fields_requested.connect(self._on_review_text_and_numeric_fields_requested)
+        self._index_menu_bar.view_log_requested.connect(self._on_view_log_requested)
 
         self.setMenuBar(self._index_menu_bar)
 
@@ -996,6 +999,16 @@ class Indexer(QMainWindow):
         )
         if self.document_paths:
             self.tiff_list.setCurrentRow(0)
+
+    def _on_view_log_requested(self) -> None:
+        """Show the current batch's batch.log in a table dialog."""
+        csv_path = getattr(self.csv_manager, "csv_path", None)
+        if not csv_path:
+            QMessageBox.information(self, "View log", "Open a batch first.")
+            return
+        rows = read_batch_log(Path(csv_path).parent)
+        dialog = IndexBatchLogDialog(self, rows=rows)
+        dialog.exec()
 
     def on_document_selected(self, index: int) -> None:
         """Handle document selection from the list widget."""
@@ -2923,6 +2936,7 @@ class Indexer(QMainWindow):
         try:
             source_dir.rename(dest_dir)
             logger.info("Moved batch folder from %s to %s", source_dir, dest_dir)
+            log_batch_move(source_dir, dest_dir, EVENT_COMPLETE_BATCH)
             self._clear_batch()
         except Exception as e:
             logger.warning("Could not move batch folder %s to %s: %s", source_dir, dest_dir, e)

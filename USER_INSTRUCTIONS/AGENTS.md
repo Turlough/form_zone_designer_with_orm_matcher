@@ -8,7 +8,7 @@ End-user and operator documentation for template setup, Designer, Indexer, and E
 
 - `INSTRUCTIONS-1-Templates.md` — project folder, template TIFF/PDF, fiducials, `project_config.json` (read before Designer)
 - `INSTRUCTIONS-2-Designer.md` — Form Zone Designer
-- `INSTRUCTIONS-3-Indexer.md` — Indexer and QC workflows
+- `INSTRUCTIONS-3-Indexer.md` — Indexer Windows user, batch folder moves, `batch.log`
 - `INSTRUCTIONS-4-Exporter.md` — Exporter
 
 ## Local Contracts

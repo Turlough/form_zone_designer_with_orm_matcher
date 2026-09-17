@@ -19,7 +19,45 @@
   </nav>
   <main class="content">
     <article class="doc">
-<p class="todo">TODO</p>
+<h1>Indexer</h1>
+<h2>Who is using the app</h2>
+<p>Indexer uses the Windows account you are logged in as. The name appears in the window title (<code>Field Indexer - username - …</code>). There is no separate login screen.</p>
+<h2>Batch folders and <code>batch.log</code></h2>
+<p>Batches live under the project’s job folder (<code>batch_folder</code> in <code>project_config.json</code>). Indexer moves a batch folder when you open or complete it. After each successful move it appends a line to <code>batch.log</code> beside <code>EXPORT.TXT</code> (or whatever <code>import_filename</code> is):</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Previous location</th>
+<th>New location</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Open Batch</td>
+<td>job folder (for example <code>SCANS</code>)</td>
+<td><code>_in_progress</code></td>
+</tr>
+<tr>
+<td>Complete Batch</td>
+<td><code>_in_progress</code></td>
+<td><code>_qc</code></td>
+</tr>
+<tr>
+<td>Open Batch</td>
+<td><code>_qc</code></td>
+<td><code>_qc/_in_progress</code></td>
+</tr>
+<tr>
+<td>Complete Batch</td>
+<td><code>_qc</code> or <code>_qc/_in_progress</code></td>
+<td><code>_complete</code></td>
+</tr>
+</tbody>
+</table>
+<p>Columns: <code>Datetime</code>, <code>User</code>, <code>Event</code>, <code>Previous location</code>, <code>New location</code> (tab-separated). Reopening a batch already in <code>_in_progress</code> (resume or session restore) does not move it and does not add a log line.</p>
+<p><strong>Log → View log</strong> shows that table for the open batch. Close the dialog when finished. If no batch is open, Indexer asks you to open one first.</p>
+<p>The Exporter reads finished batches from <code>_complete</code>.</p>
     </article>
   </main>
 </body>

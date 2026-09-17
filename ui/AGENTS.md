@@ -24,6 +24,8 @@ PyQt6 widgets, panels, dialogs, and layouts shared by Designer, Indexer, and rel
 - Grid Designer **Assistant** (right of orientation toggles): requires drawn ROI + ≥2 detected answer rects in ROI; autofills/overwrites labels and metadata via `runtime_assistants/design_assistant/grid_assistant/`; shrinks `grid_rect` to tightly frame answer boxes (stem/headings excluded); shows wait cursor while analysing
 
 - Grid Designer grid name / row / column label edits have no character max; overlay display still caps via `summary` / `display_label` (50)
+- Indexer Batch menu: selecting a batch from the job folder or `_qc` claims it by renaming into that parent’s `_in_progress`, then appends `Open Batch` to `batch.log` (`util/batch_log.py`). Already under `_in_progress` is a resume (no move, no log).
+- Indexer **Log → View log**: `IndexBatchLogDialog` tables `batch.log` for the open batch (columns from `LOG_COLUMNS`); dialog sizes to the table (capped to the screen) with one Close button. No batch open: information dialog, no table.
 - Indexer-facing: main image panel, details panel, menus, OCR/index/comment/QC dialogs; per-field and page OCR buttons hidden unless `INDEXING_ASSISTANT_ENABLED` is truthy in `.env` (Indexer shell owns visibility)
 - Indexer text case: `IndexDetailPanel` / `IndexTextDialog` `all_uppercase` follows `project_config.json` `all_uppercase` (default False). Eircode display/storage stays uppercase regardless.
 - Indexer field list (`fields_table`): two equal-width Stretch columns; cell text elides (hover tooltip shows full name/value); on field activation, the table scrolls so the current row is in view

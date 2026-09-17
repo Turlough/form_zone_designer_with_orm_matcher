@@ -33,6 +33,7 @@ Non-UI services: ORM logo matching, document loading, persistence, CSV/index I/O
 - Fiducials: `util/fiducial_paths.py` — default logo candidates and per-page `logo-pN.png` (1-based N) overriding default when present. `save_detected_fiducial` overwrites the default file (`find_default_logo`, else `fiducial.png`) with a prepared-scan crop at the ORMMatcher bbox (Print crop **Save detected fiducial**)
 - Project blank-form template: `find_project_template()` in `path_utils.py` resolves `template.tif`, `template.tiff`, or `template.pdf` (case-insensitive; first listed wins if several exist)
 - Operator help HTML: `user_instructions_html_path()` in `path_utils.py` resolves `USER_INSTRUCTIONS/html/<file>` from the repo root, or from `sys._MEIPASS` / next to the exe when frozen (PyInstaller)
+- Indexer batch log: `util/batch_log.py` — `current_user()` is the OS account; `batch.log` is TSV beside the batch import file; `log_batch_move` after a successful folder rename; `read_batch_log` returns data rows (empty if missing). Location labels walk coordination folders (`_in_progress`, `_qc`, `_complete`): job-folder child → job folder name; nested QC claim → `_qc/_in_progress`. Do not log resume or session restore. `append_batch_log` never raises.
 
 ## Work Guidance
 
