@@ -36,7 +36,12 @@ from util.designer_persistence import (
     parse_all_uppercase,
 )
 from util.fiducial_paths import find_fiducial_for_page
-from util.print_crop import parse_print_crop, prepare_scan_page
+from util.print_crop import (
+    crop_prepared_page_for_display,
+    display_origin,
+    parse_print_crop,
+    prepare_scan_page,
+)
 from fields import Field, Tickbox, RadioGroup, TextField, IntegerField, DecimalField, EmailField, IrishMobileField, EircodeField, FIELD_TYPE_MAP
 import logging
 from ui.index_main_image_panel import MainImageIndexPanel, page_fit_panel_width
@@ -1171,6 +1176,7 @@ class Indexer(QMainWindow):
         cache_key = (doc_path, page_num) if doc_path else None
         if cache_key and cache_key in self._qc_special_fields_page_cache:
             pil_image, self.page_bbox, self.page_fields = self._qc_special_fields_page_cache[cache_key]
+            self._load_print_crop()
         else:
             # Synchronous path: rescale, detect logo, load fields
             pil_image = self._get_page_image(page_num)
@@ -1196,8 +1202,19 @@ class Indexer(QMainWindow):
                 )
             self.page_fields = self.load_page_fields(page_num + 1)  # JSON files are 1-indexed
         
-        # Convert to QPixmap (must be on main thread)
-        img_array = np.array(pil_image)
+        # Convert to QPixmap (must be on main thread). Crop away print_crop
+        # canvas margins so the centre panel shows the scan, not white borders.
+        display_crop = None
+        if (
+            self.print_crop is not None
+            and self.template_page_dimensions
+            and page_num < len(self.template_page_dimensions)
+            and pil_image.size == self.template_page_dimensions[page_num]
+        ):
+            display_crop = self.print_crop
+        display_image = crop_prepared_page_for_display(pil_image, display_crop)
+        origin = display_origin(display_crop, pil_image.size)
+        img_array = np.array(display_image)
         height, width, channel = img_array.shape
         bytes_per_line = 3 * width
         q_image = QImage(img_array.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
@@ -1209,7 +1226,14 @@ class Indexer(QMainWindow):
         self._load_comments_for_current_page()
         
         # Display
-        self.image_label.set_image(pixmap, self.page_bbox, self.page_fields, self.field_values, self.page_comments)
+        self.image_label.set_image(
+            pixmap,
+            self.page_bbox,
+            self.page_fields,
+            self.field_values,
+            self.page_comments,
+            canvas_origin=origin,
+        )
         if not self._page_columns_have_been_sized:
             QTimer.singleShot(0, self._sync_page_column_widths)
         

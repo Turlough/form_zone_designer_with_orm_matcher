@@ -3,7 +3,8 @@
 ``print_crop`` in project_config.json is one axis-aligned rectangle in template
 pixels, shared by every page. Indexer resizes each scan page to that size and
 pastes it at (x, y) on a white canvas the size of the template page, then runs
-fiducial matching as usual.
+fiducial matching as usual. The Indexer centre panel crops that canvas back to
+the pasted scan so operators do not see the white margins.
 """
 
 from __future__ import annotations
@@ -97,6 +98,34 @@ def prepare_scan_page(
     fitted = scan.convert("RGB").resize((cw, ch), Image.Resampling.LANCZOS)
     canvas.paste(fitted, (cx, cy))
     return canvas
+
+
+def display_origin(
+    print_crop: Optional[PrintCrop],
+    page_size: tuple[int, int],
+) -> tuple[int, int]:
+    """Canvas offset to subtract when showing the pasted scan without margins."""
+    if print_crop is None:
+        return (0, 0)
+    cx, cy, _cw, _ch = clamp_print_crop(print_crop, page_size)
+    return (cx, cy)
+
+
+def crop_prepared_page_for_display(
+    prepared: Image.Image,
+    print_crop: Optional[PrintCrop],
+) -> Image.Image:
+    """Return the pasted scan from a prepared canvas, with no white margins.
+
+    Matching still uses the full template-sized canvas. Display crops to the
+    print_crop rectangle. With no crop, the prepared page is unchanged.
+    """
+    if print_crop is None:
+        return prepared
+    cx, cy, cw, ch = clamp_print_crop(print_crop, prepared.size)
+    if cx == 0 and cy == 0 and (cw, ch) == prepared.size:
+        return prepared
+    return prepared.crop((cx, cy, cx + cw, cy + ch))
 
 
 def resize_rect_by_handle(

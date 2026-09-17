@@ -50,6 +50,9 @@ class MainImageIndexPanel(QLabel):
         self.scale_y = 1.0
         self.image_offset_x = 0
         self.image_offset_y = 0
+        # Prepared-canvas origin of the displayed crop (print_crop x, y). Overlays
+        # and clicks stay in canvas/fiducial space; display subtracts this origin.
+        self.canvas_origin = (0, 0)
         
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setStyleSheet("QLabel { background-color: #2b2b2b; }")
@@ -60,6 +63,16 @@ class MainImageIndexPanel(QLabel):
 
         # Callback for field clicks
         self.on_field_click = None
+
+    def _canvas_rect_on_widget(self, abs_x: float, abs_y: float, width: float, height: float) -> QRect:
+        """Map a prepared-canvas rect onto the displayed (possibly cropped) pixmap."""
+        ox, oy = self.canvas_origin
+        return QRect(
+            self.image_offset_x + int((abs_x - ox) * self.scale_x),
+            self.image_offset_y + int((abs_y - oy) * self.scale_y),
+            int(width * self.scale_x),
+            int(height * self.scale_y),
+        )
 
     def _get_field_color(self, field: Field) -> QColor:
         return get_field_display_color(field)
@@ -231,12 +244,7 @@ class MainImageIndexPanel(QLabel):
             abs_y = field.y + logo_offset[1]
             abs_w = field.width
             abs_h = field.height
-            scaled_rect = QRect(
-                self.image_offset_x + int(abs_x * self.scale_x),
-                self.image_offset_y + int(abs_y * self.scale_y),
-                int(abs_w * self.scale_x),
-                int(abs_h * self.scale_y),
-            )
+            scaled_rect = self._canvas_rect_on_widget(abs_x, abs_y, abs_w, abs_h)
             all_entries.append((field, abs_x, abs_y, abs_h, scaled_rect))
 
         bands: list[list[tuple]] = []
@@ -289,13 +297,28 @@ class MainImageIndexPanel(QLabel):
                 running_x = min_x + value_w + BAND_MARGIN
         return result
 
-    def set_image(self, pixmap, bbox=None, field_data=None, field_values=None, field_comments=None):
-        """Set the image, bounding box, fields, and field values/comments to display."""
+    def set_image(
+        self,
+        pixmap,
+        bbox=None,
+        field_data=None,
+        field_values=None,
+        field_comments=None,
+        canvas_origin=(0, 0),
+    ):
+        """Set the image, bounding box, fields, and field values/comments to display.
+
+        canvas_origin is the top-left of the displayed crop in prepared-canvas
+        pixels (print_crop x, y). Use (0, 0) when the full canvas is shown.
+        """
         self.base_pixmap = pixmap
         self.bbox = bbox
         self.field_data = field_data or []
         self.field_values = field_values or {}
         self.field_comments = field_comments or {}
+        self.canvas_origin = canvas_origin if canvas_origin is not None else (0, 0)
+        if pixmap is None:
+            self.canvas_origin = (0, 0)
         self.update_display()
     
     def update_display(self):
@@ -342,11 +365,11 @@ class MainImageIndexPanel(QLabel):
             top_left, bottom_right = self.bbox
             pen = QPen(QColor(0, 255, 0), 2)
             painter.setPen(pen)
-            scaled_rect = QRect(
-                self.image_offset_x + int(top_left[0] * self.scale_x),
-                self.image_offset_y + int(top_left[1] * self.scale_y),
-                int((bottom_right[0] - top_left[0]) * self.scale_x),
-                int((bottom_right[1] - top_left[1]) * self.scale_y)
+            scaled_rect = self._canvas_rect_on_widget(
+                top_left[0],
+                top_left[1],
+                bottom_right[0] - top_left[0],
+                bottom_right[1] - top_left[1],
             )
             painter.drawRect(scaled_rect)
         
@@ -367,11 +390,8 @@ class MainImageIndexPanel(QLabel):
                 abs_x = field.x + logo_offset[0]
                 abs_y = field.y + logo_offset[1]
                 
-                scaled_rect = QRect(
-                    self.image_offset_x + int(abs_x * self.scale_x),
-                    self.image_offset_y + int(abs_y * self.scale_y),
-                    int(field.width * self.scale_x),
-                    int(field.height * self.scale_y)
+                scaled_rect = self._canvas_rect_on_widget(
+                    abs_x, abs_y, field.width, field.height
                 )
                 painter.drawRect(scaled_rect)
 
@@ -387,11 +407,8 @@ class MainImageIndexPanel(QLabel):
                     rb_abs_x = rb.x + logo_offset[0]
                     rb_abs_y = rb.y + logo_offset[1]
                     
-                    rb_scaled_rect = QRect(
-                        self.image_offset_x + int(rb_abs_x * self.scale_x),
-                        self.image_offset_y + int(rb_abs_y * self.scale_y),
-                        int(rb.width * self.scale_x),
-                        int(rb.height * self.scale_y)
+                    rb_scaled_rect = self._canvas_rect_on_widget(
+                        rb_abs_x, rb_abs_y, rb.width, rb.height
                     )
                     
                     # Use thicker border if selected
@@ -438,11 +455,8 @@ class MainImageIndexPanel(QLabel):
                 abs_x = field.x + logo_offset[0]
                 abs_y = field.y + logo_offset[1]
                 
-                scaled_rect = QRect(
-                    self.image_offset_x + int(abs_x * self.scale_x),
-                    self.image_offset_y + int(abs_y * self.scale_y),
-                    int(field.width * self.scale_x),
-                    int(field.height * self.scale_y)
+                scaled_rect = self._canvas_rect_on_widget(
+                    abs_x, abs_y, field.width, field.height
                 )
                 painter.drawRect(scaled_rect)
                 
@@ -493,9 +507,10 @@ class MainImageIndexPanel(QLabel):
         if not self.base_pixmap or not self.on_field_click:
             return
         
-        # Convert click coordinates to image coordinates
-        click_x = (event.pos().x() - self.image_offset_x) / self.scale_x
-        click_y = (event.pos().y() - self.image_offset_y) / self.scale_y
+        # Convert click coordinates to prepared-canvas coordinates
+        ox, oy = self.canvas_origin
+        click_x = (event.pos().x() - self.image_offset_x) / self.scale_x + ox
+        click_y = (event.pos().y() - self.image_offset_y) / self.scale_y + oy
         
         logo_offset = self.bbox[0] if self.bbox else (0, 0)
         
@@ -529,16 +544,7 @@ class MainImageIndexPanel(QLabel):
         if not self.base_pixmap or not self.field_data:
             return None
         logo_offset = self.bbox[0] if self.bbox else (0, 0)
-        if isinstance(field, RadioGroup):
-            # Return the group container rect
-            abs_x = field.x + logo_offset[0]
-            abs_y = field.y + logo_offset[1]
-        else:
-            abs_x = field.x + logo_offset[0]
-            abs_y = field.y + logo_offset[1]
-        x = self.image_offset_x + int(abs_x * self.scale_x)
-        y = self.image_offset_y + int(abs_y * self.scale_y)
-        w = int(field.width * self.scale_x)
-        h = int(field.height * self.scale_y)
-        return QRect(x, y, w, h)
+        abs_x = field.x + logo_offset[0]
+        abs_y = field.y + logo_offset[1]
+        return self._canvas_rect_on_widget(abs_x, abs_y, field.width, field.height)
 

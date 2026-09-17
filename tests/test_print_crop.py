@@ -9,8 +9,10 @@ from util.print_crop import (
     MIN_PRINT_CROP_SIZE,
     canvas_to_crop_uv,
     clamp_print_crop,
+    crop_prepared_page_for_display,
     crop_uv_to_canvas,
     default_print_crop,
+    display_origin,
     move_rect,
     parse_print_crop,
     prepare_scan_page,
@@ -71,6 +73,23 @@ def test_prepare_scan_page_pastes_into_crop():
     assert out.getpixel((20, 10)) == (255, 0, 0)
     assert out.getpixel((59, 39)) == (255, 0, 0)
     assert out.getpixel((60, 40)) == (255, 255, 255)
+
+
+def test_crop_prepared_page_for_display_drops_canvas_margins():
+    scan = Image.new("RGB", (10, 10), (255, 0, 0))
+    crop = (20, 10, 40, 30)
+    prepared = prepare_scan_page(scan, (100, 80), crop)
+    shown = crop_prepared_page_for_display(prepared, crop)
+    assert shown.size == (40, 30)
+    assert shown.getpixel((0, 0)) == (255, 0, 0)
+    assert shown.getpixel((39, 29)) == (255, 0, 0)
+    assert display_origin(crop, (100, 80)) == (20, 10)
+
+
+def test_crop_prepared_page_for_display_noop_without_crop():
+    img = Image.new("RGB", (100, 80), (1, 2, 3))
+    assert crop_prepared_page_for_display(img, None) is img
+    assert display_origin(None, (100, 80)) == (0, 0)
 
 
 def test_resize_and_move_rect():
