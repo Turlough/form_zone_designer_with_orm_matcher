@@ -230,12 +230,12 @@ class IndexMenuBar(QMenuBar):
 
         try:
             batch_dir.rename(dest_dir)
-        except Exception:
+        except Exception as ex:
             # Most likely a race where another user moved or completed the batch.
             QMessageBox.information(
                 self.parent() or self,
                 "Batch unavailable",
-                "The selected batch is no longer available.",
+                f"The selected batch is no longer available.\n{ex}",
             )
             return
 
