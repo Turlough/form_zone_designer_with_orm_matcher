@@ -31,7 +31,7 @@ PyQt6 widgets, panels, dialogs, and layouts shared by Designer, Indexer, and rel
 - Indexer field list (`fields_table`): two equal-width Stretch columns; cell text elides (hover tooltip shows full name/value); on field activation, the table scrolls so the current row is in view
 - Indexer columns: after a page is shown, centre width is page-fit (`page_fit_panel_width`); right panel keeps the remaining width. Recalculate only on window resize, not on field/page/document change. `IndexDetailPanel` field-name label elides (tooltip has the full name) and must not expand the panel
 - Indexer centre page: `MainImageIndexPanel` shows the scanned page with no print_crop canvas borders. Matching still uses the template-sized prepared canvas; display crops to the pasted scan and `canvas_origin` keeps overlays/clicks aligned
-- Indexer close-up (`closeup_crop_and_overlay`): equal padding around the field in the crop; overlay is drawn at the field’s position in that crop (not independently recentred)
+- Indexer close-up (`closeup_crop_and_overlay`, `closeup_abs_on_display`): same displayed scan as the centre panel; field origin is logo-relative canvas coords minus `canvas_origin` (print_crop x, y). Equal padding around the field; overlay is drawn at the field’s position in that crop (not independently recentred)
 - Field overlay colours: resolve via `field_factory.get_field_display_color()` (shared with Indexer); do not read `field.colour` for paint
 - Designer field list Type column: cell background via `field_factory.get_display_color_for_type()` (same palette as overlays); text contrast black/white by luminance
 - Prefer extending existing widgets over duplicating paint or layout logic in entry-point apps

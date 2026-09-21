@@ -455,6 +455,7 @@ class Indexer(QMainWindow):
         # Template page dimensions (width, height) per page, loaded when project is selected
         self.template_page_dimensions: list[tuple[int, int]] = []
         self.print_crop = None
+        self.prepared_page_image: Image.Image | None = None
         
         # Current state
         # NOTE: Historically this indexer worked only with TIFFs. These fields
@@ -602,6 +603,7 @@ class Indexer(QMainWindow):
         self.current_document_index = -1
         self.current_page_index = 0
         self.current_page_images = None
+        self.prepared_page_image = None
         self.page_fields = []
         self.page_bbox = None
         self.field_values = {}
@@ -1118,6 +1120,42 @@ class Indexer(QMainWindow):
             raise RuntimeError("No document loaded")
         return self.current_page_images.get_page(page_index)
 
+    def _display_scan_and_origin(
+        self, prepared: Image.Image, page_num: int
+    ) -> tuple[Image.Image, tuple[int, int]]:
+        """Crop print_crop canvas margins for display; origin is that crop's top-left."""
+        display_crop = None
+        if (
+            self.print_crop is not None
+            and self.template_page_dimensions
+            and page_num < len(self.template_page_dimensions)
+            and prepared.size == self.template_page_dimensions[page_num]
+        ):
+            display_crop = self.print_crop
+        shown = crop_prepared_page_for_display(prepared, display_crop)
+        origin = display_origin(display_crop, prepared.size)
+        return shown, origin
+
+    def _refresh_detail_panel(self, field: Field | None) -> None:
+        """Update the right panel using the same displayed scan as the centre page."""
+        if not hasattr(self, "detail_panel"):
+            return
+        page_image = None
+        origin = (0, 0)
+        if self.prepared_page_image is not None:
+            page_image, origin = self._display_scan_and_origin(
+                self.prepared_page_image, self.current_page_index
+            )
+        self.detail_panel.set_current_field(
+            field,
+            page_image=page_image,
+            page_bbox=self.page_bbox,
+            page_fields=self.page_fields,
+            field_values=self.field_values,
+            field_comments=self.page_comments,
+            canvas_origin=origin,
+        )
+
     def load_document(self, document_path: str) -> None:
         """Load a multipage document (lazy pages; cache and preload when available)."""
         # Clear stale preload if we're loading a different document
@@ -1215,18 +1253,10 @@ class Indexer(QMainWindow):
                 )
             self.page_fields = self.load_page_fields(page_num + 1)  # JSON files are 1-indexed
         
+        self.prepared_page_image = pil_image
         # Convert to QPixmap (must be on main thread). Crop away print_crop
         # canvas margins so the centre panel shows the scan, not white borders.
-        display_crop = None
-        if (
-            self.print_crop is not None
-            and self.template_page_dimensions
-            and page_num < len(self.template_page_dimensions)
-            and pil_image.size == self.template_page_dimensions[page_num]
-        ):
-            display_crop = self.print_crop
-        display_image = crop_prepared_page_for_display(pil_image, display_crop)
-        origin = display_origin(display_crop, pil_image.size)
+        display_image, origin = self._display_scan_and_origin(pil_image, page_num)
         img_array = np.array(display_image)
         height, width, channel = img_array.shape
         bytes_per_line = 3 * width
@@ -1251,15 +1281,7 @@ class Indexer(QMainWindow):
             QTimer.singleShot(0, self._sync_page_column_widths)
         
         # Update detail panel (clear selection when page changes)
-        if hasattr(self, 'detail_panel'):
-            self.detail_panel.set_current_field(
-                None,
-                page_image=pil_image,
-                page_bbox=self.page_bbox,
-                page_fields=self.page_fields,
-                field_values=self.field_values,
-                field_comments=self.page_comments,
-            )
+        self._refresh_detail_panel(None)
         # No current field selected on new page
         self._set_current_field(None)
         self._prefetch_page_ahead(page_num + 1)
@@ -1335,17 +1357,9 @@ class Indexer(QMainWindow):
         self.image_label.bbox = bbox
         self.image_label.update_display()
         if hasattr(self, "detail_panel") and self.current_page_images:
-            pil_image = self._get_page_image(page_index)
             self.detail_panel.page_bbox = bbox
             if self.detail_panel.current_field is not None:
-                self.detail_panel.set_current_field(
-                    self.detail_panel.current_field,
-                    page_image=pil_image,
-                    page_bbox=bbox,
-                    page_fields=self.page_fields,
-                    field_values=self.field_values,
-                    field_comments=self.page_comments,
-                )
+                self._refresh_detail_panel(self.detail_panel.current_field)
     
     def detect_logo(self, pil_image, page_num: int = 0):
         """Detect logo in the image for the given template page index; return bounding box or None."""
@@ -1571,17 +1585,9 @@ class Indexer(QMainWindow):
         """Handle field click events."""
         # Update detail panel to show the clicked field
         if hasattr(self, 'detail_panel') and self.current_page_images:
-            current_pil_image = self._get_page_image(self.current_page_index)
             # For RadioGroups, show the group itself, not the individual button
             field_to_show = field
-            self.detail_panel.set_current_field(
-                field_to_show,
-                page_image=current_pil_image,
-                page_bbox=self.page_bbox,
-                page_fields=self.page_fields,
-                field_values=self.field_values,
-                field_comments=self.page_comments,
-            )
+            self._refresh_detail_panel(field_to_show)
             self._set_current_field(field_to_show)
         
         if isinstance(field, Tickbox):
@@ -1607,15 +1613,7 @@ class Indexer(QMainWindow):
             
             # Update detail panel
             if hasattr(self, 'detail_panel') and self.current_page_images:
-                current_pil_image = self._get_page_image(self.current_page_index)
-                self.detail_panel.set_current_field(
-                    field,
-                    page_image=current_pil_image,
-                    page_bbox=self.page_bbox,
-                    page_fields=self.page_fields,
-                    field_values=self.field_values,
-                    field_comments=self.page_comments,
-                )
+                self._refresh_detail_panel(field)
                 self._set_current_field(field)
             
             logger.info(f"Tickbox '{field.name}' set to {new_value}")
@@ -1641,15 +1639,7 @@ class Indexer(QMainWindow):
             
             # Update detail panel
             if hasattr(self, 'detail_panel') and self.current_page_images:
-                current_pil_image = self._get_page_image(self.current_page_index)
-                self.detail_panel.set_current_field(
-                    field,
-                    page_image=current_pil_image,
-                    page_bbox=self.page_bbox,
-                    page_fields=self.page_fields,
-                    field_values=self.field_values,
-                    field_comments=self.page_comments,
-                )
+                self._refresh_detail_panel(field)
                 self._set_current_field(field)
             
             logger.info(f"RadioGroup '{field.name}' set to '{sub_field.name}'")
@@ -1668,15 +1658,7 @@ class Indexer(QMainWindow):
                 self._index_text_dialog.show_under_rect(global_bottom_left, rect.width())
 
             if hasattr(self, 'detail_panel') and self.current_page_images:
-                current_pil_image = self._get_page_image(self.current_page_index)
-                self.detail_panel.set_current_field(
-                    field,
-                    page_image=current_pil_image,
-                    page_bbox=self.page_bbox,
-                    page_fields=self.page_fields,
-                    field_values=self.field_values,
-                    field_comments=self.page_comments,
-                )
+                self._refresh_detail_panel(field)
 
             logger.info(f"TextField '{field.name}' clicked, value='{self.field_values.get(field.name, '')}'")
     
@@ -1775,18 +1757,8 @@ class Indexer(QMainWindow):
             self._index_text_dialog.hide()
             return
 
-        current_pil_image = self._get_page_image(self.current_page_index)
-
         # Update detail panel selection
-        if hasattr(self, 'detail_panel'):
-            self.detail_panel.set_current_field(
-                next_field,
-                page_image=current_pil_image,
-                page_bbox=self.page_bbox,
-                page_fields=self.page_fields,
-                field_values=self.field_values,
-                field_comments=self.page_comments,
-            )
+        self._refresh_detail_panel(next_field)
         self._set_current_field(next_field)
 
         # Show IndexTextDialog under the next TextField
@@ -1847,15 +1819,7 @@ class Indexer(QMainWindow):
         if not field_to_show:
             return
         self._index_text_dialog.hide()
-        current_pil_image = self._get_page_image(self.current_page_index)
-        self.detail_panel.set_current_field(
-            field_to_show,
-            page_image=current_pil_image,
-            page_bbox=self.page_bbox,
-            page_fields=self.page_fields,
-            field_values=self.field_values,
-            field_comments=self.page_comments,
-        )
+        self._refresh_detail_panel(field_to_show)
         self._set_current_field(field_to_show)
 
     # ------------------------------------------------------------------
@@ -1908,15 +1872,7 @@ class Indexer(QMainWindow):
 
         # Refresh detail panel table to update red backgrounds
         if hasattr(self, "detail_panel") and self.current_page_images:
-            current_pil_image = self._get_page_image(self.current_page_index)
-            self.detail_panel.set_current_field(
-                self.current_field,
-                page_image=current_pil_image,
-                page_bbox=self.page_bbox,
-                page_fields=self.page_fields,
-                field_values=self.field_values,
-                field_comments=self.page_comments,
-            )
+            self._refresh_detail_panel(self.current_field)
 
     def _on_review_document_comments_requested(self) -> None:
         """Handle QC > Review document comments: show only comments for the current document."""
@@ -2133,15 +2089,7 @@ class Indexer(QMainWindow):
             None,
         )
         if field_to_show and hasattr(self, "detail_panel") and self.current_page_images:
-            current_pil_image = self._get_page_image(self.current_page_index)
-            self.detail_panel.set_current_field(
-                field_to_show,
-                page_image=current_pil_image,
-                page_bbox=self.page_bbox,
-                page_fields=self.page_fields,
-                field_values=self.field_values,
-                field_comments=self.page_comments,
-            )
+            self._refresh_detail_panel(field_to_show)
             self._set_current_field(field_to_show)
 
         # Get field value
@@ -2515,15 +2463,7 @@ class Indexer(QMainWindow):
 
         field_to_show = next((f for f in self.page_fields if f.name == field_name), None)
         if field_to_show and hasattr(self, "detail_panel") and self.current_page_images:
-            current_pil_image = self._get_page_image(self.current_page_index)
-            self.detail_panel.set_current_field(
-                field_to_show,
-                page_image=current_pil_image,
-                page_bbox=self.page_bbox,
-                page_fields=self.page_fields,
-                field_values=self.field_values,
-                field_comments=self.page_comments,
-            )
+            self._refresh_detail_panel(field_to_show)
             self._set_current_field(field_to_show)
 
     def _show_current_qc_special_field(self) -> None:
@@ -2553,15 +2493,7 @@ class Indexer(QMainWindow):
 
         field_to_show = next((f for f in self.page_fields if f.name == field_name), None)
         if field_to_show and hasattr(self, "detail_panel") and self.current_page_images:
-            current_pil_image = self._get_page_image(self.current_page_index)
-            self.detail_panel.set_current_field(
-                field_to_show,
-                page_image=current_pil_image,
-                page_bbox=self.page_bbox,
-                page_fields=self.page_fields,
-                field_values=self.field_values,
-                field_comments=self.page_comments,
-            )
+            self._refresh_detail_panel(field_to_show)
             self._set_current_field(field_to_show)
 
         self._qc_special_fields_dialog.set_content(
@@ -2713,8 +2645,11 @@ class Indexer(QMainWindow):
             QMessageBox.warning(self, "OCR", "No page is currently loaded.")
             return
 
-        # Use the current page image at original resolution
-        pil_image = self._get_page_image(self.current_page_index)
+        # Field coords are in prepared-canvas pixels (print_crop paste + fiducial).
+        pil_image = self.prepared_page_image
+        if pil_image is None:
+            QMessageBox.warning(self, "OCR", "No page is currently loaded.")
+            return
 
         # Convert to QPixmap (same as display_current_page)
         img_array = np.array(pil_image)
@@ -2790,7 +2725,10 @@ class Indexer(QMainWindow):
         if self.current_document_index < 0:
             return
 
-        pil_image = self._get_page_image(self.current_page_index)
+        pil_image = self.prepared_page_image
+        if pil_image is None:
+            QMessageBox.warning(self, "OCR", "No page is currently loaded.")
+            return
         logo_tl = self.page_bbox[0] if self.page_bbox else (0, 0)
 
         worker = PageOcrWorker(

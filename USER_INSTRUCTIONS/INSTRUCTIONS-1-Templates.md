@@ -153,7 +153,7 @@ Example (adjust paths and field names for your job):
 | `lookup_prime_index` | Zero-based key column in `lookup_list` (default `0`). |
 | `pages_without_fiducial` | Zero-based page indices with no fiducial search. |
 | `all_uppercase` | When `true`, Indexer converts typed and OCR text to uppercase. Missing or `false` keeps the original case (Eircode fields stay uppercase). |
-| `print_crop` | Optional finished-page rectangle in **template pixels** (`x`, `y`, `width`, `height`), shared by every page. Set in Designer **Fiducials → Print crop**. When present, Indexer resizes each scan to that size and pastes it at `(x, y)` on a white canvas the size of the template page, then finds the fiducial. The Indexer centre panel shows the scan itself (no white canvas borders). Omit the key (or Clear in the Print crop window) if production scans include the same margins as the template. |
+| `print_crop` | Optional finished-page rectangle in **template pixels** (`x`, `y`, `width`, `height`), shared by every page. Set in Designer **Fiducials → Print crop**. When present, Indexer resizes each scan to that size and pastes it at `(x, y)` on a white canvas the size of the template page, then finds the fiducial. The Indexer centre panel and field close-up show the scan itself (no white canvas borders). Omit the key (or Clear in the Print crop window) if production scans include the same margins as the template. |
 | `rectangle_detection` | Optional Designer-only OpenCV rectangle detection tuning (saved when you use **Detect Rectangles**). |
 | `validations` | Optional project-level rules (see validation docs / Indexer behaviour). |
 

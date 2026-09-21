@@ -55,6 +55,22 @@ def closeup_crop_and_overlay(
     return crop_x1, crop_y1, crop_x2, crop_y2, box_x, box_y
 
 
+def closeup_abs_on_display(
+    field_x: float,
+    field_y: float,
+    logo_top_left: tuple[float, float] | None,
+    canvas_origin: tuple[int, int] = (0, 0),
+) -> tuple[float, float]:
+    """Map logo-relative field origin to displayed-scan pixels.
+
+    canvas_origin is print_crop (x, y) when the close-up image is the pasted
+    scan without template canvas margins; (0, 0) when the full canvas is shown.
+    """
+    ox, oy = canvas_origin if canvas_origin is not None else (0, 0)
+    lx, ly = logo_top_left if logo_top_left is not None else (0, 0)
+    return field_x + lx - ox, field_y + ly - oy
+
+
 def _add_thousands(s: str, sep: str = _THOUSANDS_SEP) -> str:
     """Add thousands separator. Preserves leading minus."""
     neg = s.startswith("-")
@@ -246,6 +262,7 @@ class IndexDetailPanel(QWidget):
         self.current_field = None
         self.current_page_image = None
         self.page_bbox = None
+        self.canvas_origin = (0, 0)
         self.page_fields = []
         self.field_values = {}
         # Mapping of field_name -> comment string for the current page
@@ -329,7 +346,8 @@ class IndexDetailPanel(QWidget):
             self.value_text_edit.setStyleSheet("")
     
     def set_current_field(self, field: Field | None, page_image: Image.Image | None = None,
-                          page_bbox=None, page_fields=None, field_values=None, field_comments=None):
+                          page_bbox=None, page_fields=None, field_values=None, field_comments=None,
+                          canvas_origin=None):
         """
         Update the panel to show details for the current field.
         
@@ -339,6 +357,7 @@ class IndexDetailPanel(QWidget):
             page_bbox: Logo bounding box tuple (top_left, bottom_right) or None
             page_fields: List of all Field objects on the current page
             field_values: Dictionary mapping field names to their values
+            canvas_origin: Top-left of the displayed scan in prepared-canvas pixels
         """
         self.current_field = field
         if page_image is not None:
@@ -351,6 +370,10 @@ class IndexDetailPanel(QWidget):
             self.field_values = field_values
         if field_comments is not None:
             self.field_comments = field_comments
+        if canvas_origin is not None:
+            self.canvas_origin = canvas_origin
+        if page_image is None and field is None and canvas_origin is None:
+            self.canvas_origin = (0, 0)
         
         self._update_display()
         
@@ -433,13 +456,10 @@ class IndexDetailPanel(QWidget):
             # Get field coordinates
             field = self.current_field
             
-            # Convert to absolute coordinates if bbox exists
-            abs_x = field.x
-            abs_y = field.y
-            if self.page_bbox:
-                logo_top_left = self.page_bbox[0]
-                abs_x += logo_top_left[0]
-                abs_y += logo_top_left[1]
+            logo_top_left = self.page_bbox[0] if self.page_bbox else None
+            abs_x, abs_y = closeup_abs_on_display(
+                field.x, field.y, logo_top_left, self.canvas_origin
+            )
             
             img_array = np.array(self.current_page_image)
             height, width = img_array.shape[:2]

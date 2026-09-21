@@ -1,6 +1,10 @@
 """Indexer close-up crop/overlay geometry (no widget smoke)."""
 
-from ui.index_details_panel import CLOSEUP_PADDING, closeup_crop_and_overlay
+from ui.index_details_panel import (
+    CLOSEUP_PADDING,
+    closeup_abs_on_display,
+    closeup_crop_and_overlay,
+)
 
 
 def _pads(crop_x1, crop_y1, crop_x2, crop_y2, box_x, box_y, field_w, field_h):
@@ -76,3 +80,20 @@ def test_near_right_edge_shrinks_right_padding_only():
     assert left == CLOSEUP_PADDING
     assert right == image_w - abs_x - field_w
     assert box_x == CLOSEUP_PADDING
+
+
+def test_closeup_abs_subtracts_print_crop_origin():
+    abs_x, abs_y = closeup_abs_on_display(
+        field_x=100,
+        field_y=40,
+        logo_top_left=(50, 30),
+        canvas_origin=(20, 10),
+    )
+    assert (abs_x, abs_y) == (130, 60)
+
+
+def test_closeup_abs_without_origin_is_logo_relative():
+    abs_x, abs_y = closeup_abs_on_display(10, 20, (5, 6), (0, 0))
+    assert (abs_x, abs_y) == (15, 26)
+    abs_x, abs_y = closeup_abs_on_display(10, 20, None)
+    assert (abs_x, abs_y) == (10, 20)
