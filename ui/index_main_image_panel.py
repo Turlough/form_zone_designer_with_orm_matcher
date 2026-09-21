@@ -1,3 +1,5 @@
+import logging
+
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtCore import Qt, QRect
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QFont, QFontMetrics
@@ -9,7 +11,8 @@ from .index_details_panel import _format_number_for_display
 
 TICK_CHAR = "\u2713"  # ✓
 CROSS_CHAR = "\u2717"  # ✗
-import logging
+# Extra centre-pane width so Show Value overlays beside edge fields stay visible.
+PAGE_FIT_RIGHT_PADDING_RATIO = 0.10
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +27,15 @@ def page_fit_panel_width(
     """Width of the centre page pane so the page fits without upscaling.
 
     Matches MainImageIndexPanel scaling: scale = min(width_ratio, height_ratio, 1.0).
-    min_trailing_width is reserved for the detail panel so a large page cannot
-    consume the whole row.
+    Adds PAGE_FIT_RIGHT_PADDING_RATIO of the fitted page width on the right so
+    field-value overlays are not clipped. min_trailing_width is reserved for
+    the detail panel so a large page cannot consume the whole row.
     """
     if page_width <= 0 or page_height <= 0 or available_height <= 0:
         return 0
     scale = min(1.0, available_height / float(page_height))
-    needed = int(round(page_width * scale))
+    fitted = page_width * scale
+    needed = int(round(fitted * (1.0 + PAGE_FIT_RIGHT_PADDING_RATIO)))
     max_center = max(0, available_width - max(0, min_trailing_width))
     return max(0, min(needed, max_center))
 
@@ -54,7 +59,7 @@ class MainImageIndexPanel(QLabel):
         # and clicks stay in canvas/fiducial space; display subtracts this origin.
         self.canvas_origin = (0, 0)
         
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.setStyleSheet("QLabel { background-color: #2b2b2b; }")
         self.setMinimumSize(400, 400)
 
@@ -349,8 +354,8 @@ class MainImageIndexPanel(QLabel):
             Qt.TransformationMode.SmoothTransformation
         )
         
-        # Center the image
-        self.image_offset_x = (widget_width - scaled_width) // 2
+        # Left-align so extra page-fit width stays on the right for value overlays.
+        self.image_offset_x = 0
         self.image_offset_y = (widget_height - scaled_height) // 2
         
         # Create display pixmap with overlays

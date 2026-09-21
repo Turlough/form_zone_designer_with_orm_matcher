@@ -1076,7 +1076,8 @@ class Indexer(QMainWindow):
         self._syncing_column_widths = True
         try:
             # Document list keeps a stable preferred width; do not freeze the
-            # pre-maximize size. Centre is page-fit; right takes the remainder.
+            # pre-maximize size. Centre is page-fit plus 10% right pad; right
+            # takes the remainder.
             left_w = max(_MIN_LEFT_PANEL_WIDTH, self._left_column.sizeHint().width())
             left_w = min(left_w, max(_MIN_LEFT_PANEL_WIDTH, usable // 5))
 
