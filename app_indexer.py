@@ -708,6 +708,7 @@ class Indexer(QMainWindow):
         # Image display
         self._image_scroll_area = QScrollArea()
         self._image_scroll_area.setWidgetResizable(True)
+        self._image_scroll_area.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._image_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._image_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
@@ -718,6 +719,7 @@ class Indexer(QMainWindow):
         self.image_label.show_field_values = self.show_value_check.isChecked()
         self.image_label.on_field_click = self.on_field_click
         self._image_scroll_area.setWidget(self.image_label)
+        self._image_scroll_area.viewport().setFocusPolicy(Qt.FocusPolicy.NoFocus)
         
         center_panel.addWidget(self._image_scroll_area)
         
@@ -1773,6 +1775,7 @@ class Indexer(QMainWindow):
 
             if hasattr(self, 'detail_panel') and self.current_page_images:
                 self._refresh_detail_panel(field)
+            self._focus_detail_value_editor()
 
             logger.info(f"TextField '{field.name}' clicked, value='{self.field_values.get(field.name, '')}'")
     
@@ -1882,6 +1885,18 @@ class Indexer(QMainWindow):
             current_value = self.field_values.get(next_field.name, "")
             self._index_text_dialog.set_field(next_field.name or "TextField", current_value, field=next_field)
             self._index_text_dialog.show_under_rect(global_bottom_left, rect.width())
+        self._focus_detail_value_editor()
+
+    def _focus_detail_value_editor(self) -> None:
+        """After a text field is opened, put the caret in the close-up value box.
+
+        Deferred so the mouse click that opened the field cannot leave focus
+        on the page image or the floating text dialog.
+        """
+        panel = getattr(self, "detail_panel", None)
+        if panel is None:
+            return
+        QTimer.singleShot(0, panel.focus_value_editor)
 
     def on_detail_panel_edit_completed(self, field_name: str):
         """User pressed Enter in the detail panel for this field."""

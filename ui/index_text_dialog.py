@@ -27,6 +27,9 @@ class IndexTextDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        # Stay visible under the field without taking keyboard focus from the
+        # value box under the close-up.
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self._field_name = ""
         self._field = None
         self.all_uppercase = False
@@ -98,5 +101,4 @@ class IndexTextDialog(QDialog):
         # so dialog appears directly below the field
         self.move(global_bottom_left)
         self.show()
-        self._line_edit.setFocus(Qt.FocusReason.OtherFocusReason)
-        self._line_edit.selectAll()
+        self.raise_()

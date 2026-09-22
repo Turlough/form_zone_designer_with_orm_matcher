@@ -65,6 +65,8 @@ class MainImageIndexPanel(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.setStyleSheet("QLabel { background-color: #2b2b2b; }")
         self.setMinimumSize(400, 400)
+        # Clicks select fields; keyboard focus belongs in the close-up value box.
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         # Whether to show field values to the right of each field (controlled by Show Value toggle)
         self.show_field_values = True

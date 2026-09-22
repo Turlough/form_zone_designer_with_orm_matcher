@@ -21,6 +21,10 @@ Columns: `Datetime`, `User`, `Event`, `Previous location`, `New location` (tab-s
 
 The Exporter reads finished batches from `_complete`.
 
+## Text fields
+
+Click a text field on the page (plain text, number, date, and the other text types). The cursor goes to the value box under the close-up on the right, with the current value selected, so you can type immediately. A small box also appears under the field on the page and stays in step with that value. Press Enter to move to the next text field on the page.
+
 ## Page → Drag fields
 
 If a fiducial is missed, field outlines sit in the wrong place on the scan. **Page → Drag fields** opens a maximised window with that page centred on screen:

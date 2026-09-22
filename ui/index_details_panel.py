@@ -433,6 +433,25 @@ class IndexDetailPanel(QWidget):
         # Update fields table
         self._update_fields_table()
 
+    def focus_value_editor(self) -> None:
+        """Place the caret in the value box under the close-up so typing can start."""
+        edit = self.value_text_edit
+        if not edit.isEnabled():
+            return
+        window = self.window()
+        if window is not None and not window.isActiveWindow():
+            window.activateWindow()
+            QTimer.singleShot(0, self._focus_value_editor_now)
+            return
+        self._focus_value_editor_now()
+
+    def _focus_value_editor_now(self) -> None:
+        edit = self.value_text_edit
+        if not edit.isEnabled():
+            return
+        edit.setFocus(Qt.FocusReason.OtherFocusReason)
+        edit.selectAll()
+
     def _on_field_row_clicked(self, row: int, column: int):
         """Handle single-clicks on the fields table to activate the field."""
         if row < 0 or row >= len(self.page_fields):
