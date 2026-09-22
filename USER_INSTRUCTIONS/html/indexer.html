@@ -58,6 +58,15 @@
 <p>Columns: <code>Datetime</code>, <code>User</code>, <code>Event</code>, <code>Previous location</code>, <code>New location</code> (tab-separated). Reopening a batch already in <code>_in_progress</code> (resume or session restore) does not move it and does not add a log line.</p>
 <p><strong>Log → View log</strong> shows that table for the open batch. Close the dialog when finished. If no batch is open, Indexer asks you to open one first.</p>
 <p>The Exporter reads finished batches from <code>_complete</code>.</p>
+<h2>Page → Drag fields</h2>
+<p>If a fiducial is missed, field outlines sit in the wrong place on the scan. <strong>Page → Drag fields</strong> opens a maximised window with that page centred on screen:</p>
+<ul>
+<li>Yellow outlines show each field. A blue box encloses all of them.</li>
+<li>Drag inside the box to move every field together.</li>
+<li>Drag an edge to stretch in that direction only.</li>
+<li>Drag a corner to resize while keeping the box’s shape.</li>
+</ul>
+<p><strong>Apply</strong> uses that placement for overlays, clicks, the close-up, and OCR until you leave the page. <strong>Cancel</strong> leaves the page as it was. The placement is not saved. Open the page again and the fields are back on the fiducial, or on their original positions if no fiducial was found.</p>
     </article>
   </main>
 </body>

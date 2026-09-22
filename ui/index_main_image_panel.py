@@ -6,6 +6,7 @@ from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QMouseEvent, QFont, QFo
 
 from fields import Field, RadioGroup, Tickbox, TextField, IntegerField, DecimalField
 from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP, get_field_display_color, INVALID_COLOUR
+from util.field_group_align import placed_rect
 from .index_details_panel import _format_number_for_display
 
 
@@ -58,6 +59,8 @@ class MainImageIndexPanel(QLabel):
         # Prepared-canvas origin of the displayed crop (print_crop x, y). Overlays
         # and clicks stay in canvas/fiducial space; display subtracts this origin.
         self.canvas_origin = (0, 0)
+        # Page-visit group move/scale (Page → Drag fields). None keeps logo placement.
+        self.field_align = None
         
         self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.setStyleSheet("QLabel { background-color: #2b2b2b; }")
@@ -78,6 +81,11 @@ class MainImageIndexPanel(QLabel):
             int(width * self.scale_x),
             int(height * self.scale_y),
         )
+
+    def _placed(self, x: float, y: float, w: float, h: float):
+        """Canvas rect after logo offset and any page-visit group align."""
+        logo = self.bbox[0] if self.bbox else (0, 0)
+        return placed_rect(x, y, w, h, logo, self.field_align)
 
     def _get_field_color(self, field: Field) -> QColor:
         return get_field_display_color(field)
@@ -216,10 +224,7 @@ class MainImageIndexPanel(QLabel):
             display_text,
         )
 
-    def _compute_value_placements(
-        self,
-        logo_offset: tuple[int, int],
-    ) -> dict:
+    def _compute_value_placements(self) -> dict:
         """
         Compute min_x for each field that will show a value, so values in the same
         horizontal band (overlapping y range) don't overlap. Values start at the
@@ -245,10 +250,9 @@ class MainImageIndexPanel(QLabel):
         # Build bands from ALL fields (overlapping y ranges)
         all_entries: list[tuple] = []
         for field in self.field_data:
-            abs_x = field.x + logo_offset[0]
-            abs_y = field.y + logo_offset[1]
-            abs_w = field.width
-            abs_h = field.height
+            abs_x, abs_y, abs_w, abs_h = self._placed(
+                field.x, field.y, field.width, field.height
+            )
             scaled_rect = self._canvas_rect_on_widget(abs_x, abs_y, abs_w, abs_h)
             all_entries.append((field, abs_x, abs_y, abs_h, scaled_rect))
 
@@ -310,17 +314,20 @@ class MainImageIndexPanel(QLabel):
         field_values=None,
         field_comments=None,
         canvas_origin=(0, 0),
+        field_align=None,
     ):
         """Set the image, bounding box, fields, and field values/comments to display.
 
         canvas_origin is the top-left of the displayed crop in prepared-canvas
         pixels (print_crop x, y). Use (0, 0) when the full canvas is shown.
+        field_align is the page-visit group move/scale, or None.
         """
         self.base_pixmap = pixmap
         self.bbox = bbox
         self.field_data = field_data or []
         self.field_values = field_values or {}
         self.field_comments = field_comments or {}
+        self.field_align = field_align
         self.canvas_origin = canvas_origin if canvas_origin is not None else (0, 0)
         if pixmap is None:
             self.canvas_origin = (0, 0)
@@ -379,8 +386,7 @@ class MainImageIndexPanel(QLabel):
             painter.drawRect(scaled_rect)
         
         # Draw fields
-        logo_offset = self.bbox[0] if self.bbox else (0, 0)
-        value_placements = self._compute_value_placements(logo_offset)
+        value_placements = self._compute_value_placements()
 
         for field in self.field_data:
             if isinstance(field, RadioGroup):
@@ -391,13 +397,11 @@ class MainImageIndexPanel(QLabel):
 
                 pen = QPen(color, 1)
                 painter.setPen(pen)
-                
-                abs_x = field.x + logo_offset[0]
-                abs_y = field.y + logo_offset[1]
-                
-                scaled_rect = self._canvas_rect_on_widget(
-                    abs_x, abs_y, field.width, field.height
+
+                abs_x, abs_y, abs_w, abs_h = self._placed(
+                    field.x, field.y, field.width, field.height
                 )
+                scaled_rect = self._canvas_rect_on_widget(abs_x, abs_y, abs_w, abs_h)
                 painter.drawRect(scaled_rect)
 
                 has_comment = bool(self.field_comments.get(field.name, "").strip())
@@ -409,11 +413,11 @@ class MainImageIndexPanel(QLabel):
                 selected_rb_name = self.field_values.get(field.name, None)
                 
                 for rb in field.radio_buttons:
-                    rb_abs_x = rb.x + logo_offset[0]
-                    rb_abs_y = rb.y + logo_offset[1]
-                    
+                    rb_abs_x, rb_abs_y, rb_w, rb_h = self._placed(
+                        rb.x, rb.y, rb.width, rb.height
+                    )
                     rb_scaled_rect = self._canvas_rect_on_widget(
-                        rb_abs_x, rb_abs_y, rb.width, rb.height
+                        rb_abs_x, rb_abs_y, rb_w, rb_h
                     )
                     
                     # Use thicker border if selected
@@ -456,13 +460,11 @@ class MainImageIndexPanel(QLabel):
                 
                 pen = QPen(color, border_width)
                 painter.setPen(pen)
-                
-                abs_x = field.x + logo_offset[0]
-                abs_y = field.y + logo_offset[1]
-                
-                scaled_rect = self._canvas_rect_on_widget(
-                    abs_x, abs_y, field.width, field.height
+
+                abs_x, abs_y, abs_w, abs_h = self._placed(
+                    field.x, field.y, field.width, field.height
                 )
+                scaled_rect = self._canvas_rect_on_widget(abs_x, abs_y, abs_w, abs_h)
                 painter.drawRect(scaled_rect)
                 
                 # Fill tickbox if checked
@@ -517,26 +519,24 @@ class MainImageIndexPanel(QLabel):
         click_x = (event.pos().x() - self.image_offset_x) / self.scale_x + ox
         click_y = (event.pos().y() - self.image_offset_y) / self.scale_y + oy
         
-        logo_offset = self.bbox[0] if self.bbox else (0, 0)
-        
         # Check which field was clicked
         for field in self.field_data:
             if isinstance(field, RadioGroup):
                 # Check individual radio buttons
                 for rb in field.radio_buttons:
-                    rb_abs_x = rb.x + logo_offset[0]
-                    rb_abs_y = rb.y + logo_offset[1]
-                    
-                    if (rb_abs_x <= click_x <= rb_abs_x + rb.width and
-                        rb_abs_y <= click_y <= rb_abs_y + rb.height):
+                    rb_abs_x, rb_abs_y, rb_w, rb_h = self._placed(
+                        rb.x, rb.y, rb.width, rb.height
+                    )
+                    if (rb_abs_x <= click_x <= rb_abs_x + rb_w and
+                        rb_abs_y <= click_y <= rb_abs_y + rb_h):
                         self.on_field_click(field, rb)
                         return
             else:
-                abs_x = field.x + logo_offset[0]
-                abs_y = field.y + logo_offset[1]
-                
-                if (abs_x <= click_x <= abs_x + field.width and
-                    abs_y <= click_y <= abs_y + field.height):
+                abs_x, abs_y, abs_w, abs_h = self._placed(
+                    field.x, field.y, field.width, field.height
+                )
+                if (abs_x <= click_x <= abs_x + abs_w and
+                    abs_y <= click_y <= abs_y + abs_h):
                     self.on_field_click(field, None)
                     return
 
@@ -548,8 +548,8 @@ class MainImageIndexPanel(QLabel):
         """
         if not self.base_pixmap or not self.field_data:
             return None
-        logo_offset = self.bbox[0] if self.bbox else (0, 0)
-        abs_x = field.x + logo_offset[0]
-        abs_y = field.y + logo_offset[1]
-        return self._canvas_rect_on_widget(abs_x, abs_y, field.width, field.height)
+        abs_x, abs_y, abs_w, abs_h = self._placed(
+            field.x, field.y, field.width, field.height
+        )
+        return self._canvas_rect_on_widget(abs_x, abs_y, abs_w, abs_h)
 

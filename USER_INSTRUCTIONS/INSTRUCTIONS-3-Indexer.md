@@ -20,3 +20,14 @@ Columns: `Datetime`, `User`, `Event`, `Previous location`, `New location` (tab-s
 **Log → View log** shows that table for the open batch. Close the dialog when finished. If no batch is open, Indexer asks you to open one first.
 
 The Exporter reads finished batches from `_complete`.
+
+## Page → Drag fields
+
+If a fiducial is missed, field outlines sit in the wrong place on the scan. **Page → Drag fields** opens a maximised window with that page centred on screen:
+
+- Yellow outlines show each field. A blue box encloses all of them.
+- Drag inside the box to move every field together.
+- Drag an edge to stretch in that direction only.
+- Drag a corner to resize while keeping the box’s shape.
+
+**Apply** uses that placement for overlays, clicks, the close-up, and OCR until you leave the page. **Cancel** leaves the page as it was. The placement is not saved. Open the page again and the fields are back on the fiducial, or on their original positions if no fiducial was found.

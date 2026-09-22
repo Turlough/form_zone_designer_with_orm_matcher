@@ -19,10 +19,12 @@ import numpy as np
 from datetime import datetime
 from fields import Field, Tickbox, RadioGroup, TextField, DateField, IntegerField, DecimalField, IrishMobileField, EircodeField
 from field_factory import FIELD_TYPE_MAP as FACTORY_FIELD_TYPE_MAP, get_field_display_color, INVALID_COLOUR
+from util.field_group_align import placed_rect
 import logging
 
 logger = logging.getLogger(__name__)
 
+_UNSET = object()
 
 _THOUSANDS_SEP = "\u202f"  # Narrow no-break space
 CLOSEUP_PADDING = 20
@@ -263,6 +265,7 @@ class IndexDetailPanel(QWidget):
         self.current_page_image = None
         self.page_bbox = None
         self.canvas_origin = (0, 0)
+        self.field_align = None
         self.page_fields = []
         self.field_values = {}
         # Mapping of field_name -> comment string for the current page
@@ -347,7 +350,7 @@ class IndexDetailPanel(QWidget):
     
     def set_current_field(self, field: Field | None, page_image: Image.Image | None = None,
                           page_bbox=None, page_fields=None, field_values=None, field_comments=None,
-                          canvas_origin=None):
+                          canvas_origin=None, field_align=_UNSET):
         """
         Update the panel to show details for the current field.
         
@@ -358,6 +361,7 @@ class IndexDetailPanel(QWidget):
             page_fields: List of all Field objects on the current page
             field_values: Dictionary mapping field names to their values
             canvas_origin: Top-left of the displayed scan in prepared-canvas pixels
+            field_align: Page-visit group move/scale, or omit to leave the current one
         """
         self.current_field = field
         if page_image is not None:
@@ -372,6 +376,8 @@ class IndexDetailPanel(QWidget):
             self.field_comments = field_comments
         if canvas_origin is not None:
             self.canvas_origin = canvas_origin
+        if field_align is not _UNSET:
+            self.field_align = field_align
         if page_image is None and field is None and canvas_origin is None:
             self.canvas_origin = (0, 0)
         
@@ -456,15 +462,16 @@ class IndexDetailPanel(QWidget):
             # Get field coordinates
             field = self.current_field
             
-            logo_top_left = self.page_bbox[0] if self.page_bbox else None
-            abs_x, abs_y = closeup_abs_on_display(
-                field.x, field.y, logo_top_left, self.canvas_origin
+            logo = self.page_bbox[0] if self.page_bbox else (0, 0)
+            px, py, pw, ph = placed_rect(
+                field.x, field.y, field.width, field.height, logo, self.field_align
             )
+            abs_x, abs_y = closeup_abs_on_display(px, py, None, self.canvas_origin)
             
             img_array = np.array(self.current_page_image)
             height, width = img_array.shape[:2]
             crop_x1, crop_y1, crop_x2, crop_y2, box_x, box_y = closeup_crop_and_overlay(
-                abs_x, abs_y, field.width, field.height, width, height
+                abs_x, abs_y, pw, ph, width, height
             )
 
             # Extract the region and make a contiguous copy for QImage
@@ -491,7 +498,7 @@ class IndexDetailPanel(QWidget):
             color = self._get_field_color(field)
             painter = QPainter(pixmap)
             painter.setPen(QPen(color, 2))
-            painter.drawRect(box_x, box_y, field.width, field.height)
+            painter.drawRect(box_x, box_y, int(round(pw)), int(round(ph)))
             painter.end()
             
             # Get the available size of the label (fixed height, variable width)

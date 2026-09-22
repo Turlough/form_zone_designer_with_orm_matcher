@@ -22,6 +22,7 @@ Automated checks for validation and other testable project logic.
 - Indexer working CSV: `test_csv_manager.py` (`field.name` headers, JSON page gaps, rewrite of title-headed files)
 - Indexer OCR feature flag: `test_indexing_assistant_config.py` (`INDEXING_ASSISTANT_ENABLED` defaults and truthy parsing)
 - Indexer close-up crop/overlay: `test_index_closeup.py` (`closeup_crop_and_overlay` equal padding; edge clamping; `closeup_abs_on_display` subtracts print_crop origin)
+- Indexer drag-fields geometry: `test_field_group_align.py` (group union, edge scale, corner aspect lock, `placed_rect` with frozen logo)
 - Indexer centre-panel page fit: `test_index_page_layout.py` (`page_fit_panel_width`, including 10% right padding)
 - Indexer comments dialog placement: `test_index_comment_dialog.py` (`pos_left_of_rect`, `clamp_window_to_available`, `capped_dialog_height`)
 - Designer Help HTML paths: `test_user_instructions_html.py` (`user_instructions_html_path`, including frozen `_MEIPASS`)

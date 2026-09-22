@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import QMenuBar, QMenu, QMessageBox
 
 
 class IndexMenuBar(QMenuBar):
-    """Menu bar with Project, Batch, Log, and QC menus."""
+    """Menu bar with Project, Batch, Page, Log, and QC menus."""
 
     project_selected = pyqtSignal(str)  # Emits the selected project config folder path
     batch_import_selected = pyqtSignal(str)  # Emits full path to selected batch import file
@@ -23,6 +23,7 @@ class IndexMenuBar(QMenuBar):
     validate_document_requested = pyqtSignal()  # User chose QC > Validate document
     validate_batch_requested = pyqtSignal()  # User chose QC > Validate batch
     view_log_requested = pyqtSignal()  # User chose Log > View log
+    drag_fields_requested = pyqtSignal()  # User chose Page > Drag fields
 
     # Special batch folder names (used for "Other batch" submenu and filtering)
     _OTHER_BATCH_FOLDERS = COORDINATION_FOLDERS
@@ -34,6 +35,7 @@ class IndexMenuBar(QMenuBar):
         self._batch_source_folder: str | None = None  # None = main folder; else _in_progress/_complete/_qc
         self._init_project_menu()
         self._init_batch_menu()
+        self._init_page_menu()
         self._init_log_menu()
         self._init_qc_menu()
 
@@ -250,6 +252,17 @@ class IndexMenuBar(QMenuBar):
     def set_current_project_path(self, path: str | None) -> None:
         """Set the current project path (e.g. when restoring from session)."""
         self._current_project_path = path
+
+    def _init_page_menu(self) -> None:
+        """Build Page menu."""
+        page_menu = QMenu("Page", self)
+        self.addMenu(page_menu)
+        action = page_menu.addAction("Drag fields")
+        action.setStatusTip(
+            "Move and scale this page's fields to match the scan. "
+            "Cleared when you leave the page."
+        )
+        action.triggered.connect(self.drag_fields_requested.emit)
 
     def _init_log_menu(self) -> None:
         """Build Log menu."""

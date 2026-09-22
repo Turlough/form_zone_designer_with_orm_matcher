@@ -51,8 +51,17 @@ from ui.index_comment_dialog import IndexCommentDialog
 from ui.index_menu_bar import IndexMenuBar
 from ui.index_ocr_dialog import IndexOcrDialog
 from ui.index_batch_log_dialog import IndexBatchLogDialog
+from ui.index_drag_fields_window import IndexDragFieldsWindow
 from ui.qc_comment_dialog import QcCommentDialog, QcSpecialFieldReviewDialog
 from ui.qc_text_review_window import QcTextReviewWindow
+from util.field_group_align import (
+    FieldGroupAlign,
+    group_bounds,
+    iter_outline_rects,
+    placed_rect,
+    same_bounds,
+    translate_bounds,
+)
 from util.gemini_ocr_client import ocr_image_region
 from util.indexing_assistant_config import indexing_assistant_enabled
 from util.batch_log import EVENT_COMPLETE_BATCH, current_user, log_batch_move, read_batch_log
@@ -255,6 +264,7 @@ class PageOcrWorker(QObject):
         logo_tl: tuple[int, int],
         text_fields: list,
         all_uppercase: bool = False,
+        field_align: FieldGroupAlign | None = None,
     ):
         super().__init__()
         self.document_index = document_index
@@ -262,16 +272,15 @@ class PageOcrWorker(QObject):
         self.logo_tl = logo_tl
         self.text_fields = text_fields
         self.all_uppercase = all_uppercase
+        self.field_align = field_align
 
     def run(self) -> None:
         """Process each TextField concurrently and emit results as they complete."""
         def ocr_one(field) -> tuple[str, str]:
-            rect = (
-                field.x + self.logo_tl[0],
-                field.y + self.logo_tl[1],
-                field.width,
-                field.height,
+            x, y, w, h = placed_rect(
+                field.x, field.y, field.width, field.height, self.logo_tl, self.field_align
             )
+            rect = (int(round(x)), int(round(y)), max(1, int(round(w))), max(1, int(round(h))))
             try:
                 text = ocr_image_region(
                     self.pil_image, rect, all_uppercase=self.all_uppercase
@@ -466,6 +475,10 @@ class Indexer(QMainWindow):
         self.current_page_images: LazyDocumentPages | None = None
         self.page_fields = []  # Fields for current page
         self.page_bbox = None  # Logo bbox for current page
+        self._page_field_align: FieldGroupAlign | None = None
+        self._drag_fields_open = False
+        self._deferred_logo_bbox = None
+        self._deferred_logo_pending = False
         self.field_values = {}  # Dictionary mapping field names to values for current page
         # Mapping of field name -> QC comment string for the current page
         self.page_comments: dict[str, str] = {}
@@ -606,6 +619,10 @@ class Indexer(QMainWindow):
         self.prepared_page_image = None
         self.page_fields = []
         self.page_bbox = None
+        self._page_field_align = None
+        self._drag_fields_open = False
+        self._deferred_logo_bbox = None
+        self._deferred_logo_pending = False
         self.field_values = {}
         self.page_comments = {}
         self.current_field = None
@@ -640,6 +657,7 @@ class Indexer(QMainWindow):
         self._index_menu_bar.quick_review_special_fields_requested.connect(self._on_quick_review_special_fields_requested)
         self._index_menu_bar.review_text_and_numeric_fields_requested.connect(self._on_review_text_and_numeric_fields_requested)
         self._index_menu_bar.view_log_requested.connect(self._on_view_log_requested)
+        self._index_menu_bar.drag_fields_requested.connect(self._on_drag_fields_requested)
 
         self.setMenuBar(self._index_menu_bar)
 
@@ -1155,6 +1173,7 @@ class Indexer(QMainWindow):
             field_values=self.field_values,
             field_comments=self.page_comments,
             canvas_origin=origin,
+            field_align=self._page_field_align,
         )
 
     def load_document(self, document_path: str) -> None:
@@ -1205,6 +1224,11 @@ class Indexer(QMainWindow):
         
         if page_num >= len(self.current_page_images):
             return
+
+        # Drag-fields placement lasts only while this page stays on screen.
+        self._page_field_align = None
+        self._deferred_logo_bbox = None
+        self._deferred_logo_pending = False
         
         # Update page info
         self.page_info_label.setText(
@@ -1277,6 +1301,7 @@ class Indexer(QMainWindow):
             self.field_values,
             self.page_comments,
             canvas_origin=origin,
+            field_align=self._page_field_align,
         )
         if not self._page_columns_have_been_sized:
             QTimer.singleShot(0, self._sync_page_column_widths)
@@ -1354,6 +1379,16 @@ class Indexer(QMainWindow):
     ) -> None:
         if document_index != self.current_document_index or page_index != self.current_page_index:
             return
+        if self._drag_fields_open:
+            self._deferred_logo_bbox = bbox
+            self._deferred_logo_pending = True
+            return
+        if self._page_field_align is not None:
+            return
+        self._apply_detected_logo(bbox)
+
+    def _apply_detected_logo(self, bbox) -> None:
+        """Show a fiducial match on the current page."""
         self.page_bbox = bbox
         self.image_label.bbox = bbox
         self.image_label.update_display()
@@ -1361,6 +1396,84 @@ class Indexer(QMainWindow):
             self.detail_panel.page_bbox = bbox
             if self.detail_panel.current_field is not None:
                 self._refresh_detail_panel(self.detail_panel.current_field)
+
+    def _on_drag_fields_requested(self) -> None:
+        """Open the group-drag window for the current page. Not saved to JSON."""
+        if (
+            not self.current_page_images
+            or self.image_label.base_pixmap is None
+            or self.image_label.base_pixmap.isNull()
+        ):
+            QMessageBox.information(self, "Drag fields", "Open a page before dragging fields.")
+            return
+        if not self.page_fields:
+            QMessageBox.information(self, "Drag fields", "This page has no fields to move.")
+            return
+
+        align = self._page_field_align
+        logo = align.logo if align is not None else (
+            self.page_bbox[0] if self.page_bbox else (0, 0)
+        )
+        origin = self.image_label.canvas_origin or (0, 0)
+        ox, oy = origin
+        outlines = [
+            (x + logo[0] - ox, y + logo[1] - oy, w, h)
+            for x, y, w, h in iter_outline_rects(self.page_fields)
+        ]
+        source = group_bounds(outlines)
+        if source is None:
+            QMessageBox.information(self, "Drag fields", "This page has no fields to move.")
+            return
+        if align is None:
+            bounds = source
+        else:
+            bounds = translate_bounds(align.dest, -ox, -oy)
+
+        self._drag_fields_open = True
+        dialog = IndexDragFieldsWindow(
+            self,
+            self.image_label.base_pixmap.copy(),
+            outlines,
+            source,
+            bounds,
+        )
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        if accepted:
+            dest = translate_bounds(dialog.result_bounds(), ox, oy)
+            source_canvas = translate_bounds(source, ox, oy)
+            if same_bounds(source_canvas, dest):
+                self._page_field_align = None
+            else:
+                self._page_field_align = FieldGroupAlign(
+                    logo=(float(logo[0]), float(logo[1])),
+                    source=source_canvas,
+                    dest=dest,
+                )
+        self._drag_fields_open = False
+        pending = self._deferred_logo_pending
+        deferred_bbox = self._deferred_logo_bbox
+        self._deferred_logo_pending = False
+        self._deferred_logo_bbox = None
+        if not accepted:
+            if pending:
+                self._apply_detected_logo(deferred_bbox)
+            return
+
+        self.image_label.field_align = self._page_field_align
+        self.image_label.update_display()
+        if hasattr(self, "detail_panel"):
+            current = self.detail_panel.current_field
+            self._refresh_detail_panel(current)
+        self._reposition_open_text_dialog()
+
+    def _reposition_open_text_dialog(self) -> None:
+        dialog = self._index_text_dialog
+        if not dialog.isVisible() or not isinstance(self.current_field, TextField):
+            return
+        rect = self.image_label.get_field_rect_in_widget(self.current_field)
+        if rect is None:
+            return
+        dialog.show_under_rect(self.image_label.mapToGlobal(rect.bottomLeft()), rect.width())
     
     def detect_logo(self, pil_image, page_num: int = 0):
         """Detect logo in the image for the given template page index; return bounding box or None."""
@@ -2661,11 +2774,19 @@ class Indexer(QMainWindow):
 
         # Field coords in JSON are logo-relative; convert to page pixel coords for dialog and OCR
         logo_tl = self.page_bbox[0] if self.page_bbox else (0, 0)
-        field_rect_page = (
-            self.current_field.x + logo_tl[0],
-            self.current_field.y + logo_tl[1],
+        fx, fy, fw, fh = placed_rect(
+            self.current_field.x,
+            self.current_field.y,
             self.current_field.width,
             self.current_field.height,
+            logo_tl,
+            self._page_field_align,
+        )
+        field_rect_page = (
+            int(round(fx)),
+            int(round(fy)),
+            max(1, int(round(fw))),
+            max(1, int(round(fh))),
         )
         self._index_text_dialog.hide()
         dialog = IndexOcrDialog(self, pixmap, initial_rect=field_rect_page)
@@ -2738,6 +2859,7 @@ class Indexer(QMainWindow):
             logo_tl=logo_tl,
             text_fields=text_fields,
             all_uppercase=self._all_uppercase,
+            field_align=self._page_field_align,
         )
         thread = QThread(self)
         worker.moveToThread(thread)
