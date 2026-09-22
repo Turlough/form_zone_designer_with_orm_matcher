@@ -152,6 +152,84 @@ class TestValueExistsInLookup(unittest.TestCase):
         self.assertIn("not found", result[0][2])
 
 
+class TestSumShouldEqualTotal(unittest.TestCase):
+    def test_matching_sum_no_failure(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["sum_should_equal_total"]
+        ctx = _ctx(
+            field_values={"total": "10", "a": "4", "b": "6"},
+            field_names=["total", "a", "b"],
+            params={},
+            field_to_page={"total": 1, "a": 1, "b": 1},
+        )
+        self.assertEqual(fn(ctx), [])
+
+    def test_blank_total_and_blank_parts_no_failure(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["sum_should_equal_total"]
+        ctx = _ctx(
+            field_values={"total": "", "a": "", "b": None},
+            field_names=["total", "a", "b"],
+            params={},
+            field_to_page={"total": 1, "a": 1, "b": 2},
+        )
+        self.assertEqual(fn(ctx), [])
+
+    def test_blank_total_with_valued_parts_fails_on_total_page(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["sum_should_equal_total"]
+        ctx = _ctx(
+            field_values={"total": "  ", "a": "3", "b": "2"},
+            field_names=["total", "a", "b"],
+            params={},
+            field_to_page={"total": 1, "a": 2, "b": 3},
+        )
+        result = fn(ctx)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][0], 1)
+        self.assertEqual(result[0][1], "total")
+        self.assertIn("5.0", result[0][2])
+        self.assertIn("0.0", result[0][2])
+
+    def test_mismatch_fails_on_total(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["sum_should_equal_total"]
+        ctx = _ctx(
+            field_values={"total": "10", "a": "4", "b": "5"},
+            field_names=["total", "a", "b"],
+            params={},
+            field_to_page={"total": 2, "a": 1, "b": 1},
+        )
+        result = fn(ctx)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][0], 2)
+        self.assertEqual(result[0][1], "total")
+
+    def test_non_numeric_part_is_fault_and_does_not_hide_blank_total(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["sum_should_equal_total"]
+        ctx = _ctx(
+            field_values={"total": "", "a": "abc", "b": "4"},
+            field_names=["total", "a", "b"],
+            params={},
+            field_to_page={"total": 1, "a": 2, "b": 2},
+        )
+        result = fn(ctx)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0][1], "a")
+        self.assertIn("not a valid number", result[0][2])
+        self.assertEqual(result[1][1], "total")
+        self.assertIn("4.0", result[1][2])
+
+    def test_invalid_total_returns_only_total_fault(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["sum_should_equal_total"]
+        ctx = _ctx(
+            field_values={"total": "n/a", "a": "1"},
+            field_names=["total", "a"],
+            params={},
+            field_to_page={"total": 1, "a": 1},
+        )
+        result = fn(ctx)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][1], "total")
+        self.assertIn("not a valid number", result[0][2])
+
+
 class TestProjectValidationsRunner(unittest.TestCase):
     """Test ProjectValidations.run_validations logic."""
 

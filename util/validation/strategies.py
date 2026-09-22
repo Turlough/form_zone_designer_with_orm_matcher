@@ -217,39 +217,50 @@ def _strategy_value_exists_in_lookup(ctx: ValidationContext) -> list[tuple[int, 
     return []
 
 def _strategy_sum_should_equal_total(ctx: ValidationContext) -> list[tuple[int, str, str]]:
-    """Check that the sum of the fields is equal to the total."""
+    """Check that the sum of the later fields equals field_names[0].
+
+    A blank total is treated as 0.0, so a non-zero sum is a fault on the total
+    field. Non-numeric component values are faults and are left out of the sum.
+    """
     if not ctx.field_names:
         return []
+    pages = ctx.field_to_page or {}
     faults: list[tuple[int, str, str]] = []
 
     total_field = ctx.field_names[0]
     total_value = ctx.field_values.get(total_field)
+    total_page = pages.get(total_field, 1)
 
     if total_value is None or str(total_value).strip() == "":
-        return []
-
-    total_str = str(total_value).replace(",", "").strip()
-    total_str = "".join(c for c in total_str if c.isdigit() or c == ".")
-    try:
-        total = float(total_str)
-    except ValueError:
-        return [(ctx.field_to_page.get(total_field, 1), total_field, f"Total value '{total_value}' is not a valid number.")]
+        total = 0.0
+    else:
+        total_str = str(total_value).replace(",", "").strip()
+        total_str = "".join(c for c in total_str if c.isdigit() or c == ".")
+        try:
+            total = float(total_str)
+        except ValueError:
+            return [(total_page, total_field, f"Total value '{total_value}' is not a valid number.")]
 
     sum_of_fields = 0.0
     for field_name in ctx.field_names[1:]:
         value = ctx.field_values.get(field_name)
-        page = ctx.field_to_page.get(field_name, 1)
         if value is None or str(value).strip() == "":
             continue
+        page = pages.get(field_name, 1)
         value_str = str(value).replace(",", "").strip()
         try:
-            value = float(value_str)
+            sum_of_fields += float(value_str)
         except ValueError:
             faults.append((page, field_name, f"Value '{value}' is not a valid number."))
-        sum_of_fields += value
 
     if sum_of_fields != total:
-        faults.append((page, total_field, f"The sum of the fields is {sum_of_fields}, but the total is {total}."))
+        faults.append(
+            (
+                total_page,
+                total_field,
+                f"The sum of the fields is {sum_of_fields}, but the total is {total}.",
+            )
+        )
     return faults
 
 
