@@ -80,7 +80,7 @@ When a page needs a **different** patch than the default logo, add `logo-pN.png`
 - Cut a tight image from the **template** of a mark that **appears on every page** that uses a fiducial (logo, printed heading, fixed graphic). That mark may sit in **different positions on different pages**; the apps search each page separately and align fields to wherever it is found.
 - Use a region that is **unique** on the page (avoid generic lines or empty margins).
 - Prefer sharp, high-contrast artwork; avoid heavy JPEG compression on the fiducial file.
-- The patch should match what appears on **production scans** (same form revision). If Print crop matching finds the mark on some finished sheets but not others, use **Save detected fiducial** on a good page to replace the default file with the scanned patch (keep your own backup of the original).
+- The patch should match what appears on **production scans** (same form revision). If Print crop matching finds the mark on some finished sheets but not others, use **Save detected fiducial** on a good page to replace the default file with the scanned patch (keep your own backup of the original). If the green box lands on the wrong spot on every finished sheet, drag it onto the real mark in the Print crop window (field zones follow), then save.
 
 **In the apps**
 

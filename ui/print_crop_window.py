@@ -37,6 +37,13 @@ from util.fiducial_paths import (
     save_detected_fiducial,
 )
 from util.field_geometry_edit import hit_resize_handle
+from util.field_group_align import (
+    FieldGroupAlign,
+    drag_group_bounds,
+    hit_group_bounds,
+    placed_rect,
+    same_bounds,
+)
 from util.orm_matcher import ORMMatcher
 from util.print_crop import (
     PrintCrop,
@@ -44,6 +51,7 @@ from util.print_crop import (
     clamp_print_crop,
     crop_uv_to_canvas,
     default_print_crop,
+    fiducial_bbox_inside_crop,
     move_rect,
     prepare_scan_page,
     resize_rect_by_handle,
@@ -71,6 +79,8 @@ MARK_COLORS = (
     QColor(160, 80, 255),
     QColor(255, 90, 40),
 )
+FIDUCIAL_COLOR = QColor(0, 255, 0)
+FIDUCIAL_HIT_PX = 8
 
 
 def _pil_to_pixmap(image: Image.Image) -> QPixmap:
@@ -94,6 +104,17 @@ def _handle_points(rect: QRect) -> dict[str, tuple[int, int]]:
         "sw": (rect.x(), rect.y() + rect.height()),
         "w": (rect.x(), cy),
     }
+
+
+def _bbox_to_bounds(bbox) -> tuple[float, float, float, float]:
+    (x0, y0), (x1, y1) = bbox
+    return (float(x0), float(y0), float(x1 - x0), float(y1 - y0))
+
+
+def _bounds_to_bbox(bounds) -> tuple[tuple[int, int], tuple[int, int]]:
+    x, y, w, h = bounds
+    x0, y0 = int(round(x)), int(round(y))
+    return ((x0, y0), (x0 + max(1, int(round(w))), y0 + max(1, int(round(h)))))
 
 
 def _draw_registration_marks(
@@ -306,24 +327,61 @@ class PrintCropTemplateWidget(LinkedZoomPageWidget):
 
 
 class PrintCropPreviewWidget(LinkedZoomPageWidget):
-    """Prepared scan canvas with fiducial and field overlays."""
+    """Prepared scan canvas with a draggable fiducial box and the fields that follow it.
+
+    Dragging inside the green box moves it; an edge scales that axis; a corner
+    keeps its aspect ratio. Field outlines are mapped from the matched box to the
+    dragged box. Clicks outside the box place registration marks.
+    """
 
     point_clicked = pyqtSignal(int, int)
+    fiducial_adjusted = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.bbox = None
+        self.match_box = None
+        self.box = None
         self.field_list = []
         self.placeholder = "Load a cropped scan (File → Load cropped version)"
         self.preview_crop: Optional[PrintCrop] = None
         self.reg_marks: list[tuple[float, float]] = []
+        self._drag_mode: Optional[str] = None
+        self._press_pos: Optional[tuple[float, float]] = None
+        self._press_box = None
         self.setCursor(Qt.CursorShape.CrossCursor)
-        self.setToolTip("Click punctuation, corners, or other sharp marks to place registration points.")
+        self.setToolTip(
+            "Drag the green fiducial box onto the real mark (fields follow). "
+            "Edges scale one axis; corners keep the aspect ratio. "
+            "Click elsewhere to place registration points."
+        )
 
     def set_preview(self, pixmap: Optional[QPixmap], bbox=None, field_list=None) -> None:
-        self.bbox = bbox
+        self.match_box = _bbox_to_bounds(bbox) if bbox else None
+        self.box = self.match_box
         self.field_list = field_list or []
         self.set_base_pixmap(pixmap)
+
+    def is_adjusted(self) -> bool:
+        if self.box is None or self.match_box is None:
+            return False
+        return not same_bounds(self.box, self.match_box)
+
+    def current_bbox(self):
+        return _bounds_to_bbox(self.box) if self.box is not None else None
+
+    def _align(self) -> Optional[FieldGroupAlign]:
+        if self.box is None or self.match_box is None:
+            return None
+        return FieldGroupAlign(
+            logo=(self.match_box[0], self.match_box[1]),
+            source=self.match_box,
+            dest=self.box,
+        )
+
+    def _to_image_f(self, px: float, py: float) -> tuple[float, float]:
+        if self.scale <= 0:
+            return 0.0, 0.0
+        return px / self.scale, py / self.scale
 
     def update_display(self) -> None:
         if not self.base_pixmap:
@@ -339,48 +397,83 @@ class PrintCropPreviewWidget(LinkedZoomPageWidget):
             return
         disp = QPixmap(self._scaled_pixmap)
         painter = QPainter(disp)
-        if self.bbox:
-            top_left, bottom_right = self.bbox
-            sx = int(top_left[0] * self.scale)
-            sy = int(top_left[1] * self.scale)
-            bw = int((bottom_right[0] - top_left[0]) * self.scale)
-            bh = int((bottom_right[1] - top_left[1]) * self.scale)
-            painter.setPen(QPen(QColor(0, 255, 0), 2))
-            painter.drawRect(sx, sy, bw, bh)
-        logo = self.bbox[0] if self.bbox else (0, 0)
-        for field in expand_fields_for_display(self.field_list):
-            color = get_field_display_color(field)
-            abs_x = field.x + logo[0]
-            abs_y = field.y + logo[1]
-            painter.setPen(QPen(color, 2))
+        align = self._align()
+        s = self.scale
+
+        def draw(x, y, w, h, color, width):
+            rx, ry, rw, rh = placed_rect(x, y, w, h, (0, 0), align)
+            painter.setPen(QPen(color, width))
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(
-                int(abs_x * self.scale),
-                int(abs_y * self.scale),
-                int(field.width * self.scale),
-                int(field.height * self.scale),
-            )
+            painter.drawRect(int(rx * s), int(ry * s), int(rw * s), int(rh * s))
+
+        for field in expand_fields_for_display(self.field_list):
+            draw(field.x, field.y, field.width, field.height, get_field_display_color(field), 2)
             if isinstance(field, RadioGroup):
-                for radio_button in field.radio_buttons:
-                    rb_color = get_field_display_color(radio_button)
-                    painter.setPen(QPen(rb_color, 1))
-                    painter.drawRect(
-                        int((radio_button.x + logo[0]) * self.scale),
-                        int((radio_button.y + logo[1]) * self.scale),
-                        int(radio_button.width * self.scale),
-                        int(radio_button.height * self.scale),
-                    )
-        _draw_registration_marks(painter, self.scale, self.reg_marks, self.preview_crop)
+                for rb in field.radio_buttons:
+                    draw(rb.x, rb.y, rb.width, rb.height, get_field_display_color(rb), 1)
+        if self.box is not None:
+            bx, by, bw, bh = self.box
+            rect = QRect(int(bx * s), int(by * s), int(bw * s), int(bh * s))
+            painter.setPen(QPen(FIDUCIAL_COLOR, 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(rect)
+            painter.setPen(QPen(QColor(0, 0, 0), 1))
+            painter.setBrush(QBrush(FIDUCIAL_COLOR))
+            hs = 4
+            for name, (hx, hy) in _handle_points(rect).items():
+                if len(name) == 2:
+                    painter.drawRect(hx - hs, hy - hs, hs * 2, hs * 2)
+        _draw_registration_marks(painter, s, self.reg_marks, self.preview_crop)
         painter.end()
         self.setPixmap(disp)
+
+    def _hit_box(self, px: float, py: float) -> Optional[str]:
+        if self.box is None or self.scale <= 0:
+            return None
+        ix, iy = self._to_image_f(px, py)
+        return hit_group_bounds(ix, iy, self.box, FIDUCIAL_HIT_PX / self.scale)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() != Qt.MouseButton.LeftButton or not self.base_pixmap:
             return
-        pos = event.position().toPoint()
-        ix, iy = self.to_image(pos.x(), pos.y())
+        pos = event.position()
+        mode = self._hit_box(pos.x(), pos.y())
+        if mode:
+            self._drag_mode = mode
+            self._press_pos = self._to_image_f(pos.x(), pos.y())
+            self._press_box = self.box
+            self.grabMouse()
+            return
+        ix, iy = self.to_image(int(pos.x()), int(pos.y()))
         if 0 <= ix < self.base_pixmap.width() and 0 <= iy < self.base_pixmap.height():
             self.point_clicked.emit(ix, iy)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        pos = event.position()
+        if self._drag_mode is None:
+            mode = self._hit_box(pos.x(), pos.y())
+            if mode == "move":
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
+            elif mode:
+                self.setCursor(HANDLE_CURSORS.get(mode, Qt.CursorShape.CrossCursor))
+            else:
+                self.setCursor(Qt.CursorShape.CrossCursor)
+            return
+        ix, iy = self._to_image_f(pos.x(), pos.y())
+        dx = ix - self._press_pos[0]
+        dy = iy - self._press_pos[1]
+        self.box = drag_group_bounds(self._press_box, self._drag_mode, dx, dy)
+        self._paint_overlays()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() != Qt.MouseButton.LeftButton or self._drag_mode is None:
+            return
+        if self.mouseGrabber() is self:
+            self.releaseMouse()
+        self._drag_mode = None
+        self._press_pos = None
+        self._press_box = None
+        self.fiducial_adjusted.emit()
 
 
 class PrintCropWindow(QMainWindow):
@@ -428,6 +521,7 @@ class PrintCropWindow(QMainWindow):
         self.left_page.crop_changed.connect(self._on_crop_dragged)
         self.left_page.crop_released.connect(self._refresh_preview)
         self.right_page.point_clicked.connect(self._on_registration_clicked)
+        self.right_page.fiducial_adjusted.connect(self._on_fiducial_adjusted)
 
         self.left_scroll = QScrollArea()
         self.left_scroll.setWidgetResizable(False)
@@ -449,7 +543,9 @@ class PrintCropWindow(QMainWindow):
         right_wrap = QWidget()
         right_layout = QVBoxLayout(right_wrap)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.addWidget(QLabel("Prepared scan — click punctuation or corners"))
+        right_layout.addWidget(
+            QLabel("Prepared scan — drag the green box onto the fiducial; click to mark points")
+        )
         right_layout.addWidget(self.right_scroll, stretch=1)
         splitter.addWidget(left_wrap)
         splitter.addWidget(right_wrap)
@@ -496,10 +592,10 @@ class PrintCropWindow(QMainWindow):
         save_btn.clicked.connect(self._save)
         self.save_fiducial_btn = QPushButton("Save detected fiducial")
         self.save_fiducial_btn.setToolTip(
-            "Overwrite the default fiducial (fiducial.png or logo.png) with this "
-            "page's detected patch from the scan. Enabled when the green box is a "
-            "match (score 0.7 or higher). Use a page where the box sits on the mark "
-            "so later pages match the scanned appearance."
+            "Overwrite the default fiducial (fiducial.png or logo.png) with the scan "
+            "patch inside the green box. If the box is on the wrong spot, drag it onto "
+            "the real mark first (fields follow). Enabled when the match score is 0.7 "
+            "or higher, or after you move the box, and the box is inside the print crop."
         )
         self.save_fiducial_btn.setEnabled(False)
         self.save_fiducial_btn.clicked.connect(self._save_detected_fiducial)
@@ -686,14 +782,16 @@ class PrintCropWindow(QMainWindow):
                     if score is None:
                         self.status_label.setText("Fiducial not found.")
                     elif score >= 0.7:
-                        self.status_label.setText(f"Fiducial match: {score:.3f}")
+                        self.status_label.setText(
+                            f"Fiducial match: {score:.3f} — drag the green box if it is on the wrong spot."
+                        )
                     else:
                         self.status_label.setText(
-                            f"Fiducial match: {score:.3f} (weak — adjust the crop)"
+                            f"Fiducial match: {score:.3f} (weak — adjust the crop or drag the green box)"
                         )
-            self._set_detected_fiducial(prepared, bbox, score)
             self.right_page.preview_crop = self.crop
             self.right_page.set_preview(_pil_to_pixmap(prepared), bbox, fields)
+            self._set_detected_fiducial(prepared, bbox, score)
         except Exception as e:
             logger.exception("Print crop preview failed")
             self._clear_detected_fiducial()
@@ -779,31 +877,76 @@ class PrintCropWindow(QMainWindow):
         self._prepared = prepared
         self._detected_bbox = bbox
         self._detected_score = score
-        self.save_fiducial_btn.setEnabled(
-            bbox is not None and score is not None and score >= 0.7
+        self._update_save_fiducial_button()
+
+    def _update_save_fiducial_button(self) -> None:
+        bbox = self._detected_bbox
+        good_match = self._detected_score is not None and self._detected_score >= 0.7
+        ready = (
+            self._prepared is not None
+            and bbox is not None
+            and (good_match or self.right_page.is_adjusted())
+            and fiducial_bbox_inside_crop(bbox, self.crop)
         )
+        self.save_fiducial_btn.setEnabled(ready)
+
+    def _on_fiducial_adjusted(self) -> None:
+        bbox = self.right_page.current_bbox()
+        if bbox is None or self._prepared is None:
+            return
+        self._detected_bbox = bbox
+        self._update_save_fiducial_button()
+        if not fiducial_bbox_inside_crop(bbox, self.crop):
+            self.status_label.setText(
+                "Green box is outside the print crop — move it onto the pasted scan."
+            )
+        elif self.right_page.is_adjusted():
+            (x0, y0), (x1, y1) = bbox
+            self.status_label.setText(
+                f"Fiducial placed by hand at {x0},{y0} ({x1 - x0}×{y1 - y0}). "
+                "Save detected fiducial when fields line up."
+            )
 
     def _fiducials_folder(self) -> Path:
         return Path(self.config_folder) / "fiducials"
+
+    def _size_change_warning(self) -> str:
+        match = self.right_page.match_box
+        box = self.right_page.box
+        if match is None or box is None or match[2] <= 0 or match[3] <= 0:
+            return ""
+        sx = box[2] / match[2]
+        sy = box[3] / match[3]
+        if abs(sx - 1) < 0.02 and abs(sy - 1) < 0.02:
+            return ""
+        return (
+            f"\n\nThe box was resized ({sx:.0%} wide, {sy:.0%} high). Indexer does not "
+            "rescale fields, so if the fields only line up after resizing, adjust the "
+            "print crop on the left instead."
+        )
 
     def _save_detected_fiducial(self) -> None:
         if self._prepared is None or self._detected_bbox is None:
             return
         folder = self._fiducials_folder()
         out_path = default_logo_write_path(folder)
-        score_text = (
-            f"{self._detected_score:.3f}" if self._detected_score is not None else "unknown"
-        )
+        if self.right_page.is_adjusted():
+            source_text = "placed by hand"
+        elif self._detected_score is not None:
+            source_text = f"score {self._detected_score:.3f}"
+        else:
+            source_text = "score unknown"
         exists = out_path.is_file()
         action = "Overwrite" if exists else "Save"
         reply = QMessageBox.question(
             self,
             "Save detected fiducial",
             (
-                f"{action} {out_path.name} with the detected patch from this scan "
-                f"(page {self.page_index + 1}, score {score_text})?\n\n"
+                f"{action} {out_path.name} with the patch inside the green box on this scan "
+                f"(page {self.page_index + 1}, {source_text})?\n\n"
                 "Indexer will then match against this scanned appearance. "
                 "The app does not keep a backup of the current file."
+                + self._size_change_warning()
             ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,

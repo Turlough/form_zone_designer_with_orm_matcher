@@ -2024,7 +2024,7 @@ class Indexer(QMainWindow):
             self._refresh_detail_panel(self.current_field)
 
     def _on_review_document_comments_requested(self) -> None:
-        """Handle QC > Review document comments: show only comments for the current document."""
+        """Handle QC > QC Document > Review document comments: show only comments for the current document."""
         if not self.document_paths:
             QMessageBox.information(
                 self,
@@ -2087,7 +2087,7 @@ class Indexer(QMainWindow):
         self._show_current_qc_review_comment()
 
     def _on_validate_document_requested(self) -> None:
-        """Handle QC > Validate document: run project validations on current row."""
+        """Handle QC > QC Document > Validate document: run project validations on current row."""
         if not self._validation_prechecks():
             return
         self._start_validation_job([self.current_document_index], single_document=True)
@@ -2364,7 +2364,7 @@ class Indexer(QMainWindow):
         self._show_current_qc_review_comment()
 
     def _on_review_special_fields_requested(self) -> None:
-        """Handle QC > QC batch > Review special fields: iterate through always_review fields across all docs."""
+        """Handle QC > Review special fields: iterate through always_review fields across all docs."""
         if not self.document_paths:
             QMessageBox.information(
                 self,
@@ -2467,7 +2467,7 @@ class Indexer(QMainWindow):
         )
 
     def _on_quick_review_special_fields_requested(self) -> None:
-        """Handle QC > QC batch > Quick review special fields: show table of values, activate on click."""
+        """Handle QC > Quick review special fields: show table of values, activate on click."""
         self._qc_review_mode = "quick_review"
         if not self.document_paths:
             QMessageBox.information(
@@ -2535,7 +2535,7 @@ class Indexer(QMainWindow):
         self._qc_text_review_window.activateWindow()
 
     def _on_review_text_and_numeric_fields_requested(self) -> None:
-        """Handle QC > QC batch > Review text and numeric: show table of all TextField subclass values."""
+        """Handle QC > Review text and numeric: show table of all TextField subclass values."""
         self._qc_review_mode = "text_and_numeric"
         if not self.document_paths:
             QMessageBox.information(

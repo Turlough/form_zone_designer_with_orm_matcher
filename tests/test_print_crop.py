@@ -13,6 +13,7 @@ from util.print_crop import (
     crop_uv_to_canvas,
     default_print_crop,
     display_origin,
+    fiducial_bbox_inside_crop,
     move_rect,
     parse_print_crop,
     prepare_scan_page,
@@ -111,6 +112,15 @@ def test_crop_uv_round_trip():
     wider = (10, 10, 80, 30)
     x2, y2 = crop_uv_to_canvas(0.5, 0.5, wider)
     assert (x2, y2) == (50.0, 25.0)
+
+
+def test_fiducial_bbox_inside_crop():
+    crop = (10, 20, 100, 80)
+    assert fiducial_bbox_inside_crop(((10, 20), (110, 100)), crop)
+    assert fiducial_bbox_inside_crop(((40, 40), (70, 60)), crop)
+    assert not fiducial_bbox_inside_crop(((9, 20), (110, 100)), crop)
+    assert not fiducial_bbox_inside_crop(((10, 20), (111, 100)), crop)
+    assert not fiducial_bbox_inside_crop(((50, 50), (80, 101)), crop)
 
 
 def test_save_print_crop_merges_and_clears(tmp_path: Path):

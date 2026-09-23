@@ -16,11 +16,11 @@ class IndexMenuBar(QMenuBar):
     project_selected = pyqtSignal(str)  # Emits the selected project config folder path
     batch_import_selected = pyqtSignal(str)  # Emits full path to selected batch import file
     review_batch_comments_requested = pyqtSignal()  # User chose QC > Review batch comments
-    review_special_fields_requested = pyqtSignal()  # User chose QC > QC batch > Review special fields
-    quick_review_special_fields_requested = pyqtSignal()  # User chose QC > QC batch > Quick review special fields
-    review_text_and_numeric_fields_requested = pyqtSignal()  # User chose QC > QC batch > Review text and numeric
-    review_document_comments_requested = pyqtSignal()  # User chose QC > Review document comments
-    validate_document_requested = pyqtSignal()  # User chose QC > Validate document
+    review_special_fields_requested = pyqtSignal()  # User chose QC > Review special fields
+    quick_review_special_fields_requested = pyqtSignal()  # User chose QC > Quick review special fields
+    review_text_and_numeric_fields_requested = pyqtSignal()  # User chose QC > Review text and numeric
+    review_document_comments_requested = pyqtSignal()  # User chose QC > QC Document > Review document comments
+    validate_document_requested = pyqtSignal()  # User chose QC > QC Document > Validate document
     validate_batch_requested = pyqtSignal()  # User chose QC > Validate batch
     batch_qc_complete_requested = pyqtSignal()  # User chose QC > Batch QC Complete
     view_log_requested = pyqtSignal()  # User chose Log > View log
@@ -280,30 +280,27 @@ class IndexMenuBar(QMenuBar):
         self._qc_menu = QMenu("QC", self)
         self.addMenu(self._qc_menu)
 
-        # Document QC menu
-        action_doc = self._qc_menu.addAction("Validate document")
-        action_doc.triggered.connect(self._on_validate_document_triggered)
-        action_doc = self._qc_menu.addAction("Review document comments")
-        action_doc.triggered.connect(self._on_review_document_comments_triggered)
-
-        # Batch QC menu 
-        qc_batch_menu = self._qc_menu.addMenu("QC batch")
-        
-        action = qc_batch_menu.addAction("Review batch comments")
+        # Batch actions are top-level; they are used more often than document actions.
+        action = self._qc_menu.addAction("Review batch comments")
         action.triggered.connect(self._on_review_batch_comments_triggered)
-        action_batch = qc_batch_menu.addAction("Validate batch")
+        action_batch = self._qc_menu.addAction("Validate batch")
         action_batch.triggered.connect(self._on_validate_batch_triggered)
 
-        # action = qc_batch_menu.addAction("Review special fields")
+        # action = self._qc_menu.addAction("Review special fields")
         # action.triggered.connect(self._on_review_special_fields_triggered)
-        action = qc_batch_menu.addAction("Quick review special fields")
+        action = self._qc_menu.addAction("Quick review special fields")
         action.triggered.connect(self._on_quick_review_special_fields_triggered)
-        action = qc_batch_menu.addAction("Review text and numeric")
+        action = self._qc_menu.addAction("Review text and numeric")
         action.triggered.connect(self._on_review_text_and_numeric_fields_triggered)
 
-        self._qc_menu.addSeparator()
         action_complete = self._qc_menu.addAction("Batch QC Complete")
         action_complete.triggered.connect(self._on_batch_qc_complete_triggered)
+
+        qc_document_menu = self._qc_menu.addMenu("QC Document")
+        action_doc = qc_document_menu.addAction("Validate document")
+        action_doc.triggered.connect(self._on_validate_document_triggered)
+        action_doc = qc_document_menu.addAction("Review document comments")
+        action_doc.triggered.connect(self._on_review_document_comments_triggered)
 
     def _on_batch_qc_complete_triggered(self) -> None:
         """Emit signal when Batch QC Complete is chosen."""

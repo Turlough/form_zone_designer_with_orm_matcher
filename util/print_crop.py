@@ -164,6 +164,19 @@ def move_rect(
     return clamp_print_crop((x + dx, y + dy, w, h), page_size)
 
 
+def fiducial_bbox_inside_crop(bbox: tuple, crop: PrintCrop) -> bool:
+    """True when an ORMMatcher (top_left, bottom_right) box lies fully inside crop.
+
+    The prepared scan only has form pixels inside the print-crop rectangle.
+    A fiducial patch taken from outside that rect would include blank canvas.
+    """
+    top_left, bottom_right = bbox
+    x0, y0 = int(top_left[0]), int(top_left[1])
+    x1, y1 = int(bottom_right[0]), int(bottom_right[1])
+    cx, cy, cw, ch = crop
+    return x0 >= cx and y0 >= cy and x1 <= cx + cw and y1 <= cy + ch
+
+
 def crop_uv_to_canvas(u: float, v: float, crop: PrintCrop) -> tuple[float, float]:
     """Map crop-normalised (u, v) to template/canvas pixels."""
     cx, cy, cw, ch = crop
