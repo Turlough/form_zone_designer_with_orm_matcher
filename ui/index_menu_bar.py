@@ -22,6 +22,7 @@ class IndexMenuBar(QMenuBar):
     review_document_comments_requested = pyqtSignal()  # User chose QC > Review document comments
     validate_document_requested = pyqtSignal()  # User chose QC > Validate document
     validate_batch_requested = pyqtSignal()  # User chose QC > Validate batch
+    batch_qc_complete_requested = pyqtSignal()  # User chose QC > Batch QC Complete
     view_log_requested = pyqtSignal()  # User chose Log > View log
     drag_fields_requested = pyqtSignal()  # User chose Page > Drag fields
 
@@ -299,6 +300,14 @@ class IndexMenuBar(QMenuBar):
         action.triggered.connect(self._on_quick_review_special_fields_triggered)
         action = qc_batch_menu.addAction("Review text and numeric")
         action.triggered.connect(self._on_review_text_and_numeric_fields_triggered)
+
+        self._qc_menu.addSeparator()
+        action_complete = self._qc_menu.addAction("Batch QC Complete")
+        action_complete.triggered.connect(self._on_batch_qc_complete_triggered)
+
+    def _on_batch_qc_complete_triggered(self) -> None:
+        """Emit signal when Batch QC Complete is chosen."""
+        self.batch_qc_complete_requested.emit()
 
     def _on_validate_document_triggered(self) -> None:
         """Emit signal when Validate document is chosen."""

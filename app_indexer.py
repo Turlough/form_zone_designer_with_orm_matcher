@@ -656,6 +656,7 @@ class Indexer(QMainWindow):
         self._index_menu_bar.review_special_fields_requested.connect(self._on_review_special_fields_requested)
         self._index_menu_bar.quick_review_special_fields_requested.connect(self._on_quick_review_special_fields_requested)
         self._index_menu_bar.review_text_and_numeric_fields_requested.connect(self._on_review_text_and_numeric_fields_requested)
+        self._index_menu_bar.batch_qc_complete_requested.connect(self._on_batch_qc_complete_requested)
         self._index_menu_bar.view_log_requested.connect(self._on_view_log_requested)
         self._index_menu_bar.drag_fields_requested.connect(self._on_drag_fields_requested)
 
@@ -1652,7 +1653,7 @@ class Indexer(QMainWindow):
         - If there is another file in the batch, prompt with "Form completed" (Yes/No).
           If the user clicks Yes, advance to the next file.
         - If the current form is the last file in the batch, show "Batch completed"
-          dialog with Yes/No buttons (Yes action will be defined later).
+          and advance the batch only if the user confirms.
         """
         self._flush_csv_saves()
         next_idx = self._find_next_page_with_fields(self.current_page_index)
@@ -1687,6 +1688,13 @@ class Indexer(QMainWindow):
             return
 
         # Case 3: current form is the last file in the batch – batch completed.
+        self._confirm_and_complete_batch()
+
+    def _confirm_and_complete_batch(self) -> None:
+        """Ask to complete the batch, then advance it on Yes.
+
+        Same dialog as the last page of the last document and QC → Batch QC Complete.
+        """
         reply = QMessageBox.question(
             self,
             "Batch completed",
@@ -1696,7 +1704,19 @@ class Indexer(QMainWindow):
         )
         if reply == QMessageBox.StandardButton.Yes:
             self._complete_current_batch()
-    
+
+    def _on_batch_qc_complete_requested(self) -> None:
+        """Handle QC > Batch QC Complete: confirm, then advance the open batch."""
+        if not self.document_paths:
+            QMessageBox.information(
+                self,
+                "No batch loaded",
+                "Load a batch first (Batch menu).",
+            )
+            return
+        self._flush_csv_saves()
+        self._confirm_and_complete_batch()
+
     def on_field_click(self, field, sub_field=None):
         """Handle field click events."""
         # Update detail panel to show the clicked field

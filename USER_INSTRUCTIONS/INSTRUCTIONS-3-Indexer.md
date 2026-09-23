@@ -19,6 +19,8 @@ Columns: `Datetime`, `User`, `Event`, `Previous location`, `New location` (tab-s
 
 **Log → View log** shows that table for the open batch. Close the dialog when finished. If no batch is open, Indexer asks you to open one first.
 
+**QC → Batch QC Complete** asks the same question as reaching the last page of the last document: click Yes to complete the batch, or No to keep reviewing. Yes moves the batch the same way as finishing that last page. If no batch is open, Indexer asks you to open one first.
+
 The Exporter reads finished batches from `_complete`.
 
 ## Text fields
