@@ -184,8 +184,7 @@ class QcTextReviewWindow(QMainWindow):
         field_name = name_item.text() or ""
         value = value_item.text() or ""
         has_field_error = (
-            _has_non_ascii(field_name)
-            or _has_non_ascii(value)
+            _has_non_ascii(value)
             or _is_inappropriate_value(field_name, value, self._field_to_type)
         )
         has_project_error = _failed_project_validations(
@@ -206,7 +205,7 @@ class QcTextReviewWindow(QMainWindow):
             )
             if comment:
                 parts.append(comment)
-        has_non_ascii = _has_non_ascii(field_name) or _has_non_ascii(value)
+        has_non_ascii = _has_non_ascii(value)
         if has_non_ascii:
             parts.append("Non-ASCII")
         if _is_inappropriate_value(field_name, value, self._field_to_type):
