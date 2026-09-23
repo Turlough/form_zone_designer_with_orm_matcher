@@ -230,6 +230,72 @@ class TestSumShouldEqualTotal(unittest.TestCase):
         self.assertIn("not a valid number", result[0][2])
 
 
+class TestTotalPerUnitInRange(unittest.TestCase):
+    def test_milk_example_passes(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["total_per_unit_in_range"]
+        ctx = _ctx(
+            field_values={"cow_count": "100", "total_litres": "500000"},
+            field_names=["cow_count", "total_litres"],
+            params={"min_per_unit": 4000, "max_per_unit": 8000},
+        )
+        self.assertEqual(fn(ctx), [])
+
+    def test_at_bounds_passes(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["total_per_unit_in_range"]
+        ctx = _ctx(
+            field_values={"count": "100", "total": "400000"},
+            field_names=["count", "total"],
+            params={"min_per_unit": 4000, "max_per_unit": 8000},
+        )
+        self.assertEqual(fn(ctx), [])
+
+    def test_non_integer_per_unit_still_passes(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["total_per_unit_in_range"]
+        ctx = _ctx(
+            field_values={"count": "100", "total": "450123"},
+            field_names=["count", "total"],
+            params={"min_per_unit": 4000, "max_per_unit": 8000},
+        )
+        self.assertEqual(fn(ctx), [])
+
+    def test_total_out_of_range_fails_total_field(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["total_per_unit_in_range"]
+        ctx = _ctx(
+            field_values={"count": "100", "total": "300000"},
+            field_names=["count", "total"],
+            params={"min_per_unit": 4000, "max_per_unit": 8000},
+            field_to_page={"total": 2},
+        )
+        result = fn(ctx)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][0], 2)
+        self.assertEqual(result[0][1], "total")
+        self.assertIn("per unit", result[0][2])
+        self.assertIn("400000", result[0][2])
+
+    def test_blank_fields_skip(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["total_per_unit_in_range"]
+        ctx = _ctx(
+            field_values={"count": "", "total": "500000"},
+            field_names=["count", "total"],
+            params={"min_per_unit": 4000, "max_per_unit": 8000},
+        )
+        self.assertEqual(fn(ctx), [])
+
+    def test_zero_count_fails_count_field(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["total_per_unit_in_range"]
+        ctx = _ctx(
+            field_values={"count": "0", "total": "500000"},
+            field_names=["count", "total"],
+            params={"min_per_unit": 4000, "max_per_unit": 8000},
+            field_to_page={"count": 3},
+        )
+        result = fn(ctx)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][1], "count")
+        self.assertIn("zero", result[0][2].lower())
+
+
 class TestProjectValidationsRunner(unittest.TestCase):
     """Test ProjectValidations.run_validations logic."""
 

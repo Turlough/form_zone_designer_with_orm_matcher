@@ -6,6 +6,9 @@ from typing import Any
 
 from util.lookup_manager import LookupManager
 
+import logging
+logger = logging.getLogger(__name__)
+
 # Northern Ireland (BT) postcodes only. 
 # match BT followed by 1-2 digits and then 2 letters, optionally followed by a space,
 # and then a digit followed by 2 letters.
@@ -331,6 +334,99 @@ def _strategy_numbers_nearly_equal(ctx: ValidationContext) -> list[tuple[int, st
     fault2 = (page2, field2, msg)
     return [fault1, fault2]
 
+def _parse_numeric_field_value(raw: Any) -> float | None:
+    """Parse a field value as float; None if blank, raises ValueError if invalid."""
+    if raw is None or str(raw).strip() == "":
+        return None
+    value_str = str(raw).replace(",", "").strip()
+    return float(value_str)
+
+
+def _strategy_total_per_unit_in_range(ctx: ValidationContext) -> list[tuple[int, str, str]]:
+    """Check total / count is within per-unit bounds (inclusive).
+
+    field_names[0] is count; field_names[1] is total.
+    Params: min_per_unit, max_per_unit — allowed range for total / count.
+    """
+    logger.info(f"Total per unit in range: {ctx.field_names}, {ctx.params}")
+    if not ctx.field_names or len(ctx.field_names) != 2:
+        return []
+
+    pages = ctx.field_to_page or {}
+    count_field = ctx.field_names[0]
+    total_field = ctx.field_names[1]
+    count_page = pages.get(count_field, 1)
+    total_page = pages.get(total_field, 1)
+
+    min_per_unit = ctx.params.get("min_per_unit")
+    max_per_unit = ctx.params.get("max_per_unit")
+    if min_per_unit is None or max_per_unit is None:
+        return []
+
+    try:
+        min_per_unit = float(min_per_unit)
+        max_per_unit = float(max_per_unit)
+    except (TypeError, ValueError):
+        return []
+    logger.info(f"Min per unit: {min_per_unit}, Max per unit: {max_per_unit}")
+    try:
+        count = _parse_numeric_field_value(ctx.field_values.get(count_field))
+        logger.info(f"Count: {count}")
+    except ValueError:
+        logger.warning(f"Count is not a valid number: {ctx.field_values.get(count_field)}")
+        return [
+            (
+                count_page,
+                count_field,
+                f"Value {ctx.field_values.get(count_field)!r} is not a valid number.",
+            )
+        ]
+
+    try:
+        total = _parse_numeric_field_value(ctx.field_values.get(total_field))
+    except ValueError:
+        return [
+            (
+                total_page,
+                total_field,
+                f"Value {ctx.field_values.get(total_field)!r} is not a valid number.",
+            )
+        ]
+
+    if count is None or total is None:
+        return []
+
+    if count == 0:
+        return [
+            (
+                count_page,
+                count_field,
+                "Count cannot be zero.",
+            )
+        ]
+
+    per_unit = total / count
+    logger.info(f"Per unit: {per_unit}")
+    if per_unit < min_per_unit or per_unit > max_per_unit:
+        logger.info(f"Per unit is not in range: {per_unit}")
+        low_total = count * min_per_unit
+        high_total = count * max_per_unit
+        logger.info(f"Total {total} is not in range: Low total: {low_total}, High total: {high_total}")
+        return [
+            (
+                total_page,
+                total_field,
+                (
+                    f"Total {total:g} is {per_unit:g} per unit for count {count:g}; "
+                    f"expected between {min_per_unit:g} and {max_per_unit:g} per unit "
+                    f"({low_total:g}–{high_total:g} total)."
+                ),
+            )
+        ]
+
+    return []
+
+
 def _strategy_between_values(ctx: ValidationContext) -> list[tuple[int, str, str]]:
     """Check that the value is between the two values."""
     if not ctx.field_names:
@@ -365,5 +461,6 @@ PROJECT_VALIDATION_REGISTRY: dict[str, Callable[[ValidationContext], list[tuple[
     "num_characters_valid": _strategy_num_characters_valid,
     "sum_should_equal_total": _strategy_sum_should_equal_total,
     "between_values": _strategy_between_values,
+    "total_per_unit_in_range": _strategy_total_per_unit_in_range,
     "regex": _strategy_regex,
 }
