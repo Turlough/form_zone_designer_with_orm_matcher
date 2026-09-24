@@ -52,6 +52,7 @@ from ui.index_menu_bar import IndexMenuBar
 from ui.index_ocr_dialog import IndexOcrDialog
 from ui.index_batch_log_dialog import IndexBatchLogDialog
 from ui.index_drag_fields_window import IndexDragFieldsWindow
+from ui.index_reorder_pages_window import IndexReorderPagesWindow
 from ui.qc_comment_dialog import QcCommentDialog, QcSpecialFieldReviewDialog
 from ui.qc_text_review_window import QcTextReviewWindow
 from util.field_group_align import (
@@ -659,6 +660,7 @@ class Indexer(QMainWindow):
         self._index_menu_bar.batch_qc_complete_requested.connect(self._on_batch_qc_complete_requested)
         self._index_menu_bar.view_log_requested.connect(self._on_view_log_requested)
         self._index_menu_bar.drag_fields_requested.connect(self._on_drag_fields_requested)
+        self._index_menu_bar.reorder_pages_requested.connect(self._on_reorder_pages_requested)
 
         self.setMenuBar(self._index_menu_bar)
 
@@ -1468,6 +1470,50 @@ class Indexer(QMainWindow):
             current = self.detail_panel.current_field
             self._refresh_detail_panel(current)
         self._reposition_open_text_dialog()
+
+    def _drop_document_cache(self, document_path: str) -> None:
+        """Remove cached images and prepared QC data for one document file."""
+        self._document_cache.pop(document_path, None)
+        if self._qc_preloaded and self._qc_preloaded[0] == document_path:
+            self._qc_preloaded = None
+        self._qc_special_fields_cache.pop(document_path, None)
+        stale = [key for key in self._qc_special_fields_page_cache if key[0] == document_path]
+        for key in stale:
+            del self._qc_special_fields_page_cache[key]
+
+    def _on_reorder_pages_requested(self) -> None:
+        """Open the two-pane window to fix page order in the current document."""
+        if not self.current_page_images or self.current_document_index < 0:
+            QMessageBox.information(
+                self,
+                "Reorder pages",
+                "Open a document before reordering pages.",
+            )
+            return
+        if len(self.current_page_images) < 2:
+            QMessageBox.information(
+                self,
+                "Reorder pages",
+                "This document has only one page.",
+            )
+            return
+        relative_path = self.document_paths[self.current_document_index]
+        absolute_path = self.csv_manager.get_absolute_document_path(relative_path)
+        dialog = IndexReorderPagesWindow(
+            self,
+            absolute_path,
+            self.current_page_index,
+        )
+        dialog.exec()
+        self._stop_page_prefetch()
+        self._drop_document_cache(absolute_path)
+        self.load_document(absolute_path)
+        self.current_page_index = min(
+            dialog.left_page_index(),
+            len(self.current_page_images) - 1,
+        )
+        self._page_field_align = None
+        self.display_current_page()
 
     def _reposition_open_text_dialog(self) -> None:
         dialog = self._index_text_dialog

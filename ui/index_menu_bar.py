@@ -25,6 +25,7 @@ class IndexMenuBar(QMenuBar):
     batch_qc_complete_requested = pyqtSignal()  # User chose QC > Batch QC Complete
     view_log_requested = pyqtSignal()  # User chose Log > View log
     drag_fields_requested = pyqtSignal()  # User chose Page > Drag fields
+    reorder_pages_requested = pyqtSignal()  # User chose Page > Reorder pages
 
     # Special batch folder names (used for "Other batch" submenu and filtering)
     _OTHER_BATCH_FOLDERS = COORDINATION_FOLDERS
@@ -264,6 +265,12 @@ class IndexMenuBar(QMenuBar):
             "Cleared when you leave the page."
         )
         action.triggered.connect(self.drag_fields_requested.emit)
+        reorder_action = page_menu.addAction("Reorder pages")
+        reorder_action.setStatusTip(
+            "Fix page order in the scanned document by moving a later page "
+            "to follow the last page that is already correct."
+        )
+        reorder_action.triggered.connect(self.reorder_pages_requested.emit)
 
     def _init_log_menu(self) -> None:
         """Build Log menu."""

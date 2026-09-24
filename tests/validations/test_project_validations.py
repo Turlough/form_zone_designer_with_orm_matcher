@@ -27,6 +27,59 @@ def _ctx(
     )
 
 
+class TestIsTicked(unittest.TestCase):
+    def test_any_non_empty_value_passes(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["is_ticked"]
+        ctx = _ctx(
+            field_values={"sig": "Signed", "box": "Ticked", "other": "yes"},
+            field_names=["sig", "box", "other"],
+            params={},
+        )
+        self.assertEqual(fn(ctx), [])
+
+    def test_blank_whitespace_and_missing_fail(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["is_ticked"]
+        ctx = _ctx(
+            field_values={"blank": "", "spaces": "   ", "none": None},
+            field_names=["blank", "spaces", "none", "absent"],
+            params={},
+            field_to_page={"blank": 2, "spaces": 3, "none": 4},
+        )
+        result = fn(ctx)
+        self.assertEqual(
+            [(page, name) for page, name, _msg in result],
+            [(2, "blank"), (3, "spaces"), (4, "none"), (1, "absent")],
+        )
+        self.assertTrue(all(msg == "This field must be ticked." for _p, _n, msg in result))
+
+    def test_false_string_fails_other_labels_pass(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["is_ticked"]
+        ctx = _ctx(
+            field_values={"a": "false", "b": "FALSE", "c": "Signed"},
+            field_names=["a", "b", "c"],
+            params={},
+            field_to_page={"a": 1, "b": 1, "c": 1},
+        )
+        result = fn(ctx)
+        self.assertEqual([name for _p, name, _m in result], ["a", "b"])
+
+    def test_only_unticked_fields_in_a_group_fail(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["is_ticked"]
+        ctx = _ctx(
+            field_values={"sig": "Signed", "box": ""},
+            field_names=["sig", "box"],
+            params={},
+            field_to_page={"sig": 5, "box": 6},
+        )
+        result = fn(ctx)
+        self.assertEqual(result, [(6, "box", "This field must be ticked.")])
+
+    def test_no_fields_returns_empty(self) -> None:
+        fn = PROJECT_VALIDATION_REGISTRY["is_ticked"]
+        ctx = _ctx(field_values={}, field_names=[], params={})
+        self.assertEqual(fn(ctx), [])
+
+
 class TestMaxTickboxes(unittest.TestCase):
     def test_under_max_no_failure(self) -> None:
         fn = PROJECT_VALIDATION_REGISTRY["max_tickboxes"]

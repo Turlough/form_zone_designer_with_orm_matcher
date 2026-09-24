@@ -52,6 +52,20 @@ def _is_ticked(value: Any) -> bool:
     s = str(value).strip()
     return s != "" and s.lower() != "false"
 
+def _strategy_is_ticked(ctx: ValidationContext) -> list[tuple[int, str, str]]:
+    faults: list[tuple[int, str, str]] = []
+    for name in ctx.field_names:
+        val = ctx.field_values.get(name)
+
+        if not _is_ticked(val):
+            msg = ctx.params.get("message")
+            if not msg:
+                msg = "This field must be ticked."
+            else:
+                msg = f"{msg}: {name}"
+                faults.append((ctx.field_to_page.get(name, 1), name, msg))
+    return faults
+
 
 def _strategy_max_tickboxes(ctx: ValidationContext) -> list[tuple[int, str, str]]:
     """Count ticked fields; if > params['max'], invalidate last ticked field."""
@@ -449,6 +463,7 @@ def _strategy_between_values(ctx: ValidationContext) -> list[tuple[int, str, str
 
 
 PROJECT_VALIDATION_REGISTRY: dict[str, Callable[[ValidationContext], list[tuple[int, str, str]]]] = {
+    "is_ticked": _strategy_is_ticked,
     "max_tickboxes": _strategy_max_tickboxes,
     "mutually_exclusive": _strategy_mutually_exclusive,
     "value_exists_in_lookup": _strategy_value_exists_in_lookup,
