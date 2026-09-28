@@ -9,6 +9,7 @@ Local Python helpers for Designer JSON vs Qualtrics Excel heading checks in chat
 - `qualtrics_headers.py` — two-row Excel load (forward-fill stems, skip Qualtrics meta)
 - `designer_fields.py` — page JSON via `iter_runtime_fields` (RadioGrid expansion)
 - `dump_headings.py` — print both sequences plus grids, duplicate `name`, missing `column_title`
+- `generate_export_config.py` — build `export_config.json` for a survey folder (json + Qualtrics `.xlsx`). `value_maps` are derived from the xlsx data rows (single online value per tick column; fuzzy radio-label match). Put fixes the data cannot supply in `MANUAL_BY_TEMPLATE_COL`, `MANUAL_TICKBOX_CHECKED`, `MANUAL_RADIO`, then regenerate; review printed warnings.
 
 ## Local Contracts
 

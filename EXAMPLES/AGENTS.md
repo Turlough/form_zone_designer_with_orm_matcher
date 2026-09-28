@@ -15,6 +15,7 @@ Each survey folder typically contains:
 
 - `json/` — Designer page files (`N.json`) and `project_config.json`
 - Customer export sample (`.xlsx`, Qualtrics two-row headers)
+- Optional: `export_config.json` — Exporter **Tools → Make compatible with online version** (maps Deliver CSV → import `.xlsx`; regenerate via `EXAMPLES/utils/generate_export_config.py`)
 - Optional: `template.pdf` / `fiducials/`
 - `current_status.md` — gitignored, overwriteable scratch after each heading check. Outstanding leftovers for the next run, plus long-term pack notes (sample file, sheet, page coverage). Not tracked. Do not park run leftovers in this `AGENTS.md`.
 

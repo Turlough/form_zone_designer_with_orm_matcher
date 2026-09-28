@@ -31,6 +31,7 @@ Automated checks for validation and other testable project logic.
 - Designer field editor apply: `test_field_edit.py` (`apply_field_edit` preserves JSON metadata; geometry parse)
 - Print crop: `test_print_crop.py` (`parse_print_crop`, `prepare_scan_page` paste-into-canvas, `crop_prepared_page_for_display` drops canvas margins, `save_print_crop` merge/clear, crop-normalised registration `canvas_to_crop_uv` / `crop_uv_to_canvas`, `fiducial_bbox_inside_crop`)
 - Fiducial paths / detected-patch save: `test_fiducial_paths.py` (`find_fiducial_for_page`, `save_detected_fiducial` overwrites default `fiducial.png`)
+- Exporter online compatibility: `test_export_online_compat.py` (RoI pack smoke: File then Qualtrics meta columns, tickbox and radio `value_maps`; skips when the gitignored pack is absent)
 - Indexer batch log: `test_batch_log.py` (`current_user`, location labels for job/`_in_progress`/`_qc`/`_qc/_in_progress`/`_complete`, TSV header + append, `read_batch_log`, Open/Complete moves)
 
 ## Work Guidance

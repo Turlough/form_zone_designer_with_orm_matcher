@@ -36,6 +36,7 @@ Non-UI services: ORM logo matching, document loading, persistence, CSV/index I/O
 - Project blank-form template: `find_project_template()` in `path_utils.py` resolves `template.tif`, `template.tiff`, or `template.pdf` (case-insensitive; first listed wins if several exist)
 - Operator help HTML: `user_instructions_html_path()` in `path_utils.py` resolves `USER_INSTRUCTIONS/html/<file>` from the repo root, or from `sys._MEIPASS` / next to the exe when frozen (PyInstaller)
 - Indexer batch log: `util/batch_log.py` — `current_user()` is the OS account; `batch.log` is TSV beside the batch import file; `log_batch_move` after a successful folder rename; `read_batch_log` returns data rows (empty if missing). Location labels walk coordination folders (`_in_progress`, `_qc`, `_complete`): job-folder child → job folder name; nested QC claim → `_qc/_in_progress`. Do not log resume or session restore. `append_batch_log` never raises.
+- Exporter online compatibility: `util/export_online_compat.py` — read `export_config.json`, user-selected Qualtrics `.xlsx` template (expected beside config), and Deliver CSV; write `*_for_import.xlsx`. Default template: `template_xlsx` in JSON if present, else newest `.xlsx` in config folder (`export_online_compat_defaults.py`). Regenerate column maps with `EXAMPLES/utils/generate_export_config.py`. Requires `openpyxl`.
 
 ## Work Guidance
 

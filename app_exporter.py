@@ -38,6 +38,9 @@ from util.path_utils import (
     resolve_path_or_original,
     find_file_case_insensitive,
 )
+from util.export_online_compat import transform_delivery_csv_to_xlsx
+from util.export_online_compat_defaults import default_template_xlsx
+from ui.exporter_online_compat_dialog import ExporterOnlineCompatDialog
 
 
 class ExporterMenuBar(QMenuBar):
@@ -56,6 +59,7 @@ class ExporterMenuBar(QMenuBar):
     summarise_requested = pyqtSignal()  # User chose Tools > Summarise
     validate_requested = pyqtSignal()  # User chose Tools > Validate
     export_requested = pyqtSignal()  # User chose Tools > Export
+    online_compat_requested = pyqtSignal()  # Tools > Make compatible with online version
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -152,6 +156,9 @@ class ExporterMenuBar(QMenuBar):
         export_action = export_menu.addAction("Run export")
         export_action.triggered.connect(lambda: self.export_requested.emit())
 
+        online_action = self._tools_menu.addAction("Make compatible with online version")
+        online_action.triggered.connect(lambda: self.online_compat_requested.emit())
+
 
 class Exporter(QMainWindow):
     """Main window for the Exporter application."""
@@ -188,6 +195,7 @@ class Exporter(QMainWindow):
         self._menu_bar.summarise_requested.connect(self._on_summarise_requested)
         self._menu_bar.validate_requested.connect(self._on_validate_requested)
         self._menu_bar.export_requested.connect(self._on_export_requested)
+        self._menu_bar.online_compat_requested.connect(self._on_online_compat_requested)
         self.setMenuBar(self._menu_bar)
 
     def _init_central_widget(self) -> None:
@@ -663,6 +671,86 @@ class Exporter(QMainWindow):
             self,
             "Deliver",
             f"Delivery files created in:\n{job_output_dir}",
+        )
+
+    def _on_online_compat_requested(self) -> None:
+        """Tools → Make compatible with online version."""
+        initial_config: Path | None = None
+        initial_config_dir: Path | None = None
+        initial_template: Path | None = None
+        initial_csv_dir: Path | None = None
+        if self.config_folder:
+            project_root = Path(resolve_path_or_original(self.config_folder))
+            initial_config_dir = project_root
+            for candidate in (
+                project_root / "export_config.json",
+                project_root.parent / "export_config.json",
+            ):
+                if candidate.is_file():
+                    initial_config = candidate
+                    initial_config_dir = candidate.parent
+                    break
+            if initial_config_dir is not None:
+                initial_template = default_template_xlsx(
+                    initial_config or Path(),
+                    initial_config_dir,
+                )
+        project_config = self._load_project_config()
+        if project_config:
+            batch_folder = str(project_config.get("batch_folder", "")).strip()
+            if batch_folder:
+                batch_path = Path(resolve_path_or_original(batch_folder))
+                if batch_path.is_dir():
+                    initial_csv_dir = batch_path
+
+        dialog = ExporterOnlineCompatDialog(
+            self,
+            initial_config=initial_config,
+            initial_config_dir=initial_config_dir,
+            initial_template=initial_template,
+            initial_csv_dir=initial_csv_dir,
+        )
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+
+        config_path = dialog.config_path()
+        template_path = dialog.template_path()
+        csv_path = dialog.csv_path()
+        if not config_path or not template_path or not csv_path:
+            QMessageBox.warning(
+                self,
+                "Online export",
+                "Select export config, Excel template, and delivery CSV.",
+            )
+            return
+        if not config_path.is_file():
+            QMessageBox.warning(self, "Online export", f"Config not found:\n{config_path}")
+            return
+        if not template_path.is_file():
+            QMessageBox.warning(self, "Online export", f"Template not found:\n{template_path}")
+            return
+        if not csv_path.is_file():
+            QMessageBox.warning(self, "Online export", f"CSV not found:\n{csv_path}")
+            return
+
+        try:
+            out_path = transform_delivery_csv_to_xlsx(
+                csv_path=csv_path,
+                config_path=config_path,
+                template_path=template_path,
+            )
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Online export",
+                f"Could not create compatible export:\n{exc}",
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "Online export",
+            f"Compatible Excel file created:\n{out_path}",
         )
 
     # ---- Helpers for Deliver and Validate ----

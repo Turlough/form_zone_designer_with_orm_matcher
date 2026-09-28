@@ -10,5 +10,8 @@ google-genai>=1.0.0
 # For PDF document rendering in the Field Indexer
 PyMuPDF>=1.24.9
 
+# Exporter Qualtrics-compatible Excel output
+openpyxl>=3.1.0
+
 # Dev / tests
 pytest>=8.0

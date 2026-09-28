@@ -50,6 +50,10 @@ Output directory: `<batch_root>/_deliveries/<job_name>/`
 
 Both CSVs keep the same **column order** as the working batch files, but field headings are remapped to `export_display_title` (`column_title` else `name`). Duplicate customer titles are allowed. **File** and **Comments** are unchanged. The **File** column values are rewritten to a relative path under `PDF/` (e.g. `PDF/0001.pdf`). Source TIFFs are never modified; PDFs are copies/conversions.
 
+### Qualtrics-compatible Excel (optional second step)
+
+After **Deliver**, **Tools → Make compatible with online version** reads a survey `export_config.json`, a Qualtrics **Excel template** (expected beside the config in the project/config folder; filename may differ from `template_xlsx` in JSON), and a delivery CSV, then writes `<stem>_for_import.xlsx` beside the CSV (original CSV unchanged). Output uses the template’s two header rows: **File** in column A, then empty Qualtrics metadata through **rq_flag**, then survey columns in template order. Ticked cells become the online value from `value_maps.tickbox_checked` (e.g. `Full time`, `Have undertaken`, `Yes`), else the template row-2 subheader; unticked stays blank. Radio labels are rewritten through `value_maps.radio` (scan label → online label, case-insensitive; unmapped labels pass through). Config can also merge split comment fields. Implementation: `util/export_online_compat.py`.
+
 Numeric/quoting decisions in `_format_cell` still use `field.name` (the working CSV header), not the remapped title.
 
 ### Cell formatting rules (`app_exporter._format_cell`)
