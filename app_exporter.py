@@ -4,6 +4,7 @@ import sys
 import json
 import csv
 import io
+from enum import Enum
 from pathlib import Path
 
 from PIL import Image
@@ -43,6 +44,14 @@ from util.export_online_compat_defaults import default_template_xlsx
 from ui.exporter_online_compat_dialog import ExporterOnlineCompatDialog
 
 
+class DeliverExportMode(str, Enum):
+    """Tools → Deliver export variants."""
+
+    SINGLE_NO_COMMENTS = "single_no_comments"
+    SINGLE_WITH_COMMENTS = "single_with_comments"
+    SPLIT = "split"
+
+
 class ExporterMenuBar(QMenuBar):
     """
     Menu bar for the Exporter application.
@@ -58,7 +67,7 @@ class ExporterMenuBar(QMenuBar):
     job_folder_requested = pyqtSignal()  # User chose the Job > Open Completed Jobs… menu
     summarise_requested = pyqtSignal()  # User chose Tools > Summarise
     validate_requested = pyqtSignal()  # User chose Tools > Validate
-    export_requested = pyqtSignal()  # User chose Tools > Export
+    export_requested = pyqtSignal(str)  # DeliverExportMode value
     online_compat_requested = pyqtSignal()  # Tools > Make compatible with online version
 
     def __init__(self, parent=None) -> None:
@@ -153,8 +162,18 @@ class ExporterMenuBar(QMenuBar):
         validate_action.triggered.connect(lambda: self.validate_requested.emit())
 
         export_menu = self._tools_menu.addMenu("Deliver")
-        export_action = export_menu.addAction("Run export")
-        export_action.triggered.connect(lambda: self.export_requested.emit())
+        single_no_comments = export_menu.addAction("Single export NO comments")
+        single_no_comments.triggered.connect(
+            lambda: self.export_requested.emit(DeliverExportMode.SINGLE_NO_COMMENTS.value)
+        )
+        single_with_comments = export_menu.addAction("Single export WITH comments")
+        single_with_comments.triggered.connect(
+            lambda: self.export_requested.emit(DeliverExportMode.SINGLE_WITH_COMMENTS.value)
+        )
+        split_export = export_menu.addAction("Create split export")
+        split_export.triggered.connect(
+            lambda: self.export_requested.emit(DeliverExportMode.SPLIT.value)
+        )
 
         online_action = self._tools_menu.addAction("Make compatible with online version")
         online_action.triggered.connect(lambda: self.online_compat_requested.emit())
@@ -489,18 +508,23 @@ class Exporter(QMainWindow):
                 f"All {len(self._batches)} batch file headers match the expected format.",
             )
 
-    def _on_export_requested(self) -> None:
+    def _on_export_requested(self, mode: str) -> None:
         """
-        Handle Tools > Deliver:
+        Handle Tools → Deliver (single or split export).
 
         - Create a job-specific folder under ``_deliveries``.
         - Convert TIFF images to multipage PDFs into a ``PDF`` subfolder.
-        - Write two CSVs:
-          - ``<job_name>.csv`` for rows without comments.
-          - ``<job_name>_exceptions.csv`` for rows with one or more comments.
+        - **Create split export**: ``<job_name>.csv`` (no comments) and
+          ``<job_name>_exceptions.csv`` (rows with comments).
+        - **Single export NO comments**: one ``<job_name>.csv``, Comments column omitted.
+        - **Single export WITH comments**: one ``<job_name>.csv``, all rows, Comments kept.
 
         Assumes that data and headings have already been validated.
         """
+        try:
+            export_mode = DeliverExportMode(mode)
+        except ValueError:
+            export_mode = DeliverExportMode.SPLIT
         if not self._batches:
             QMessageBox.information(self, "Deliver", "No batches loaded to export.")
             return
@@ -590,6 +614,7 @@ class Exporter(QMainWindow):
 
             clean_rows: list[list[str]] = []
             exception_rows: list[list[str]] = []
+            all_rows: list[list[str]] = []
 
             pdf_counter = 0
 
@@ -635,6 +660,7 @@ class Exporter(QMainWindow):
                             for value, header in zip(row, headers, strict=False)
                         ]
 
+                        all_rows.append(formatted_cells)
                         if comments_val:
                             exception_rows.append(formatted_cells)
                         else:
@@ -643,21 +669,32 @@ class Exporter(QMainWindow):
             # Write output CSV files. Cell formatting keys off identity names
             # (working CSV headers); the written heading row uses column_title.
             job_output_dir.mkdir(parents=True, exist_ok=True)
-            delivery_headers = remap_delivery_headers(headers, title_map)
 
-            header_buf = io.StringIO()
-            csv.writer(header_buf, lineterminator="\n").writerow(delivery_headers)
-            header_line = header_buf.getvalue()
+            def write_delivery_csv(
+                path: Path,
+                out_headers: list[str],
+                rows: list[list[str]],
+            ) -> None:
+                delivery_headers = remap_delivery_headers(out_headers, title_map)
+                header_buf = io.StringIO()
+                csv.writer(header_buf, lineterminator="\n").writerow(delivery_headers)
+                header_line = header_buf.getvalue()
+                with open(path, "w", encoding="utf-8", newline="") as f_out:
+                    f_out.write(header_line)
+                    for cells in rows:
+                        f_out.write(",".join(cells) + "\n")
 
-            with open(data_path, "w", encoding="utf-8", newline="") as f_main:
-                f_main.write(header_line)
-                for cells in clean_rows:
-                    f_main.write(",".join(cells) + "\n")
-
-            with open(exceptions_path, "w", encoding="utf-8", newline="") as f_exc:
-                f_exc.write(header_line)
-                for cells in exception_rows:
-                    f_exc.write(",".join(cells) + "\n")
+            if export_mode is DeliverExportMode.SPLIT:
+                write_delivery_csv(data_path, headers, clean_rows)
+                write_delivery_csv(exceptions_path, headers, exception_rows)
+            elif export_mode is DeliverExportMode.SINGLE_NO_COMMENTS:
+                out_headers = [h for i, h in enumerate(headers) if i != comments_idx]
+                out_rows = [
+                    [c for i, c in enumerate(row) if i != comments_idx] for row in all_rows
+                ]
+                write_delivery_csv(data_path, out_headers, out_rows)
+            else:
+                write_delivery_csv(data_path, headers, all_rows)
 
         except Exception as exc:  # pragma: no cover - defensive GUI error reporting
             QMessageBox.critical(
@@ -667,11 +704,14 @@ class Exporter(QMainWindow):
             )
             return
 
-        QMessageBox.information(
-            self,
-            "Deliver",
-            f"Delivery files created in:\n{job_output_dir}",
-        )
+        if export_mode is DeliverExportMode.SPLIT:
+            detail = (
+                f"Delivery files created in:\n{job_output_dir}\n\n"
+                f"{data_filename}\n{exceptions_filename}"
+            )
+        else:
+            detail = f"Delivery file created in:\n{job_output_dir}\n\n{data_filename}"
+        QMessageBox.information(self, "Deliver", detail)
 
     def _on_online_compat_requested(self) -> None:
         """Tools → Make compatible with online version."""
