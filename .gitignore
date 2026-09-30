@@ -13,6 +13,6 @@ uv.lock
 
 # Customer sample packs; keep EXAMPLES/AGENTS.md and EXAMPLES/utils/ tracked
 EXAMPLES/*/
-!EXAMPLES/utils/
-!EXAMPLES/utils/**
+EXAMPLES/utils/
+EXAMPLES/utils/**
 EXAMPLES/utils/**/__pycache__/

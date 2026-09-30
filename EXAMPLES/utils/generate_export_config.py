@@ -3,6 +3,9 @@
 Usage (repo root, venv):
 
     python EXAMPLES/utils/generate_export_config.py EXAMPLES/RoI
+    python EXAMPLES/utils/generate_export_config.py EXAMPLES/NI
+
+Per-survey fixes the data cannot supply live in ``SURVEYS`` (keyed by survey folder name).
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from util.designer_persistence import iter_runtime_fields
 from util.field_metadata import export_display_title
 from EXAMPLES.utils.qualtrics_headers import load_qualtrics_headers
 
-MANUAL_BY_TEMPLATE_COL: dict[int, str] = {
+ROI_COLUMNS: dict[int, str] = {
     10: "",  # rq_flag — blank insert
     14: "1.2 Age group",
     38: "Milking Platform - Owned acres",
@@ -89,23 +92,79 @@ MANUAL_BY_TEMPLATE_COL: dict[int, str] = {
     229: "Final Full Name",
 }
 
-# Tickbox checked values the online data cannot supply (single scan tick vs online Yes/No radio, consent).
-MANUAL_TICKBOX_CHECKED: dict[str, str] = {
-    "Co_owner_non_family_Part_time": "Part time",  # no online responses in sample
-    "Other": "Other",  # online column is free text; scan has only a tickbox
-    "Is the land within 3km": "Yes",
-    "Welcome conversation with Tirlán team": "Yes",
-    "Welcome Tirlán conversation": "Yes",
-    "Signed": "I consent",
-}
-
-# Radio labels whose online wording differs too much for fuzzy matching.
-MANUAL_RADIO: dict[str, dict[str, str]] = {
-    "Under the Department of Agriculture's Nitrates Banding System, which band do you fall into?": {
-        "Q5.2 Band 1 (< 4,500kg milk)": "Band 1 (Less than 4,500kg milk)",
-        "Q5.2 Band 2 (4,501-6,500kg milk)": "Band 2 (4,501kg – 6,500kg milk)",
-        "Q5.2 Band 3 (> 6,500kg milk)": "Band 3 (Greater than 6,500kg milk)",
-        "Q5.2 Don't know": "Don’t know",
+SURVEYS: dict[str, dict] = {
+    "RoI": {
+        "description": "IFAC TirlanSurvey RoI 2026 — Qualtrics-compatible delivery transform",
+        # template column -> field.name ("" = leave blank)
+        "columns": ROI_COLUMNS,
+        # Tickbox checked values the online data cannot supply (single scan tick vs online radio, consent).
+        "tickbox_checked": {
+            "Co_owner_non_family_Part_time": "Part time",  # no online responses in sample
+            "Other": "Other",  # online column is free text; scan has only a tickbox
+            "Is the land within 3km": "Yes",
+            "Welcome conversation with Tirlán team": "Yes",
+            "Welcome Tirlán conversation": "Yes",
+            "Signed": "I consent",
+        },
+        # Radio labels whose online wording differs too much for fuzzy matching.
+        "radio": {
+            "Under the Department of Agriculture's Nitrates Banding System, which band do you fall into?": {
+                "Q5.2 Band 1 (< 4,500kg milk)": "Band 1 (Less than 4,500kg milk)",
+                "Q5.2 Band 2 (4,501-6,500kg milk)": "Band 2 (4,501kg – 6,500kg milk)",
+                "Q5.2 Band 3 (> 6,500kg milk)": "Band 3 (Greater than 6,500kg milk)",
+                "Q5.2 Don't know": "Don’t know",
+            },
+        },
+        "merge_columns": [
+            {
+                "target_template_col": 223,
+                "sources": ["Comments on any aspect of Tirlan", "Comments continued"],
+                "separator": " ",
+            }
+        ],
+    },
+    "NI": {
+        "description": "IFAC TirlanSurvey NI 2026 — Qualtrics-compatible delivery transform",
+        # JSON field order matches the Excel survey columns once these print-only fields are skipped.
+        "match": "order",
+        "skip_fields": [
+            "2025 Litres Supplied",
+            "Challenge: Other factor selected",
+            "Reasons - Other checkbox",
+            "What is your farm's current status regarding the Nitrates Derogation?",
+            "Looking ahead to the next 5 years, which best describes your position?",
+            "No Dairy replacements on Farm",
+        ],
+        "columns": {10: ""},  # rq_flag
+        # No online responses in the NI sample for these; values follow the RoI online convention.
+        "tickbox_checked": {
+            "Q1_4_Relief_Contract_workers_Full_time": "Full time",
+            "Q1_4_Sharemilker_Full_time": "Full time",
+            "Q1_4_Sharemilker_Part_time": "Part time",
+            "Q1_4_Co_owner_non_family_Full_time": "Full time",
+            "Q1_4_Co_owner_non_family_Part_time": "Part time",
+            "None of the above - Have undertaken": "Have undertaken",
+            "Other actions": "Other",  # online column is free text; scan has only a tickbox
+            "Other": "Other",  # online column is free text; scan has only a tickbox
+        },
+        "radio": {
+            "With respect to your non-dairy livestock, what are your plans over the next five years?": {
+                "Non-dairy livestock plans - Reduce in numbers": "Reduce in numbers",
+                "Non-dairy livestock plans - No livestock": "I do not have non-dairy livestock",
+                "Non-dairy livestock plans - Increase in numbers": "Increase in numbers",
+                "Non-dairy livestock plans - Remain at current levels": "Remain at current levels",
+            },
+            "6.8. In a normal year (i.e. normal weather, grass growth etc.), including dry cow feeding, how many Kg of concentrates/supplementary feed would you feed to each dairy cow?": {
+                "Feed_Concentrates_Less_500kg_hd": "Less than 500kg/hd",  # RoI wording; not in NI sample
+                "Feed_Concentrates_500_1000kg_hd": "500kg/hd to 1,000kg/hd",
+                "Feed_Concentrates_1001_1500kg_hd": "1,001kg/hd to 1,500kg/hd",
+                "Feed_Concentrates_1501_2000kg_hd": "1,501kg/hd to 2,000kg/hd",
+                "Feed_Concentrates_2001_3000kg_hd": "2,001kg/hd to 3,000kg/hd",
+                "Feed_Concentrates_3001_4000kg_hd": "3,001kg/hd to 4,000kg/hd",
+                "Feed_Concentrates_More_4000kg_hd": "4,001kg/hd+",  # guessed from RoI "2,501kg/hd+"; not in NI sample
+            },
+        },
+        "merge_columns": [],
     },
 }
 
@@ -130,7 +189,10 @@ def _score_match(sub: str, stem: str, name: str, title: str) -> int:
     return 0
 
 
-def build_column_sources(json_dir: Path, xlsx: Path) -> dict[str, str | None]:
+def build_column_sources(
+    json_dir: Path, xlsx: Path, manual_columns: dict[int, str], reserved: set[str] = frozenset()
+) -> dict[str, str | None]:
+    """Template column -> field.name. ``reserved`` fields (merge sources) are never auto-assigned."""
     headers = load_qualtrics_headers(xlsx)
     fields = [
         {
@@ -139,11 +201,10 @@ def build_column_sources(json_dir: Path, xlsx: Path) -> dict[str, str | None]:
         }
         for _, f in iter_runtime_fields(json_dir)
     ]
-    available = {f["name"] for f in fields}
-    by_name = {f["name"]: f for f in fields}
+    available = {f["name"] for f in fields} - set(reserved)
 
     assignments: dict[int, str | None] = {}
-    for col_num, name in MANUAL_BY_TEMPLATE_COL.items():
+    for col_num, name in manual_columns.items():
         if name == "":
             assignments[col_num] = None
             continue
@@ -169,6 +230,24 @@ def build_column_sources(json_dir: Path, xlsx: Path) -> dict[str, str | None]:
         else:
             assignments[col.col] = None
 
+    return {str(k): v for k, v in sorted(assignments.items())}
+
+
+def build_column_sources_by_order(
+    json_dir: Path, xlsx: Path, manual_columns: dict[int, str], skip_fields: list[str]
+) -> dict[str, str | None]:
+    """Pair template columns with JSON fields in order (manual columns and skip_fields excluded)."""
+    headers = load_qualtrics_headers(xlsx)
+    skip = set(skip_fields) | {n for n in manual_columns.values() if n}
+    names = [f.name.strip() for _, f in iter_runtime_fields(json_dir) if f.name.strip() not in skip]
+    cols = [c.col for c in headers.columns if c.col not in manual_columns]
+    if len(names) != len(cols):
+        raise SystemExit(
+            f"Order match needs equal counts: {len(cols)} template columns vs {len(names)} fields. "
+            "Adjust skip_fields."
+        )
+    assignments: dict[int, str | None] = {c: (n or None) for c, n in manual_columns.items()}
+    assignments.update(zip(cols, names))
     return {str(k): v for k, v in sorted(assignments.items())}
 
 
@@ -207,7 +286,11 @@ def _best_online_label(label: str, candidates: set[str]) -> tuple[str | None, fl
 
 
 def build_value_maps(
-    json_dir: Path, xlsx: Path, column_sources: dict[str, str | None]
+    json_dir: Path,
+    xlsx: Path,
+    column_sources: dict[str, str | None],
+    manual_tickbox: dict[str, str],
+    manual_radio: dict[str, dict[str, str]],
 ) -> tuple[dict[str, str], dict[str, dict[str, str]], list[str]]:
     """Tickbox checked values and radio label maps that make scan output match online rows."""
     subs = {c.col: c.sub for c in load_qualtrics_headers(xlsx).columns}
@@ -226,24 +309,26 @@ def build_value_maps(
         vals = online.get(col, set())
 
         if isinstance(field, Tickbox):
-            if name in MANUAL_TICKBOX_CHECKED:
-                tickbox_checked[name] = MANUAL_TICKBOX_CHECKED[name]
+            if name in manual_tickbox:
+                tickbox_checked[name] = manual_tickbox[name]
             elif len(vals) == 1 and next(iter(vals)) != subs.get(col, ""):
                 tickbox_checked[name] = next(iter(vals))
             continue
 
         if not isinstance(field, RadioGroup) or not vals:
             continue
-        manual = MANUAL_RADIO.get(name, {})
+        manual = manual_radio.get(name, {})
+        labels = [(b.name or "").strip() for b in field.radio_buttons]
+        # An online label equal to one scan label belongs to that button; never fuzzy-match onto it.
+        unclaimed = vals - set(labels) - set(manual.values())
         mapping: dict[str, str] = {}
-        for button in field.radio_buttons:
-            label = (button.name or "").strip()
+        for label in labels:
             if not label or label in vals:
                 continue
             if label in manual:
                 mapping[label] = manual[label]
                 continue
-            best, ratio = _best_online_label(label, vals)
+            best, ratio = _best_online_label(label, unclaimed)
             if best is not None and ratio >= RADIO_MATCH_MIN_RATIO:
                 mapping[label] = best
             else:
@@ -266,26 +351,32 @@ def main(argv: list[str] | None = None) -> int:
     if not json_dir.is_dir() or not xlsx_files:
         raise SystemExit(f"Need json/ and a .xlsx in {survey_dir}")
 
+    survey = SURVEYS.get(survey_dir.name)
+    if survey is None:
+        raise SystemExit(f"Add a SURVEYS entry for {survey_dir.name!r} in {Path(__file__).name}")
+
+    merge_columns = survey["merge_columns"]
+    merge_sources = {s for spec in merge_columns for s in spec["sources"]}
     template_xlsx = xlsx_files[0].name
-    column_sources = build_column_sources(json_dir, xlsx_files[0])
-    tickbox_checked, radio_maps, warnings = build_value_maps(json_dir, xlsx_files[0], column_sources)
+    if survey.get("match") == "order":
+        column_sources = build_column_sources_by_order(
+            json_dir, xlsx_files[0], survey["columns"], survey.get("skip_fields", [])
+        )
+    else:
+        column_sources = build_column_sources(json_dir, xlsx_files[0], survey["columns"], merge_sources)
+    for spec in merge_columns:
+        column_sources[str(spec["target_template_col"])] = None
+    tickbox_checked, radio_maps, warnings = build_value_maps(
+        json_dir, xlsx_files[0], column_sources, survey["tickbox_checked"], survey["radio"]
+    )
 
     used = {v for v in column_sources.values() if v}
     all_names = {f.name.strip() for _, f in iter_runtime_fields(json_dir)}
-    remove_fields = sorted(
-        n
-        for n in all_names
-        if n not in used
-        and n
-        not in {
-            "Comments on any aspect of Tirlan",
-            "Comments continued",
-        }
-    )
+    remove_fields = sorted(n for n in all_names if n and n not in used and n not in merge_sources)
 
     config = {
         "format_version": 1,
-        "description": "IFAC TirlanSurvey RoI 2026 — Qualtrics-compatible delivery transform",
+        "description": survey["description"],
         "template_xlsx": template_xlsx,
         "json_folder": "json",
         "first_column": "File",
@@ -296,18 +387,8 @@ def main(argv: list[str] | None = None) -> int:
             "tickbox_checked": tickbox_checked,
             "radio": radio_maps,
         },
-        "merge_columns": [
-            {
-                "target_template_col": 223,
-                "sources": [
-                    "Comments on any aspect of Tirlan",
-                    "Comments continued",
-                ],
-                "separator": " ",
-            }
-        ],
+        "merge_columns": merge_columns,
         "remove_fields": remove_fields,
-        "insert_blank_columns": [10],
         "column_sources": column_sources,
     }
 

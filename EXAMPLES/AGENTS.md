@@ -15,7 +15,8 @@ Each survey folder typically contains:
 
 - `json/` — Designer page files (`N.json`) and `project_config.json`
 - Customer export sample (`.xlsx`, Qualtrics two-row headers)
-- Optional: `export_config.json` — Exporter **Tools → Make compatible with online version** (maps Deliver CSV → import `.xlsx`; regenerate via `EXAMPLES/utils/generate_export_config.py`)
+- Optional: `export_config.json` — Exporter **Tools → Make compatible with online version** (maps Deliver CSV → import `.xlsx`)
+- Optional: `generate_export_config.py` — this pack's own copy of the config generator (untracked, like the rest of the pack). Regenerate that pack's config with its copy: `.\.venv\Scripts\python.exe EXAMPLES\<survey>\generate_export_config.py EXAMPLES\<survey>`
 - Optional: `template.pdf` / `fiducials/`
 - `current_status.md` — gitignored, overwriteable scratch after each heading check. Outstanding leftovers for the next run, plus long-term pack notes (sample file, sheet, page coverage). Not tracked. Do not park run leftovers in this `AGENTS.md`.
 
@@ -70,6 +71,6 @@ No automated test. Re-run this checklist after Designer JSON changes, or when a 
 
 ## Child DOX Index
 
-- `RoI/` — gitignored pack (JSON + `ExportSampleROI.xlsx`; `current_status.md`)
-- `NI/` — gitignored pack (JSON `4.json`–`19.json` + `ExportSampleNI.xlsx`; `current_status.md`)
+- `RoI/` — gitignored pack (JSON + `Planning Census RoI 2026-2031-Final_REDACTED.xlsx`; `export_config.json`, `generate_export_config.py`, `current_status.md`)
+- `NI/` — gitignored pack (JSON `4.json`–`19.json` + `Milk Planning Census NI 2026-2031- REDACTED.xlsx`; `export_config.json`, `generate_export_config.py`, `current_status.md`)
 - `utils/AGENTS.md` — dump helpers for JSON fields and Excel headings

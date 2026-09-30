@@ -9,7 +9,7 @@ Local Python helpers for Designer JSON vs Qualtrics Excel heading checks in chat
 - `qualtrics_headers.py` — two-row Excel load (forward-fill stems, skip Qualtrics meta)
 - `designer_fields.py` — page JSON via `iter_runtime_fields` (RadioGrid expansion)
 - `dump_headings.py` — print both sequences plus grids, duplicate `name`, missing `column_title`
-- `generate_export_config.py` — build `export_config.json` for a survey folder (json + Qualtrics `.xlsx`). `value_maps` are derived from the xlsx data rows (single online value per tick column; fuzzy radio-label match). Put fixes the data cannot supply in `MANUAL_BY_TEMPLATE_COL`, `MANUAL_TICKBOX_CHECKED`, `MANUAL_RADIO`, then regenerate; review printed warnings.
+- `generate_export_config.py` — build `export_config.json` for a survey folder (json + Qualtrics `.xlsx`). Per-survey fixes live in `SURVEYS[<folder name>]`: `columns`, `tickbox_checked`, `radio`, `merge_columns`, and optionally `match: "order"` + `skip_fields` (pair fields to columns by position when JSON order already matches Excel, as for NI). `value_maps` are derived from the xlsx data rows: single online value per tick column; fuzzy radio-label match only onto online labels no scan button already matches exactly. Regenerate after edits and review printed warnings — a warning means the label was not seen online and passes through unchanged. Each survey pack keeps its own copy (`EXAMPLES/RoI/`, `EXAMPLES/NI/`); those copies import `qualtrics_headers.py` from here, so keep its API stable.
 
 ## Local Contracts
 
@@ -26,7 +26,7 @@ From repo root, project venv:
 .\.venv\Scripts\python.exe EXAMPLES\utils\dump_headings.py EXAMPLES\RoI
 ```
 
-openpyxl is required for the Excel dump (venv extra; not a product dependency).
+openpyxl is required for the Excel dump (also a product dependency for the Exporter's online-compat transform).
 
 ## Verification
 

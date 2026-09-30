@@ -21,7 +21,7 @@ def test_transform_roi_config_smoke(tmp_path: Path) -> None:
     if not config_path.is_file():
         pytest.skip("RoI export_config.json not present")
 
-    stocking_title = json.loads(config_path.read_text(encoding="utf-8"))["column_sources"]["112"]
+    stocking_title = json.loads(config_path.read_text(encoding="utf-8"))["column_sources"]["113"]
     csv_path = tmp_path / "sample.csv"
     with csv_path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
